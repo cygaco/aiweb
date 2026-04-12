@@ -125,8 +125,8 @@ NEVER call place_order without confirmation.`,
   },
 
   async ({ delivery_address, intent_style, intent_size, intent_quantity, headcount, occasion, restaurant_hint }) => {
-    // Find nearby restaurants
-    let restaurants = findNearbyRestaurants(delivery_address);
+    // Find nearby restaurants (live Domino's API, fallback to hardcoded)
+    let restaurants = await findNearbyRestaurants(delivery_address);
 
     // Filter by restaurant hint if given
     if (restaurant_hint) {

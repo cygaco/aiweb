@@ -1,9 +1,10 @@
 /**
- * Hardcoded restaurant data for Wave 00 MVP.
- * Real restaurants with real phone numbers and real menus.
- * 
- * Post-MVP: Replace with Google Places API + menu scraping.
+ * Restaurant data for Wave 00 MVP.
+ * Primary: Domino's live API (real phone, address, delivery estimate).
+ * Fallback: Hardcoded entries below (replace phones before using).
  */
+
+import { findNearbyDominosStores } from "../connectors/dominos.js";
 
 export interface MenuItem {
   name: string;
@@ -158,10 +159,12 @@ export const RESTAURANTS: Restaurant[] = [
 
 /**
  * Find restaurants near an address.
- * MVP: Returns all restaurants (no real geo filtering).
- * Post-MVP: Use Google Places API + real distance calc.
+ * Tries Domino's live API first; falls back to hardcoded list.
  */
-export function findNearbyRestaurants(_address: string): Restaurant[] {
-  // TODO: Real geocoding + distance filtering
+export async function findNearbyRestaurants(address: string): Promise<Restaurant[]> {
+  const live = await findNearbyDominosStores(address);
+  if (live.length > 0) return live;
+
+  // Fallback: hardcoded entries (populate phones before using)
   return RESTAURANTS.filter((r) => r.phone !== "+1XXXXXXXXXX");
 }

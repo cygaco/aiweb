@@ -101,18 +101,63 @@ If they put you on hold for more than 2 minutes, hang up.
 If you reach a voicemail, hang up.`;
 }
 
+// In-memory store for simulated calls
+const simCalls = new Map<string, { order: PlaceOrderRequest; createdAt: number }>();
+
+function buildSimTranscript(order: PlaceOrderRequest, total: number, eta: number): string {
+  const items = order.items.map((i) => `${i.quantity} ${i.size} ${i.name}`).join(" and ");
+  return [
+    `Domino's Pizza: Thank you for calling Domino's, how can I help you today?`,
+    `Agent: Hi, I'd like to place a delivery order please.`,
+    `Domino's Pizza: Of course! What would you like to order?`,
+    `Agent: I'd like ${items}.`,
+    `Domino's Pizza: And what's the delivery address?`,
+    `Agent: ${order.deliveryAddress}.`,
+    `Domino's Pizza: Got it. Name for the order?`,
+    `Agent: ${order.customerName}.`,
+    `Domino's Pizza: Perfect. That'll be $${total.toFixed(2)} and it should be there in about ${eta} minutes. Paying cash on delivery?`,
+    `Agent: Yes, cash on delivery is correct.`,
+    `Domino's Pizza: Your order is confirmed! We'll have it ready in about ${eta} minutes. Thanks for calling!`,
+    `Agent: Thank you, have a great day!`,
+  ].join("\n");
+}
+
 /**
  * Dispatch a call via Bland.ai API.
+ * Falls back to simulation mode when BLAND_API_KEY is not set.
+ * When TEST_OVERRIDE_PHONE is set, routes every call to that number
+ * instead of the real restaurant — use this to test live Bland calls
+ * before going live.
  */
 export async function dispatchCall(
   order: PlaceOrderRequest
 ): Promise<BlandCallResponse> {
   const apiKey = process.env.BLAND_API_KEY;
+
   if (!apiKey) {
-    throw new Error("BLAND_API_KEY not set in environment");
+    const callId = `sim_${Date.now()}`;
+    simCalls.set(callId, { order, createdAt: Date.now() });
+    return { callId, status: "queued" };
   }
 
-  const prompt = buildCallPrompt(order);
+  const testPhone = process.env.TEST_OVERRIDE_PHONE;
+  const targetPhone = testPhone ?? order.restaurantPhone;
+  const prompt = testPhone
+    ? buildCallPrompt(order) +
+      `\n\nTEST MODE: You are calling a developer who is playing the role of ${order.restaurantName}. Proceed exactly as you normally would.`
+    : buildCallPrompt(order);
+
+  const body: Record<string, unknown> = {
+    phone_number: targetPhone,
+    task: prompt,
+    voice: "maya",
+    max_duration: 5,
+    record: true,
+    wait_for_greeting: true,
+  };
+  if (process.env.BLAND_FROM_NUMBER) {
+    body.from = process.env.BLAND_FROM_NUMBER;
+  }
 
   const response = await fetch("https://api.bland.ai/v1/calls", {
     method: "POST",
@@ -120,14 +165,7 @@ export async function dispatchCall(
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      phone_number: order.restaurantPhone,
-      task: prompt,
-      voice: "maya",
-      max_duration: 5, // minutes — pizza order shouldn't take longer
-      record: true,
-      wait_for_greeting: true,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -145,10 +183,40 @@ export async function dispatchCall(
 
 /**
  * Check call status and get transcript.
+ * Handles simulated calls (sim_*) when no BLAND_API_KEY is set.
  */
 export async function getCallStatus(
   callId: string
 ): Promise<BlandCallStatus> {
+  if (callId.startsWith("sim_")) {
+    const sim = simCalls.get(callId);
+    if (!sim) throw new Error(`Unknown simulated call: ${callId}`);
+
+    const ageMs = Date.now() - sim.createdAt;
+    if (ageMs < 10_000) {
+      return { callId, status: "in_progress" };
+    }
+
+    const total = sim.order.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    const eta = 30;
+    const transcript = buildSimTranscript(sim.order, total, eta);
+
+    return {
+      callId,
+      status: "completed",
+      duration: 95,
+      transcript,
+      summary: `[SIMULATED] Order confirmed. Total: $${total.toFixed(2)}. ETA: ${eta} min.`,
+      parsedResult: {
+        orderConfirmed: true,
+        totalQuoted: total,
+        estimatedMinutes: eta,
+        substitutionsMade: [],
+        issuesEncountered: [],
+      },
+    };
+  }
+
   const apiKey = process.env.BLAND_API_KEY;
   if (!apiKey) {
     throw new Error("BLAND_API_KEY not set in environment");
