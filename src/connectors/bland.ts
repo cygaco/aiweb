@@ -21,6 +21,7 @@ export interface PlaceOrderRequest {
   deliveryInstructions?: string;
   maxTotal?: number;
   maxWaitMinutes?: number;
+  dietaryRequirements?: string; // e.g. "gluten-free", "vegan"
 }
 
 export interface BlandCallResponse {
@@ -99,7 +100,13 @@ BEFORE HANGING UP:
 5. Say "Thank you!" and end the call.
 
 If they put you on hold for more than 2 minutes, hang up.
-If you reach a voicemail, hang up.`;
+If you reach a voicemail, hang up.${order.dietaryRequirements ? `
+
+DIETARY REQUIREMENT — CHECK BEFORE ORDERING:
+The customer requires ${order.dietaryRequirements} options.
+Ask: "Do you have ${order.dietaryRequirements} options available?"
+If they do NOT: say "I'll need to check another option, thank you" and end the call.
+If they DO: proceed with the order as normal.` : ""}`;
 }
 
 // In-memory store for simulated calls

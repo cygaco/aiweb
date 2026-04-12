@@ -40,53 +40,75 @@ const server = new McpServer({
 server.tool(
   "start_pizza_order",
 
-  `Find pizza restaurants and get ordering options for the user.
-Call this FIRST when someone wants to order pizza.
+  `Find pizza restaurants near an address and build a suggested order.
 
-YOUR CONVERSATION FLOW — follow these steps:
+FIRST — IDENTIFY THE ENTRY POINT, then follow the right path:
 
-STEP 1: PARSE WHAT THEY ALREADY TOLD YOU.
-Before calling this tool, extract everything from the user's message:
-- Did they say what they want? ("meat lovers" → style = "meat_lovers")
-- Did they say how many people? (headcount)
-- Did they say a specific restaurant? (restaurant_hint)
-- Did they mention dietary needs? Pass them too.
-If they said "order me a meat lovers" — you already know what they want.
-Do NOT ask again.
+━━ ENTRY 1: ZERO CONTEXT ("order pizza", "I want pizza", "pizza please") ━━
+  Ask: "What are you in the mood for?" — INDIVIDUAL options only:
+    • Large pepperoni — the classic
+    • Meat lovers
+    • Veggie
+    • Just cheese
+    • Something else (free text)
+    • You pick — I'll surprise you  [call tool with delegate=true]
+    • Feeding a group? [only then show: game day / office / kids party]
+  Ask address. Then call this tool. Do NOT call tool before getting their pick.
 
-STEP 2: CALL THIS TOOL with the delivery address.
+━━ ENTRY 2: INTENT KNOWN ("pepperoni pizza", "large meat lovers") ━━
+  Skip mood question. Ask address only. Call tool with intent_style set.
 
-STEP 3: PRESENT WHAT CAME BACK.
-Lead with what you know: "Here's what I found near you."
-Show the presets as SELECTABLE OPTIONS — not a wall of text:
-  • "Large pepperoni — #1 pick, $12.99"
-  • "Game day — meat + wings for the crew"
-  • "Kids party — cheese + pepperoni, simple"
-  • "Office lunch — variety + salads"
-  • "Something else — tell me what you want"
-  • "Take a taste quiz — I'll learn your style"
-If the user already specified what they want (intent_style is set),
-SKIP the presets and go straight to confirming the order.
+━━ ENTRY 3: GROUP/OCCASION ("kids birthday pizza", "game day for 12") ━━
+  Ask address. Ask headcount if not given. Call tool with occasion + headcount.
 
-STEP 4: COLLECT MISSING INFO.
-You need name, phone, and address to place the order.
-Weave these into conversation naturally:
-  "What's the delivery address?" (if not given)
-  "Name and phone for the order?" (one ask, not two)
-  "Any delivery instructions — gate code, apartment?"
-Do NOT dump all questions at once. Ask what's missing.
+━━ ENTRY 4: ADDRESS FIRST ("pizza to 123 Main St") ━━
+  Call tool immediately with address. Ask mood alongside results if intent unknown.
 
-STEP 5: CONFIRM THE ORDER.
-ALWAYS show the full order before calling place_order:
-  Items, quantities, sizes
-  Restaurant name
-  Estimated total
-  Estimated delivery time
-  Delivery address
-  Name + phone
-  "Paying cash to the driver"
-Wait for explicit "yes" / "confirm" / "go for it".
-NEVER call place_order without confirmation.`,
+━━ ENTRY 5: RESTAURANT SPECIFIC ("order from Domino's") ━━
+  Ask intent + address. Call tool with restaurant_hint.
+
+━━ ENTRY 6: HIGH CONTEXT (intent + address + name + phone all given) ━━
+  Parse everything. Call tool. Present ready-to-confirm order. One confirm → done.
+
+━━ ENTRY 7: DISCOVERY ("what pizza places are near me?") ━━
+  Ask address. Call tool with discovery_only=true.
+  Show list: name, distance, phone, hours. Do NOT push to order.
+  End with: "Want to order from one of these?"
+
+━━ ENTRY 8: DELEGATE ("surprise me", "you pick", "just get me something") ━━
+  Ask address only. Call tool with delegate=true.
+  Present as agent's recommendation: "Here's what I'd get you — confirm?"
+
+━━ ENTRY 9: CONSTRAINED ("under $20", "gluten-free", "vegan pizza") ━━
+  Extract max_budget and/or dietary. Ask address + intent if missing.
+  Call tool with constraints. Surface budget_warning or dietary_note if returned.
+
+AFTER THE TOOL RETURNS:
+
+RESTAURANTS: Show name, ETA. Flag isTest entries clearly.
+
+SUGGESTED ORDER (if returned):
+  These are ORDER PRESETS — NOT items from the restaurant's menu. Say it clearly.
+  "Here's what I'd order for you: [items]"
+  menu_confidence:
+    "high"   → "✓ On their menu"
+    "medium" → "Most pizza places carry this — confirmed on the call"
+    "low"    → "Specialty — availability checked when calling"
+  dietary_note → "I'll have the AI confirm [dietary] options before ordering"
+  budget_warning → surface it, offer smaller/cheaper alternative
+  delegate_pick: true → frame as your recommendation, not their choice
+
+PRESETS (if returned, no suggested_order):
+  These are WHAT-THE-USER-WANTS options — NOT the restaurant's menu.
+  Present as "What are you in the mood for?" not "Here's the menu."
+
+COLLECTING MISSING INFO:
+  Need before place_order: name, phone, confirmed address.
+  Ask one gap at a time. "Name and phone?" covers both if both missing.
+
+CONFIRM — show full cart:
+  Items + sizes | Restaurant | Est. total | Est. delivery | Address | Name | Phone | Cash
+  Wait for explicit yes. NEVER call place_order without confirmation.`,
 
   {
     delivery_address: z
@@ -122,9 +144,31 @@ NEVER call place_order without confirmation.`,
       .describe(
         "Specific restaurant if mentioned, e.g. \"dominos\", \"pizza hut\""
       ),
+    max_budget: z
+      .number()
+      .optional()
+      .describe("Maximum total in dollars. Warn if suggested order exceeds this."),
+    dietary: z
+      .string()
+      .optional()
+      .describe(
+        "Dietary requirement if mentioned. E.g. \"gluten-free\", \"vegan\", \"vegetarian\", \"nut-free\". Bland will confirm availability on the call."
+      ),
+    discovery_only: z
+      .boolean()
+      .optional()
+      .describe(
+        "Set true when user just wants to see nearby options, not place an order yet."
+      ),
+    delegate: z
+      .boolean()
+      .optional()
+      .describe(
+        "Set true when user says 'you pick', 'surprise me', or delegates the choice. Agent selects the order."
+      ),
   },
 
-  async ({ delivery_address, intent_style, intent_size, intent_quantity, headcount, occasion, restaurant_hint }) => {
+  async ({ delivery_address, intent_style, intent_size, intent_quantity, headcount, occasion, restaurant_hint, max_budget, dietary, discovery_only, delegate }) => {
     // Find nearby restaurants (live Domino's API, fallback to hardcoded)
     let restaurants = await findNearbyRestaurants(delivery_address);
 
@@ -148,6 +192,7 @@ NEVER call place_order without confirmation.`,
         estimatedDeliveryMinutes: r.estimatedDeliveryMinutes,
         acceptsCash: r.acceptsCash,
         hours: r.hours,
+        ...(r.isTest && { isTest: true, note: "Test entry — real phone, answer as restaurant staff." }),
         menuSummary: {
           pizzas: r.menu.pizzas.map((p) => ({
             name: p.name,
@@ -162,6 +207,38 @@ NEVER call place_order without confirmation.`,
       })),
     };
 
+    // Discovery-only mode: just return restaurants, no order building
+    if (discovery_only) {
+      result.mode = "discovery";
+      result.note = "User wants to browse options. Show restaurants with distance, hours, and phone. Ask if they want to order from one.";
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    }
+
+    // Determine menu confidence based on restaurant source
+    const primaryRestaurant = restaurants[0];
+    const menuConfidence =
+      primaryRestaurant?.isTest ? "test" :
+      primaryRestaurant?.id.startsWith("places_") ? "medium" :
+      primaryRestaurant?.id.startsWith("dominos_") ? "high" : "medium";
+
+    // Delegate mode: agent picks large pepperoni as default
+    if (delegate) {
+      const items = orderFromIntent({ style: "pepperoni", size: "Large 14\"", quantity: 1 });
+      const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      result.suggested_order = {
+        items,
+        estimatedTotal: total,
+        menu_confidence: menuConfidence,
+        delegate_pick: true,
+        note: "Agent-selected order. Present as your recommendation: 'Here's what I'd get you — [item] from [restaurant]. Confirm and I'll call.'",
+      };
+      if (dietary) {
+        (result.suggested_order as Record<string, unknown>).dietary_note = `Customer requires ${dietary}. Bland will confirm availability before ordering.`;
+        result.dietary = dietary;
+      }
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    }
+
     // If user specified what they want, build the order immediately
     if (intent_style) {
       const items = orderFromIntent({
@@ -173,7 +250,10 @@ NEVER call place_order without confirmation.`,
       result.suggested_order = {
         items,
         estimatedTotal: total,
+        menu_confidence: menuConfidence,
         note: "User specified what they want — skip presets, go to confirmation.",
+        ...(dietary && { dietary_note: `Customer requires ${dietary}. Bland will confirm availability before ordering.` }),
+        ...(max_budget && total > max_budget && { budget_warning: `Estimated $${total.toFixed(2)} exceeds budget of $${max_budget.toFixed(2)}. Suggest a smaller size or fewer items.` }),
       };
     }
     // If occasion preset matches, build from preset
@@ -182,30 +262,40 @@ NEVER call place_order without confirmation.`,
       if (preset) {
         const items = preset.items(headcount);
         const sides = preset.suggestedSides?.(headcount) ?? [];
+        const total = preset.estimateTotal(headcount);
         result.suggested_order = {
           items: [...items, ...sides],
-          estimatedTotal: preset.estimateTotal(headcount),
+          estimatedTotal: total,
           preset: preset.label,
+          menu_confidence: menuConfidence,
           note: headcount
             ? `Built for ${headcount} people using ${preset.label} preset.`
             : `${preset.label} preset selected. Ask how many people if needed.`,
+          ...(dietary && { dietary_note: `Customer requires ${dietary}. Bland will confirm availability before ordering.` }),
+          ...(max_budget && total > max_budget && { budget_warning: `Estimated $${total.toFixed(2)} exceeds budget of $${max_budget.toFixed(2)}.` }),
         };
         if (preset.needsHeadcount && !headcount) {
           result.needs_info = "Ask how many people are eating.";
         }
       }
     }
-    // Otherwise show presets for the user to pick
+    // Otherwise return presets — these are user preference options, not restaurant menu items
     else {
-      result.presets = COLD_PRESETS.map((p) => ({
+      result.presets = COLD_PRESETS.filter((p) =>
+        // Only show group presets if headcount or occasion context exists
+        !p.needsHeadcount || !!headcount
+      ).map((p) => ({
         id: p.id,
         label: p.label,
         description: p.description,
         needsHeadcount: p.needsHeadcount,
         estimatedTotal: p.estimateTotal(headcount),
       }));
-      result.note =
-        "Show these as selectable options. Also offer 'Something else' (user types what they want) and 'Take a taste quiz' (ask: crust? protein/veggie? spice level? dietary restrictions? — then use answers as intent_style).";
+      result.presets_note =
+        "These are WHAT-THE-USER-WANTS options — NOT the restaurant's menu. " +
+        "Present as 'What are you in the mood for?' Show individual options first. " +
+        "Only surface group presets (game day, office, kids) if user signals a group context.";
+      if (dietary) result.dietary = dietary;
     }
 
     return {
@@ -273,6 +363,12 @@ Then call check_order_status with the returned call_id to get the result.`,
       .describe(
         "Max $ the AI should agree to. If restaurant quotes more, it hangs up. Default: 130% of estimated total."
       ),
+    dietary_requirements: z
+      .string()
+      .optional()
+      .describe(
+        "Dietary requirement to confirm on the call. E.g. \"gluten-free\", \"vegan\". Bland will ask the restaurant before ordering."
+      ),
   },
 
   async ({
@@ -284,6 +380,7 @@ Then call check_order_status with the returned call_id to get the result.`,
     customer_phone,
     delivery_instructions,
     max_total,
+    dietary_requirements,
   }) => {
     const orderRequest: PlaceOrderRequest = {
       restaurantName: restaurant_name,
@@ -294,6 +391,7 @@ Then call check_order_status with the returned call_id to get the result.`,
       customerPhone: customer_phone,
       deliveryInstructions: delivery_instructions,
       maxTotal: max_total,
+      dietaryRequirements: dietary_requirements,
     };
 
     try {
