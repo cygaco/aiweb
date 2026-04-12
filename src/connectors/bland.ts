@@ -34,6 +34,7 @@ export interface BlandCallStatus {
   duration?: number;
   transcript?: string;
   summary?: string;
+  answeredBy?: "human" | "voicemail" | "unknown";
   parsedResult?: {
     orderConfirmed: boolean;
     totalQuoted: number | null;
@@ -104,6 +105,19 @@ If you reach a voicemail, hang up.`;
 // In-memory store for simulated calls
 const simCalls = new Map<string, { order: PlaceOrderRequest; createdAt: number }>();
 
+/**
+ * Build transcription boost keywords from the order.
+ * Bland's `keywords` param improves STT accuracy for domain-specific terms.
+ * Format: "word:boost" where boost is a multiplier (2 = double weight).
+ */
+function buildKeywords(order: PlaceOrderRequest): string[] {
+  const base = ["pizza", "delivery", "cash", "large", "medium", "small", "extra"];
+  const fromItems = order.items.flatMap((i) =>
+    i.name.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
+  );
+  return [...new Set([...base, ...fromItems])].map((w) => `${w}:2`);
+}
+
 function buildSimTranscript(order: PlaceOrderRequest, total: number, eta: number): string {
   const items = order.items.map((i) => `${i.quantity} ${i.size} ${i.name}`).join(" and ");
   return [
@@ -150,10 +164,20 @@ export async function dispatchCall(
   const body: Record<string, unknown> = {
     phone_number: targetPhone,
     task: prompt,
+    model: "base",
     voice: "maya",
     max_duration: 5,
     record: true,
     wait_for_greeting: true,
+    background_track: "restaurant",
+    answered_by_enabled: true,
+    keywords: buildKeywords(order),
+    metadata: {
+      restaurantName: order.restaurantName,
+      restaurantPhone: order.restaurantPhone,
+      customerName: order.customerName,
+      itemCount: order.items.length,
+    },
   };
   if (process.env.BLAND_FROM_NUMBER) {
     body.from = process.env.BLAND_FROM_NUMBER;
@@ -238,14 +262,17 @@ export async function getCallStatus(
     call_length?: number;
     concatenated_transcript?: string;
     summary?: string;
+    answered_by?: string;
   };
 
+  const answeredBy = mapAnsweredBy(data.answered_by);
   const result: BlandCallStatus = {
     callId,
-    status: mapBlandStatus(data.status),
+    status: answeredBy === "voicemail" ? "failed" : mapBlandStatus(data.status),
     duration: data.call_length,
     transcript: data.concatenated_transcript,
     summary: data.summary,
+    answeredBy,
   };
 
   // If call is completed, parse the transcript for order confirmation
@@ -254,6 +281,13 @@ export async function getCallStatus(
   }
 
   return result;
+}
+
+function mapAnsweredBy(value?: string): "human" | "voicemail" | "unknown" {
+  if (!value) return "unknown";
+  if (value === "human") return "human";
+  if (value.includes("voicemail") || value === "machine") return "voicemail";
+  return "unknown";
 }
 
 function mapBlandStatus(
