@@ -1,0 +1,20 @@
+{
+  "name": "ai-web-wave00",
+  "version": "0.0.1",
+  "description": "The AI Web — Wave 00 Pizza Ordering MCP Server",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.7.0",
+    "@types/node": "^20.0.0"
+  }
+}
