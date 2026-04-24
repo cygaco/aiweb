@@ -101,6 +101,13 @@ export async function POST(req: Request) {
 
           if (response.stop_reason === "end_turn") return;
 
+          if (response.stop_reason === "max_tokens") {
+            write(
+              "\n\n_[response truncated — if an order was in progress, it may still have been placed; check status or try again]_",
+            );
+            return;
+          }
+
           if (response.stop_reason === "tool_use") {
             const toolUses = response.content.filter(
               (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
