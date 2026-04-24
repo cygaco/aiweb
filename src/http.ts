@@ -73,8 +73,6 @@ const app = createMcpExpressApp({
   ...(ALLOWED_HOSTS.length > 0 && { allowedHosts: ALLOWED_HOSTS }),
 });
 
-const server = createServer();
-
 app.get("/healthz", (_req, res) => {
   res.status(200).type("text/plain").send("ok");
 });
@@ -85,6 +83,10 @@ app.post(
   globalLimiter,
   placeOrderLimiter,
   async (req, res) => {
+    // Per-request server + transport: MCP SDK's Protocol.connect() throws on
+    // a second connect() call (shared/protocol.js:219-222). Stateless mode
+    // requires a fresh Protocol instance per connection.
+    const server = createServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
     });
