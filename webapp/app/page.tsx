@@ -9,26 +9,57 @@ export default function Page() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Holds the AbortController for the current in-flight fetch so we can cancel
+  // it on unmount or when a new send() races an existing stream.
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
+
+  // Cancel any in-flight stream when the component unmounts.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
     if (!text || streaming) return;
 
+    // Abort any previous in-flight request before starting a new one.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     const next: Message[] = [...messages, { role: "user", content: text }];
     setMessages(next);
     setInput("");
     setStreaming(true);
 
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: next }),
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      // AbortError means the user navigated away or sent a new message — exit silently.
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setStreaming(false);
+        return;
+      }
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: "Network error — please try again." },
+      ]);
+      setStreaming(false);
+      return;
+    }
 
     if (!res.ok || !res.body) {
       setMessages((m) => [
@@ -43,18 +74,32 @@ export default function Page() {
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      setMessages((m) => {
-        const copy = m.slice();
-        copy[copy.length - 1] = {
-          ...copy[copy.length - 1],
-          content: copy[copy.length - 1].content + chunk,
-        };
-        return copy;
-      });
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        setMessages((m) => {
+          const copy = m.slice();
+          copy[copy.length - 1] = {
+            ...copy[copy.length - 1],
+            content: copy[copy.length - 1].content + chunk,
+          };
+          return copy;
+        });
+      }
+    } catch (err) {
+      // AbortError during streaming — clean exit, no error message shown.
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        setMessages((m) => {
+          const copy = m.slice();
+          copy[copy.length - 1] = {
+            ...copy[copy.length - 1],
+            content: copy[copy.length - 1].content + "\n\n[stream interrupted]",
+          };
+          return copy;
+        });
+      }
     }
     setStreaming(false);
   }
