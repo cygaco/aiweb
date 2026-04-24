@@ -5,16 +5,22 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/server.js",
-    "dev": "tsx src/server.ts"
+    "start": "node dist/stdio.js",
+    "start:http": "node dist/http.js",
+    "dev": "tsx src/stdio.ts",
+    "dev:http": "tsx src/http.ts",
+    "audit": "npm audit --audit-level=high"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^7.5.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
     "tsx": "^4.7.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "@types/express": "^5.0.0"
   }
 }

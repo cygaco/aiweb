@@ -49,35 +49,35 @@ export const TEST_RESTAURANTS: Restaurant[] = [
           name: "Pepperoni",
           description: "Classic pepperoni with mozzarella",
           sizes: [
-            { name: "Small 10\"", price: 8.99 },
-            { name: "Medium 12\"", price: 10.99 },
-            { name: "Large 14\"", price: 12.99 },
+            { name: 'Small 10"', price: 8.99 },
+            { name: 'Medium 12"', price: 10.99 },
+            { name: 'Large 14"', price: 12.99 },
           ],
         },
         {
           name: "Cheese",
           sizes: [
-            { name: "Small 10\"", price: 7.99 },
-            { name: "Medium 12\"", price: 9.99 },
-            { name: "Large 14\"", price: 11.99 },
+            { name: 'Small 10"', price: 7.99 },
+            { name: 'Medium 12"', price: 9.99 },
+            { name: 'Large 14"', price: 11.99 },
           ],
         },
         {
           name: "Meat Lovers",
           description: "Pepperoni, sausage, ham, beef, bacon",
           sizes: [
-            { name: "Small 10\"", price: 10.99 },
-            { name: "Medium 12\"", price: 13.99 },
-            { name: "Large 14\"", price: 15.99 },
+            { name: 'Small 10"', price: 10.99 },
+            { name: 'Medium 12"', price: 13.99 },
+            { name: 'Large 14"', price: 15.99 },
           ],
         },
         {
           name: "Veggie",
           description: "Mushrooms, onions, green peppers, tomatoes, olives",
           sizes: [
-            { name: "Small 10\"", price: 9.99 },
-            { name: "Medium 12\"", price: 12.99 },
-            { name: "Large 14\"", price: 14.99 },
+            { name: 'Small 10"', price: 9.99 },
+            { name: 'Medium 12"', price: 12.99 },
+            { name: 'Large 14"', price: 14.99 },
           ],
         },
       ],
@@ -104,28 +104,31 @@ export const TEST_RESTAURANTS: Restaurant[] = [
         {
           name: "Pepperoni",
           sizes: [
-            { name: "Medium 12\"", price: 10.99 },
-            { name: "Large 14\"", price: 12.99 },
+            { name: 'Medium 12"', price: 10.99 },
+            { name: 'Large 14"', price: 12.99 },
           ],
         },
         {
           name: "Cheese",
           sizes: [
-            { name: "Medium 12\"", price: 9.99 },
-            { name: "Large 14\"", price: 11.99 },
+            { name: 'Medium 12"', price: 9.99 },
+            { name: 'Large 14"', price: 11.99 },
           ],
         },
         {
           name: "Supreme",
           description: "Pepperoni, sausage, mushrooms, onions, green peppers",
           sizes: [
-            { name: "Medium 12\"", price: 14.99 },
-            { name: "Large 14\"", price: 16.99 },
+            { name: 'Medium 12"', price: 14.99 },
+            { name: 'Large 14"', price: 16.99 },
           ],
         },
       ],
       sides: [
-        { name: "Garlic Knots (6pc)", sizes: [{ name: "Regular", price: 5.99 }] },
+        {
+          name: "Garlic Knots (6pc)",
+          sizes: [{ name: "Regular", price: 5.99 }],
+        },
       ],
     },
     hours: "11:00 AM - 10:00 PM",
@@ -137,8 +140,21 @@ export const TEST_RESTAURANTS: Restaurant[] = [
 export const RESTAURANTS: Restaurant[] = [];
 
 // In-memory cache: normalized address → { results, cachedAt }
-const restaurantCache = new Map<string, { results: Restaurant[]; cachedAt: number }>();
+const restaurantCache = new Map<
+  string,
+  { results: Restaurant[]; cachedAt: number }
+>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+export function getRestaurantPhone(id: string): string | null {
+  const test = TEST_RESTAURANTS.find((r) => r.id === id);
+  if (test) return test.phone;
+  for (const entry of restaurantCache.values()) {
+    const found = entry.results.find((r) => r.id === id);
+    if (found) return found.phone;
+  }
+  return null;
+}
 
 /**
  * Find restaurants near an address.
@@ -146,7 +162,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
  * - Runs live Domino's discovery, writes result to cache
  * - Always appends TEST_RESTAURANTS at the end
  */
-export async function findNearbyRestaurants(address: string): Promise<Restaurant[]> {
+export async function findNearbyRestaurants(
+  address: string,
+): Promise<Restaurant[]> {
   const key = address.toLowerCase().trim();
   const cached = restaurantCache.get(key);
 
