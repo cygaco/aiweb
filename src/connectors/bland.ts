@@ -46,7 +46,14 @@ export interface BlandCallStatus {
 }
 
 function sanitizeUserInput(value: string): string {
-  return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  // Strip control characters, then XML-escape structural characters to prevent
+  // tag-escape injection (RT-500: attacker input containing </customer_data>
+  // would otherwise prematurely close the sandbox delimiter).
+  return value
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function wrapCustomerData(field: string, value: string): string {
