@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
+import express from "express";
 import type { NextFunction, Request, Response } from "express";
-import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
+import { hostHeaderValidation } from "@modelcontextprotocol/sdk/server/middleware/hostHeaderValidation.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import rateLimit from "express-rate-limit";
 import { createServer } from "./server.js";
@@ -39,10 +40,15 @@ function requireBearer(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+// keyGenerator uses Authorization header only — requireBearer runs first, so
+// the header is guaranteed to exist and be validated before we reach here.
+// No req.ip fallback → sidesteps express-rate-limit v8's IPv6 validator.
+const bearerKey = (req: Request) => req.headers.authorization ?? "unknown";
+
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
-  keyGenerator: (req) => req.headers.authorization ?? req.ip ?? "unknown",
+  keyGenerator: bearerKey,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "rate limit exceeded" },
@@ -51,7 +57,7 @@ const globalLimiter = rateLimit({
 const placeOrderLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
-  keyGenerator: (req) => req.headers.authorization ?? req.ip ?? "unknown",
+  keyGenerator: bearerKey,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "place_order rate limit exceeded" },
@@ -63,23 +69,35 @@ const placeOrderLimiter = rateLimit({
         (body?.params as Record<string, unknown>)?.name !== "place_order"
       );
     } catch {
-      return true;
+      return false;
     }
   },
 });
 
-const app = createMcpExpressApp({
-  host: HOST,
-  ...(ALLOWED_HOSTS.length > 0 && { allowedHosts: ALLOWED_HOSTS }),
+const app = express();
+app.use(express.json());
+
+// Unauthenticated health probes — Fly internal health check hits these
+// without the public Host header, so they must be registered BEFORE host
+// validation and BEFORE auth.
+app.get("/", (_req, res) => {
+  res.status(200).type("text/plain").send("aiweb-mcp");
 });
 
 app.get("/healthz", (_req, res) => {
   res.status(200).type("text/plain").send("ok");
 });
 
+// Host header validation is scoped to /mcp only — closes DNS rebinding
+// for the authenticated MCP surface without blocking internal health probes.
+const mcpChain: express.RequestHandler[] = [
+  ...(ALLOWED_HOSTS.length > 0 ? [hostHeaderValidation(ALLOWED_HOSTS)] : []),
+  requireBearer,
+];
+
 app.post(
   "/mcp",
-  requireBearer,
+  ...mcpChain,
   globalLimiter,
   placeOrderLimiter,
   async (req, res) => {
@@ -105,7 +123,7 @@ app.post(
   },
 );
 
-app.get("/mcp", requireBearer, (_req, res) => {
+app.get("/mcp", ...mcpChain, (_req, res) => {
   res.status(405).json({ error: "method not allowed in stateless mode" });
 });
 
