@@ -5,6 +5,7 @@ import { hostHeaderValidation } from "@modelcontextprotocol/sdk/server/middlewar
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import rateLimit from "express-rate-limit";
 import { createServer } from "./server.js";
+import { initProfileStore } from "./lib/profile-store.js";
 
 const PORT = parseInt(process.env.PORT ?? "8080", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -18,6 +19,13 @@ if (!WARP_MCP_KEY) {
   console.error("FATAL: WARP_MCP_KEY not set. Refusing to start.");
   process.exit(1);
 }
+
+if (!process.env.PROFILE_ENCRYPTION_SECRET) {
+  console.error("FATAL: PROFILE_ENCRYPTION_SECRET not set. Refusing to start.");
+  process.exit(1);
+}
+
+initProfileStore();
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -40,10 +48,13 @@ function requireBearer(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-// keyGenerator uses Authorization header only — requireBearer runs first, so
-// the header is guaranteed to exist and be validated before we reach here.
-// No req.ip fallback → sidesteps express-rate-limit v8's IPv6 validator.
-const bearerKey = (req: Request) => req.headers.authorization ?? "unknown";
+// keyGenerator hashes the Authorization header so the live bearer token is
+// never held verbatim in the rate-limiter's in-memory key store.
+const bearerKey = (req: Request) =>
+  crypto
+    .createHash("sha256")
+    .update(req.headers.authorization ?? "unknown")
+    .digest("hex");
 
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -104,7 +115,9 @@ app.post(
     // Per-request server + transport: MCP SDK's Protocol.connect() throws on
     // a second connect() call (shared/protocol.js:219-222). Stateless mode
     // requires a fresh Protocol instance per connection.
-    const server = createServer();
+    const token = (req.headers.authorization ?? "").slice("Bearer ".length);
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const server = createServer(tokenHash);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
     });

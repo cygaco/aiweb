@@ -2,6 +2,30 @@ node_modules/
 dist/
 .env
 *.tgz
+*.bak
 .DS_Store
 Thumbs.db
 .claude/
+
+# Local SQLite profile store
+profiles.db
+profiles.db-journal
+profiles.db-wal
+profiles.db-shm
+
+# WarpOS install-time backup (local restore point)
+.warpos-backup/
+
+# >>> WarpOS runtime (managed, do not edit) >>>
+.claude/runtime/
+.claude/content/
+.claude/project/events/
+.claude/project/memory/
+.claude/agents/*/.workspace/
+.claude/agents/**/events.jsonl
+.claude/.session-id
+.claude/.session-prompts.log
+.claude/.session-tracking.jsonl
+.claude/.store-lock
+# <<< WarpOS runtime <<<
+.fly-secrets.tmp
