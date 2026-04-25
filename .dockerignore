@@ -1,0 +1,16 @@
+node_modules
+dist
+.git
+.github
+.env
+.env.local
+*.log
+.claude
+.warpos-backup
+.warp
+webapp
+WARPOS_NEXT_STEPS.md
+AGENTS.md
+README.md
+CLAUDE.md
+scripts

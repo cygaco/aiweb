@@ -1,34 +1,45 @@
-app = "aiweb-mcp"
-primary_region = "sjc"
+# fly.toml app configuration file generated for aiweb-mcp on 2026-04-23T19:09:22-07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'aiweb-mcp'
+primary_region = 'sjc'
 
 [build]
 
 [env]
-  NODE_ENV = "production"
-  HOST = "0.0.0.0"
-  PORT = "8080"
-  ALLOWED_HOSTS = "aiweb-mcp.fly.dev"
+  ALLOWED_HOSTS = 'aiweb-mcp.fly.dev'
+  DATABASE_PATH = '/data/profiles.db'
+  HOST = '0.0.0.0'
+  NODE_ENV = 'production'
+  PORT = '8080'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
   [http_service.concurrency]
-    type = "requests"
+    type = 'requests'
     hard_limit = 25
     soft_limit = 20
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/healthz"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/healthz'
 
 [[vm]]
-  memory = "512mb"
-  cpu_kind = "shared"
+  memory = '512mb'
+  cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 512
+
+[[mounts]]
+  source = "aiweb_data"
+  destination = "/data"
