@@ -13,7 +13,7 @@ export interface UserProfile {
 
 type ProfileData = Omit<UserProfile, "updated_at">;
 
-const E164_REGEX = /^\+[1-9]\d{7,14}$/;
+export const E164_REGEX = /^\+[1-9]\d{7,14}$/;
 
 const PROFILE_FIELDS: ReadonlyArray<keyof ProfileData> = [
   "name",
@@ -47,7 +47,7 @@ function getDb(): Database.Database {
   return db;
 }
 
-const HEX_64 = /^[0-9a-f]{64}$/i;
+export const HEX_64 = /^[0-9a-f]{64}$/i;
 
 function deriveKey(tokenHash: string): Buffer {
   const secret = process.env.PROFILE_ENCRYPTION_SECRET;
@@ -113,7 +113,10 @@ export function getProfile(tokenHash: string): UserProfile {
     const data = decryptBlob(row.encrypted_blob, tokenHash);
     return { ...data, updated_at: row.updated_at };
   } catch (err) {
-    console.error("profile-store: decryption failed:", err);
+    console.error(
+      "profile-store: decryption failed:",
+      err instanceof Error ? err.message : err,
+    );
     return { updated_at: new Date().toISOString() };
   }
 }
@@ -131,35 +134,67 @@ export function updateProfile(
   }
 
   const database = getDb();
-  const existing = getProfile(tokenHash);
-  const updated_at = new Date().toISOString();
 
-  // Build merged record from existing data
-  const acc: Record<string, string | undefined> = {};
-  for (const field of PROFILE_FIELDS) {
-    const val = existing[field];
-    if (val !== undefined) acc[field] = val;
-  }
+  const txn = database.transaction(
+    (hash: string, updates: Partial<UserProfile>): UserProfile => {
+      // Read current state inside the transaction
+      const row = database
+        .prepare(
+          "SELECT encrypted_blob, updated_at FROM profiles WHERE token_hash = ?",
+        )
+        .get(hash) as
+        | { encrypted_blob: Buffer; updated_at: string }
+        | undefined;
 
-  // Apply partial updates — empty string clears a field, undefined skips it
-  for (const field of PROFILE_FIELDS) {
-    if (!(field in partial)) continue;
-    const val = partial[field];
-    if (val === "") {
-      delete acc[field];
-    } else if (val !== undefined) {
-      acc[field] = val;
-    }
-  }
+      let existing: UserProfile;
+      if (!row) {
+        existing = { updated_at: new Date().toISOString() };
+      } else {
+        try {
+          const data = decryptBlob(row.encrypted_blob, hash);
+          existing = { ...data, updated_at: row.updated_at };
+        } catch (err) {
+          // Decryption failure: return empty profile (same behavior as getProfile)
+          console.error(
+            "profile-store: decryption failed:",
+            err instanceof Error ? err.message : err,
+          );
+          existing = { updated_at: new Date().toISOString() };
+        }
+      }
 
-  const dataToStore = acc as unknown as ProfileData;
-  const blob = encryptBlob(dataToStore, tokenHash);
+      const updated_at = new Date().toISOString();
 
-  database
-    .prepare(
-      "INSERT OR REPLACE INTO profiles (token_hash, encrypted_blob, updated_at) VALUES (?, ?, ?)",
-    )
-    .run(tokenHash, blob, updated_at);
+      // Build merged record from existing data
+      const acc: Record<string, string | undefined> = {};
+      for (const field of PROFILE_FIELDS) {
+        const val = existing[field];
+        if (val !== undefined) acc[field] = val;
+      }
 
-  return { ...dataToStore, updated_at };
+      // Apply partial updates — empty string clears a field, undefined skips it
+      for (const field of PROFILE_FIELDS) {
+        if (!(field in updates)) continue;
+        const val = updates[field];
+        if (val === "") {
+          delete acc[field];
+        } else if (val !== undefined) {
+          acc[field] = val;
+        }
+      }
+
+      const dataToStore = acc as unknown as ProfileData;
+      const blob = encryptBlob(dataToStore, hash);
+
+      database
+        .prepare(
+          "INSERT OR REPLACE INTO profiles (token_hash, encrypted_blob, updated_at) VALUES (?, ?, ?)",
+        )
+        .run(hash, blob, updated_at);
+
+      return { ...dataToStore, updated_at };
+    },
+  );
+
+  return txn(tokenHash, partial);
 }

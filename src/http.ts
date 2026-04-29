@@ -5,7 +5,7 @@ import { hostHeaderValidation } from "@modelcontextprotocol/sdk/server/middlewar
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import rateLimit from "express-rate-limit";
 import { createServer } from "./server.js";
-import { initProfileStore } from "./lib/profile-store.js";
+import { initProfileStore, HEX_64 } from "./lib/profile-store.js";
 
 const PORT = parseInt(process.env.PORT ?? "8080", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -22,6 +22,13 @@ if (!WARP_MCP_KEY) {
 
 if (!process.env.PROFILE_ENCRYPTION_SECRET) {
   console.error("FATAL: PROFILE_ENCRYPTION_SECRET not set. Refusing to start.");
+  process.exit(1);
+}
+
+if (!HEX_64.test(process.env.PROFILE_ENCRYPTION_SECRET)) {
+  console.error(
+    "FATAL: PROFILE_ENCRYPTION_SECRET must be 64 hex chars (32 bytes). Generate with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+  );
   process.exit(1);
 }
 

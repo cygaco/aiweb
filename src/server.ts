@@ -27,7 +27,7 @@ import {
   type OrderItem,
   type PlaceOrderRequest,
 } from "./connectors/bland.js";
-import { getProfile, updateProfile } from "./lib/profile-store.js";
+import { getProfile, updateProfile, E164_REGEX } from "./lib/profile-store.js";
 
 export function createServer(tokenHash?: string): McpServer {
   const server = new McpServer({
@@ -698,7 +698,6 @@ Then call check_order_status with the returned call_id to get the result.`,
           ],
         };
       }
-      const E164_REGEX = /^\+[1-9]\d{7,14}$/;
       if (!E164_REGEX.test(resolvedRestaurantPhone)) {
         return {
           content: [

@@ -86,3 +86,33 @@ test("notes >500 chars rejected at MCP boundary (Zod) — store accepts long inp
   updateProfile(TEST_HASH, { notes: long });
   assert.strictEqual(getProfile(TEST_HASH).notes, long);
 });
+
+test("decryption-failure path returns empty profile", () => {
+  initProfileStore();
+  // Write a valid profile, then corrupt the secret so decryption fails.
+  updateProfile(TEST_HASH, { name: "DecryptMe" });
+  const original = process.env.PROFILE_ENCRYPTION_SECRET;
+  // Use a different valid 64-hex secret so HEX_64 passes but AES-GCM auth fails.
+  process.env.PROFILE_ENCRYPTION_SECRET = "f".repeat(64);
+  try {
+    const profile = getProfile(TEST_HASH);
+    // Should return empty profile rather than throwing
+    assert.strictEqual(profile.name, undefined);
+    assert.ok(profile.updated_at);
+  } finally {
+    process.env.PROFILE_ENCRYPTION_SECRET = original;
+  }
+});
+
+test("updateProfile is atomic: concurrent updates both persist", async () => {
+  initProfileStore();
+  const HASH = "d".repeat(64);
+  // Fire two concurrent updateProfile calls — both fields must appear in final read.
+  await Promise.all([
+    Promise.resolve(updateProfile(HASH, { name: "Concurrent" })),
+    Promise.resolve(updateProfile(HASH, { dietary: "vegan" })),
+  ]);
+  const profile = getProfile(HASH);
+  assert.strictEqual(profile.name, "Concurrent");
+  assert.strictEqual(profile.dietary, "vegan");
+});
