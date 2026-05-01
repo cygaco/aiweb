@@ -71,7 +71,7 @@ function getFileOwnership() {
   return loadConfig().fileOwnership?.features || {};
 }
 
-/** @returns {{builder: string, evaluator: string, compliance: string, redteam: string, fixer: string, qa: string, auditor: string}} */
+/** @returns {{builder: string, reviewer: string, compliance: string, redteam: string, fixer: string, qa: string, learner: string}} */
 function getProviders() {
   return loadConfig().providers || {};
 }

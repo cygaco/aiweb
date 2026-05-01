@@ -72,7 +72,8 @@ process.stdin.on("end", () => {
         "lead",
         "alpha",
         "gamma",
-        "evaluator",
+        "reviewer",
+        "evaluator", // legacy alias
         "redteam",
         "security",
         "fixer",

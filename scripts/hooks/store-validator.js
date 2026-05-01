@@ -115,6 +115,7 @@ function extractGateChecks(store) {
     for (const entry of store.runLog.entries) {
       if (
         entry.type === "GATE_CHECK" ||
+        entry.reviewer ||
         entry.evaluator ||
         entry.security ||
         entry.compliance
@@ -145,7 +146,13 @@ function validateGateCheckValues(store) {
   if (!store || !store.runLog || !store.runLog.entries) return [];
   const issues = [];
   for (const entry of store.runLog.entries) {
-    if (!entry.evaluator && !entry.security && !entry.compliance) continue;
+    if (
+      !entry.reviewer &&
+      !entry.evaluator &&
+      !entry.security &&
+      !entry.compliance
+    )
+      continue;
     const result = validateGateCheck(entry);
     issues.push(...result.issues);
   }
@@ -263,15 +270,15 @@ process.stdin.on("end", () => {
       const featureStatuses = extractFeatureStatuses(newStore);
       for (const [name, status] of Object.entries(featureStatuses)) {
         if (status === "eval_pass") {
-          const hasGate = (newStore.runLog?.entries || []).some(
-            (e) =>
-              e.feature === name &&
-              e.evaluator &&
-              e.evaluator.startsWith("pass"),
-          );
+          // Accept both new `reviewer` field and legacy `evaluator` field.
+          const hasGate = (newStore.runLog?.entries || []).some((e) => {
+            if (e.feature !== name) return false;
+            const v = e.reviewer || e.evaluator;
+            return v && v.startsWith("pass");
+          });
           if (!hasGate) {
             issues.push(
-              `Feature "${name}" is eval_pass but no GATE_CHECK with evaluator:"pass*" found`,
+              `Feature "${name}" is eval_pass but no GATE_CHECK with reviewer:"pass*" found`,
             );
           }
         }
@@ -281,19 +288,20 @@ process.stdin.on("end", () => {
       for (const [name, status] of Object.entries(featureStatuses)) {
         if (status === "done") {
           const gate = (newStore.runLog?.entries || []).find(
-            (e) => e.feature === name && e.evaluator,
+            (e) => e.feature === name && (e.reviewer || e.evaluator),
           );
           if (gate) {
             const missing = [];
+            const reviewerVal = gate.reviewer || gate.evaluator;
             if (
-              !gate.evaluator ||
+              !reviewerVal ||
               !(
-                gate.evaluator.startsWith("pass") ||
-                gate.evaluator.startsWith("done") ||
-                gate.evaluator.startsWith("impossible")
+                reviewerVal.startsWith("pass") ||
+                reviewerVal.startsWith("done") ||
+                reviewerVal.startsWith("impossible")
               )
             )
-              missing.push("evaluator");
+              missing.push("reviewer");
             if (
               !gate.security ||
               !(
@@ -408,15 +416,25 @@ process.stdin.on("end", () => {
             for (const entryStr of newEntries) {
               const entry = JSON.parse(entryStr);
               const feature = entry.feature || "";
-              for (const role of ["evaluator", "security", "compliance"]) {
-                if (!entry[role] || !isPassingStatus(entry[role])) continue;
-                // Check that an agent with this role returned a result for this feature
+              // Reviewer field renamed 2026-04-29 (was `evaluator`); read both
+              // and look up the dispatched agent under either name.
+              for (const role of ["reviewer", "security", "compliance"]) {
+                const fieldVal =
+                  role === "reviewer"
+                    ? entry.reviewer || entry.evaluator
+                    : entry[role];
+                if (!fieldVal || !isPassingStatus(fieldVal)) continue;
+                const dispatchedRoles =
+                  role === "reviewer" ? ["reviewer", "evaluator"] : [role];
                 const hasResult = hashValues.some(
-                  (h) => h.role === role && h.feature === feature && h.success,
+                  (h) =>
+                    dispatchedRoles.includes(h.role) &&
+                    h.feature === feature &&
+                    h.success,
                 );
                 if (!hasResult) {
                   issues.push(
-                    `GAP-401: GATE_CHECK ${role}="${entry[role]}" for "${feature}" has no matching agent result hash. ` +
+                    `GAP-401: GATE_CHECK ${role}="${fieldVal}" for "${feature}" has no matching agent result hash. ` +
                       `Was the ${role} actually dispatched and did it return?`,
                   );
                 }

@@ -383,10 +383,37 @@ process.stdin.on("end", () => {
       // Only check for retro if session had meaningful activity
       if (toolCallCount >= 10) {
         let hasRetro = false;
-        const retroDirs = [
+        // Retro path resolution: prefer manifest.projectPaths.retro (canonical
+        // per-project path), fall back to common conventions. The 2026-04-29
+        // /fix:deep RT-016 found this hook was looking in dirs that didn't
+        // exist for this project, producing 23/23 false no-retro-created.
+        const retroDirs = [];
+        try {
+          const manifestPath = path.join(claudeDir, "manifest.json");
+          if (fs.existsSync(manifestPath)) {
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+            const retroPath =
+              manifest.projectPaths && manifest.projectPaths.retro;
+            if (retroPath) {
+              retroDirs.push(path.join(cwd, retroPath));
+            }
+          }
+        } catch {
+          /* manifest read failed — fall back to convention paths below */
+        }
+        // Fallback conventions (older project layouts)
+        retroDirs.push(
+          path.join(
+            cwd,
+            ".claude",
+            "agents",
+            "02-oneshot",
+            ".system",
+            "retros",
+          ),
           path.join(cwd, "docs", "09-agentic-system", "retro"),
           path.join(cwd, ".claude", "retros"),
-        ];
+        );
 
         for (const retroDir of retroDirs) {
           if (fs.existsSync(retroDir)) {
@@ -432,6 +459,41 @@ process.stdin.on("end", () => {
       }
     } catch {
       /* retro check is optional */
+    }
+
+    // Pending spec-drift advisory (BACKLOG.md run-12 #6 + run-13 reconciler).
+    // Reads requirements-staged.jsonl via the reconciler that joins envelopes
+    // with status_update audit records — gives true-pending count, not the
+    // stale envelope.status read.
+    try {
+      const { reconcile } = require("../lib/staged-drift-reconciler");
+      const stagedFile = path.join(
+        cwd,
+        ".claude/project/events/requirements-staged.jsonl",
+      );
+      const r = reconcile(stagedFile);
+      if (r.pending.length > 0) {
+        lines.push("## Pending Spec Drift");
+        lines.push("");
+        lines.push(
+          `**${r.pending.length} drift entr${r.pending.length === 1 ? "y" : "ies"} pending review.** Run \`/check:requirements review\` before next session to flush.`,
+        );
+        const features = Object.keys(r.byFeature).join(", ");
+        if (features) lines.push(`Features: ${features}`);
+        lines.push("");
+        process.stderr.write(
+          `\x1b[33m[session-stop] ${r.pending.length} pending drift entr${r.pending.length === 1 ? "y" : "ies"} (features: ${features || "?"}). Run /check:requirements review.\x1b[0m\n`,
+        );
+        logEvent(
+          "warn",
+          "system",
+          "pending-spec-drift",
+          "",
+          `${r.pending.length} pending drift entries (${features})`,
+        );
+      }
+    } catch {
+      /* reconciler optional — never block session stop */
     }
 
     // Write handoff — but preserve a manual handoff if its preserve marker is set

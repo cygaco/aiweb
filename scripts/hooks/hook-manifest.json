@@ -1,0 +1,685 @@
+{
+  "$schema": "warpos/hook-manifest/v1",
+  "generatedFrom": ".claude/settings.json",
+  "updatedAt": "2026-05-01T04:46:50.995Z",
+  "hooks": {
+    "session-start.js": {
+      "script": "scripts/hooks/session-start.js",
+      "events": [
+        {
+          "hookEvent": "SessionStart",
+          "matcher": ""
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/session-start.json"
+      ]
+    },
+    "merge-guard.js": {
+      "script": "scripts/hooks/merge-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Bash"
+        },
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Bash"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/bash-safe.json"
+      ]
+    },
+    "memory-guard.js": {
+      "script": "scripts/hooks/memory-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Bash"
+        },
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        },
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/bash-safe.json"
+      ]
+    },
+    "framework-manifest-guard.js": {
+      "script": "scripts/hooks/framework-manifest-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Bash"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/bash-safe.json"
+      ]
+    },
+    "path-registry-guard.js": {
+      "script": "scripts/hooks/path-registry-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Bash"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/bash-safe.json"
+      ]
+    },
+    "secret-guard.js": {
+      "script": "scripts/hooks/secret-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/edit-text.json"
+      ]
+    },
+    "foundation-guard.js": {
+      "script": "scripts/hooks/foundation-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/edit-text.json"
+      ]
+    },
+    "ownership-guard.js": {
+      "script": "scripts/hooks/ownership-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/edit-text.json"
+      ]
+    },
+    "store-validator.js": {
+      "script": "scripts/hooks/store-validator.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        },
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/edit-text.json"
+      ]
+    },
+    "path-guard.js": {
+      "script": "scripts/hooks/path-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/edit-text.json"
+      ]
+    },
+    "step-registry-guard.js": {
+      "script": "scripts/hooks/step-registry-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/edit-text.json"
+      ]
+    },
+    "extension-edit-guard.js": {
+      "script": "scripts/hooks/extension-edit-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/edit-text.json"
+      ]
+    },
+    "dependency-admission-guard.js": {
+      "script": "scripts/hooks/dependency-admission-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/edit-text.json"
+      ]
+    },
+    "self-mod-governance.js": {
+      "script": "scripts/hooks/self-mod-governance.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/edit-text.json"
+      ]
+    },
+    "build-transaction-boundary.js": {
+      "script": "scripts/hooks/build-transaction-boundary.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Agent"
+        },
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Agent"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/agent-scoped.json"
+      ]
+    },
+    "scope-contract-guard.js": {
+      "script": "scripts/hooks/scope-contract-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Agent"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/agent-scoped.json"
+      ]
+    },
+    "team-guard.js": {
+      "script": "scripts/hooks/team-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Agent"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/agent-scoped.json"
+      ]
+    },
+    "worktree-preflight.js": {
+      "script": "scripts/hooks/worktree-preflight.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Agent"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/worktree-preflight/non-builder-agent.json"
+      ]
+    },
+    "gate-check.js": {
+      "script": "scripts/hooks/gate-check.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Agent"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/agent-scoped.json"
+      ]
+    },
+    "gauntlet-gate.js": {
+      "script": "scripts/hooks/gauntlet-gate.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Agent"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/agent-scoped.json"
+      ]
+    },
+    "cycle-enforcer.js": {
+      "script": "scripts/hooks/cycle-enforcer.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Agent"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/agent-scoped.json"
+      ]
+    },
+    "prompt-validator.js": {
+      "script": "scripts/hooks/prompt-validator.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Agent"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/agent-scoped.json"
+      ]
+    },
+    "boss-boundary.js": {
+      "script": "scripts/hooks/boss-boundary.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Read|Grep|Glob"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/read.json"
+      ]
+    },
+    "excalidraw-guard.js": {
+      "script": "scripts/hooks/excalidraw-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "mcp__claude_ai_Excalidraw__*"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/noop.json"
+      ]
+    },
+    "beta-gate.js": {
+      "script": "scripts/hooks/beta-gate.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "AskUserQuestion"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/noop.json"
+      ]
+    },
+    "session-tracker.js": {
+      "script": "scripts/hooks/session-tracker.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": ""
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "response-size-guard.js": {
+      "script": "scripts/hooks/response-size-guard.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Agent"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [
+        "oversized build-chain response warnings"
+      ],
+      "testFixtures": [
+        "fixtures/hooks/response-size-guard/oversized-agent.json"
+      ]
+    },
+    "edit-watcher.js": {
+      "script": "scripts/hooks/edit-watcher.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "event-contract.js": {
+      "script": "scripts/hooks/event-contract.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [
+        "orphan jz:* listener/dispatcher warnings"
+      ],
+      "testFixtures": [
+        "fixtures/hooks/event-contract/orphan-event.json"
+      ]
+    },
+    "format.js": {
+      "script": "scripts/hooks/format.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "lint.js": {
+      "script": "scripts/hooks/lint.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "typecheck.js": {
+      "script": "scripts/hooks/typecheck.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "systems-sync.js": {
+      "script": "scripts/hooks/systems-sync.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "save-session-lint.js": {
+      "script": "scripts/hooks/save-session-lint.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "template-fillability.js": {
+      "script": "scripts/hooks/template-fillability.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "learning-validator.js": {
+      "script": "scripts/hooks/learning-validator.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "ui-lint.js": {
+      "script": "scripts/hooks/ui-lint.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "step-hardcode-suggester.js": {
+      "script": "scripts/hooks/step-hardcode-suggester.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "region-marker-guard.js": {
+      "script": "scripts/hooks/region-marker-guard.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "spec-test-staleness.js": {
+      "script": "scripts/hooks/spec-test-staleness.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ]
+    },
+    "smart-context.js": {
+      "script": "scripts/hooks/smart-context.js",
+      "events": [
+        {
+          "hookEvent": "UserPromptSubmit",
+          "matcher": ""
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/user-prompt.json"
+      ]
+    },
+    "prompt-logger.js": {
+      "script": "scripts/hooks/prompt-logger.js",
+      "events": [
+        {
+          "hookEvent": "UserPromptSubmit",
+          "matcher": ""
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/user-prompt.json"
+      ]
+    },
+    "compact-saver.js": {
+      "script": "scripts/hooks/compact-saver.js",
+      "events": [
+        {
+          "hookEvent": "PostCompact",
+          "matcher": ""
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/noop.json"
+      ]
+    },
+    "retro-presence-check.js": {
+      "script": "scripts/hooks/retro-presence-check.js",
+      "events": [
+        {
+          "hookEvent": "Stop",
+          "matcher": ""
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [
+        "missing run retro warning/enforcement"
+      ],
+      "testFixtures": [
+        "fixtures/hooks/retro-presence-check/stop.json"
+      ]
+    },
+    "session-stop.js": {
+      "script": "scripts/hooks/session-stop.js",
+      "events": [
+        {
+          "hookEvent": "Stop",
+          "matcher": ""
+        },
+        {
+          "hookEvent": "SessionEnd",
+          "matcher": ""
+        },
+        {
+          "hookEvent": "StopFailure",
+          "matcher": ""
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/stop.json"
+      ]
+    },
+    "create-worktree-from-head.js": {
+      "script": "scripts/hooks/create-worktree-from-head.js",
+      "events": [
+        {
+          "hookEvent": "WorktreeCreate",
+          "matcher": ""
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/noop.json"
+      ]
+    }
+  }
+}

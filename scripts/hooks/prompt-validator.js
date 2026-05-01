@@ -8,14 +8,49 @@
  * - Evaluator prompts reference golden fixtures
  * - All dispatches are logged to System Events
  *
+ * Role resolution: prefer explicit tool_input.subagent_type when present;
+ * fall back to detectRole(prompt) text inference. This prevents false
+ * positives where a fixer/compliance prompt that happens to start with
+ * `feature: <name>` gets misclassified as builder and wrongly blocked.
+ *
  * Closes: GAP-501 through GAP-506 (6 gaps).
  */
 
 const { logEvent } = require("./lib/logger");
 
+// Known subagent_type values that should map directly to a role.
+// Everything outside this set falls through to detectRole(prompt).
+const { normalizeRole } = require("./lib/role-aliases");
+
+const KNOWN_SUBAGENT_TYPES = new Set([
+  "builder",
+  "fixer",
+  "reviewer",
+  "evaluator", // legacy — normalized to reviewer downstream
+  "compliance",
+  "qa",
+  "redteam",
+  "security",
+  "learner",
+  "auditor", // legacy — normalized to learner downstream
+]);
+
+function resolveRole(subagentType, prompt) {
+  // If subagent_type is set, trust it. Build-chain types pass through the
+  // alias normalizer (evaluator→reviewer, auditor→learner). Research types
+  // (Explore, Plan, general-purpose) and any future agent type pass through
+  // unchanged. Only fall back to detectRole when subagent_type is absent.
+  // Fixed 2026-04-29 (RT-016) — prior code restricted to KNOWN_SUBAGENT_TYPES,
+  // causing 27+ research-agent dispatches in 3d to log as dispatch-unknown.
+  if (subagentType) {
+    return normalizeRole(subagentType);
+  }
+  return detectRole(prompt);
+}
+
 function detectRole(prompt) {
   const head = prompt.slice(0, 500).toLowerCase();
-  if (/\bevaluator\b/.test(head)) return "evaluator";
+  if (/\b(reviewer|evaluator)\b/.test(head)) return "reviewer";
   if (/\bsecurity\b/.test(head) && /\bscan\b|\breview\b|\baudit\b/.test(head))
     return "security";
   if (/\bcompliance\b/.test(head)) return "compliance";
@@ -24,8 +59,11 @@ function detectRole(prompt) {
     /\borchestrat\b|\bscan\b|\banalyz\b|\bpersona\b/.test(head)
   )
     return "qa";
-  if (/\bauditor\b/.test(head) && /\banalyz\b|\bpattern\b|\brule\b/.test(head))
-    return "auditor";
+  if (
+    /\b(learner|auditor)\b/.test(head) &&
+    /\banalyz\b|\bpattern\b|\brule\b/.test(head)
+  )
+    return "learner";
   if (/\bfix\b/.test(head) && /\bagent\b|\bbrief\b/.test(head)) return "fixer";
   if (/\bfeature:\s*\S+/.test(prompt.slice(0, 500))) return "builder";
   if (/\bbuild\b/.test(head) && /\bimplement\b|\bcreate\b|\bgut\b/.test(head))
@@ -49,12 +87,14 @@ process.stdin.on("end", () => {
       process.exit(0);
     }
 
-    const prompt = (event.tool_input || {}).prompt || "";
+    const toolInput = event.tool_input || {};
+    const prompt = toolInput.prompt || "";
     if (!prompt) {
       process.exit(0);
     }
 
-    const role = detectRole(prompt);
+    const subagentType = toolInput.subagent_type || "";
+    const role = resolveRole(subagentType, prompt);
     const feature = extractFeature(prompt);
     const warnings = [];
     const blocks = [];
@@ -91,10 +131,10 @@ process.stdin.on("end", () => {
       }
     }
 
-    // Evaluator checks
-    if (role === "evaluator") {
+    // Reviewer checks (canonical name; "evaluator" normalizes to "reviewer")
+    if (role === "reviewer") {
       if (!/golden|fixture|expected.*output|step-expectations/i.test(prompt)) {
-        warnings.push("Evaluator prompt missing golden fixture reference");
+        warnings.push("Reviewer prompt missing golden fixture reference");
       }
     }
 

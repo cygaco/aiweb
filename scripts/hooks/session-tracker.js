@@ -165,7 +165,7 @@ try {
         // Detect role from the prompt
         const prompt = (toolInput.prompt || "").slice(0, 500).toLowerCase();
         let role = "unknown";
-        if (/evaluator/.test(prompt)) role = "evaluator";
+        if (/\b(evaluator|reviewer)\b/.test(prompt)) role = "reviewer";
         else if (/security/.test(prompt) && /scan|review|audit/.test(prompt))
           role = "security";
         else if (/compliance/.test(prompt)) role = "compliance";

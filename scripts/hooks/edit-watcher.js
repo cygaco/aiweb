@@ -15,7 +15,7 @@
  *   3. DRIFT DETECTION — Checks if the edit introduced values that conflict
  *      with FIELD_REGISTRY.json (the canonical value definitions).
  *
- *   4. FILE DISCOVERY — If a new file type appears in docs/05-features/,
+ *   4. FILE DISCOVERY — If a new file type appears in requirements/05-features/,
  *      auto-registers it in SPEC_GRAPH.json so future edits propagate.
  *
  * Only fires for files matching SPEC_PATTERNS (docs, hooks, key lib files,
@@ -231,7 +231,7 @@ function getGroupId(feature) {
 const SPEC_FILE_NAMES = ["STORIES.md", "INPUTS.md", "PRD.md", "COPY.md"];
 const FEATURES_DIR = manifest.features_dir
   ? path.join(PROJECT, manifest.features_dir)
-  : path.join(PROJECT, "docs", "05-features");
+  : path.join(PROJECT, "requirements", "05-features");
 
 // Cache spec file contents by path+mtime to avoid re-reading
 const _specCache = new Map();
@@ -312,7 +312,7 @@ function stageRequirementDrift(rel, codeFeature, oldStr, newStr, how, why) {
   const specFiles = SPEC_FILE_NAMES.map((name) => ({
     name,
     path: path.join(featureDir, name),
-    rel: `docs/05-features/${codeFeature}/${name}`,
+    rel: `requirements/05-features/${codeFeature}/${name}`,
   })).filter((s) => fs.existsSync(s.path));
 
   if (specFiles.length === 0) return;
@@ -458,10 +458,61 @@ function extractStoryId(line) {
   return m ? m[1] : null;
 }
 
+// Phase 3C — emit a structured RCO with riskClass, impactedRequirements,
+// downstream features, recommended updates. Engine lives in
+// `scripts/requirements/`. Lazy-required so the hook still works on installs
+// where the engine hasn't shipped yet.
+function stageStructuredRCO(rel, codeFeature, oldStr, newStr, how, why) {
+  let stageRCO, markStale;
+  try {
+    ({ stageRCO } = require("../requirements/stage-rco"));
+    ({ markStale } = require("../requirements/status"));
+  } catch {
+    return; // engine not available — skip silently
+  }
+  const summary = `${how || "edit"} → ${rel}`.slice(0, 200);
+  const diffSummary = [
+    oldStr && newStr ? "edit" : oldStr ? "remove" : "add",
+    rel.match(/\.tsx?$/) ? "code" : rel.match(/\.md$/) ? "spec" : "other",
+    /\bauth|token|cookie|jwt|oauth|password|session\b/i.test(why || rel)
+      ? "auth-touch"
+      : "",
+    /\brocket|payment|stripe|charge|tier\b/i.test(why || rel)
+      ? "payment-touch"
+      : "",
+  ]
+    .filter(Boolean)
+    .join("/");
+
+  // Cap diff text at 32KB so we forward enough signal to the classifier
+  // without writing huge pastes to the JSONL log. classify-drift is the
+  // primary consumer; gate.js doesn't read these fields.
+  const cap = (s) => (typeof s === "string" ? s.slice(0, 32 * 1024) : "");
+  const rco = stageRCO({
+    trigger: "edit_watcher",
+    sourceFile: rel,
+    changedFiles: [rel.replace(/\\/g, "/")],
+    summary,
+    diffSummary,
+    reason: why || how || "edit",
+    agentSummary: codeFeature ? `feature=${codeFeature}` : "",
+    oldString: cap(oldStr),
+    newString: cap(newStr),
+  });
+
+  if (rco && rco.impactedRequirements && rco.impactedRequirements.length > 0) {
+    try {
+      markStale(rco.impactedRequirements, rco.id);
+    } catch {
+      /* non-critical */
+    }
+  }
+}
+
 // ── Feature/Direction Detection ──────────────────────────
 
 function extractFeature(rel) {
-  const m = rel.match(/^docs\/05-features\/([^/]+)\//);
+  const m = rel.match(/^requirements\/05-features\/([^/]+)\//);
   return m ? m[1] : null;
 }
 
@@ -515,7 +566,7 @@ function resolveConsumers(rel, graph) {
       if (new RegExp("^" + fromPat + "$").test(rel)) {
         for (const to of edge.to) {
           if (edge.scope === "same-feature" && feature) {
-            consumers.push(`docs/05-features/${feature}/${to}`);
+            consumers.push(`requirements/05-features/${feature}/${to}`);
           } else {
             consumers.push(to);
           }
@@ -537,7 +588,7 @@ function resolveConsumers(rel, graph) {
             consumers.push(to.replace("*", feature));
           } else if (to.includes("*")) {
             // Expand wildcard for all features
-            const scanDir = path.join(PROJECT, "docs", "05-features");
+            const scanDir = FEATURES_DIR;
             try {
               const features = fs
                 .readdirSync(scanDir, { withFileTypes: true })
@@ -632,7 +683,30 @@ try {
     const rel = relPath(filePath);
     const isSpec = isSpecFile(rel);
     const isCode = isCodeFile(rel);
-    if (!isSpec && !isCode) process.exit(0);
+
+    // Fix-forward (codex Phase 3 review 2026-04-30): SPEC/CODE patterns
+    // exclude `src/lib/`, `services/backend/`, `packages/shared/`, and other
+    // mapped-but-unpatterned paths. Before bailing, check whether the file is
+    // in the requirements graph's file index — if so, fire only the
+    // structured-RCO path and exit. This closes the gap where high-risk
+    // mapped code (auth, storage, contracts) silently exits without filing
+    // a Class C RCO.
+    if (!isSpec && !isCode) {
+      try {
+        const { findByImplementedFile } = require("../requirements/graph-load");
+        const norm = rel.replace(/\\/g, "/");
+        const hit = findByImplementedFile(norm);
+        if (hit && (hit.requirements.length > 0 || hit.features.length > 0)) {
+          const oldStr = toolInput.old_string || "";
+          const newStr = toolInput.new_string || toolInput.content || "";
+          const codeFeature = hit.features[0] || null;
+          stageStructuredRCO(rel, codeFeature, oldStr, newStr, "edit", "");
+        }
+      } catch {
+        /* graph engine optional */
+      }
+      process.exit(0);
+    }
 
     // Load system files (only needed for spec events)
     const graph = isSpec ? readJSON(SPEC_GRAPH_FILE) : null;
@@ -684,6 +758,33 @@ try {
         stageRequirementDrift(rel, codeFeature, oldStr, newStr, how, why);
       } catch {
         /* non-critical */
+      }
+
+      // Phase 3C: also emit a structured RCO (riskClass + impactedRequirements
+      // + recommendedSpecUpdate) and mark linked requirements stale_pending_review.
+      // Best-effort, never blocks. Codex Phase 3 review fix-forward
+      // (2026-04-30): no longer silent — log the error to stderr + the central
+      // log so corrupt-graph or write-failure conditions don't hide critical
+      // drift behind a swallowed catch.
+      try {
+        stageStructuredRCO(rel, codeFeature, oldStr, newStr, how, why);
+      } catch (rcoErr) {
+        process.stderr.write(
+          `[edit-watcher] structured-RCO staging failed for ${rel}: ${rcoErr.message}\n`,
+        );
+        try {
+          centralLog(
+            "rco_stage_error",
+            {
+              file: rel,
+              feature: codeFeature || null,
+              error: String(rcoErr.message || rcoErr).slice(0, 500),
+            },
+            { id: nextEventId(), actor: "system" },
+          );
+        } catch {
+          /* logger itself broken — give up */
+        }
       }
 
       process.exit(0);

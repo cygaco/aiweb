@@ -3,7 +3,7 @@
 //
 // The Boss is MECHANICAL — it reads store.json, dispatches agents, checks gates.
 // It should NEVER read src/ files, analyze code, or do work that belongs to
-// evaluators, redteam, fixer, or the Lead.
+// reviewers, redteam, fixer, or the Lead.
 //
 // This hook blocks Read/Grep/Glob on src/ paths when the Boss is operating.
 // It detects "Boss mode" by checking store.heartbeat.agent === "boss".
@@ -86,7 +86,7 @@ process.stdin.on("end", () => {
     if (isSrcAccess) {
       process.stderr.write(
         `[boss-boundary] BLOCKED: Boss Agent cannot read source code (${targetPath}). ` +
-          `Dispatch an evaluator, redteam, or fixer agent to analyze code. ` +
+          `Dispatch a reviewer, redteam, or fixer agent to analyze code. ` +
           `The Boss only reads store.json, docs/, and reviewer output.\n`,
       );
       process.exit(2);

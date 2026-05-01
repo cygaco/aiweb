@@ -62,17 +62,25 @@ process.stdin.on("end", () => {
       process.exit(0);
     }
 
-    // Read store.json — resolve from paths.json
-    let agentsDir;
+    // Read the oneshot store — resolve via paths.json (paths.oneshotStore).
+    // The root .claude/agents/store.json is a foundation-edit heartbeat marker,
+    // NOT the feature/runLog state. Registry-based resolution prevents path drift.
+    let storePath;
     try {
       const { PATHS: _P } = require("./lib/paths");
-      agentsDir = _P.agents;
+      storePath = _P.oneshotStore;
     } catch {
-      /* fallback */
+      storePath = path.resolve(
+        __dirname,
+        "..",
+        "..",
+        ".claude",
+        "agents",
+        "02-oneshot",
+        ".system",
+        "store.json",
+      );
     }
-    const storePath = agentsDir
-      ? path.join(agentsDir, "store.json")
-      : path.resolve(__dirname, "..", "..", ".claude", "agents", "store.json");
 
     if (!fs.existsSync(storePath)) {
       // No store — can't verify, allow with warning
@@ -83,7 +91,12 @@ process.stdin.on("end", () => {
     }
 
     const store = JSON.parse(fs.readFileSync(storePath, "utf-8"));
-    const runLog = store.runLog?.entries || [];
+    // Canonical shape: runLog = { entries: [...] }. Accept legacy
+    // array-only form (older stores) so this hook doesn't fail-closed
+    // on schema drift. QA audit post-run-9-fix-pass cleanup.
+    const runLog = Array.isArray(store.runLog)
+      ? store.runLog
+      : store.runLog?.entries || [];
 
     // Collect all features that have passed a GATE_CHECK
     const gatedFeatures = new Set();
@@ -96,9 +109,14 @@ process.stdin.on("end", () => {
     }
 
     // Also check feature status — "done" means it passed gates
+    // "skipped" means deliberately deferred — treat as gated with no review required
     // BUT only if the GATE_CHECK has all 3 reviewers (eval + security + compliance)
     // BUG-044 fix: previously "done" was accepted without verifying compliance ran
     for (const [name, data] of Object.entries(store.features || {})) {
+      if (data.status === "skipped") {
+        gatedFeatures.add(name);
+        continue;
+      }
       if (data.status === "done") {
         // Check if this feature has a GATE_CHECK with all 3 reviewers
         const gateEntry = runLog.find(
@@ -120,7 +138,9 @@ process.stdin.on("end", () => {
             );
           }
 
-          const hasEval = isDoneOrImpossible(gateEntry.evaluator);
+          // Reviewer field renamed 2026-04-29 (was `evaluator`); accept either.
+          const reviewerVerdict = gateEntry.reviewer || gateEntry.evaluator;
+          const hasEval = isDoneOrImpossible(reviewerVerdict);
           const hasSecurity = isDoneOrImpossible(gateEntry.security);
           const hasCompliance = isDoneOrImpossible(gateEntry.compliance);
           const hasQA = isDoneOrImpossible(gateEntry.qa);
@@ -135,7 +155,7 @@ process.stdin.on("end", () => {
             const missing = [];
             if (!hasEval)
               missing.push(
-                `evaluator (got: ${JSON.stringify(gateEntry.evaluator)})`,
+                `reviewer (got: ${JSON.stringify(reviewerVerdict)})`,
               );
             if (!hasSecurity)
               missing.push(

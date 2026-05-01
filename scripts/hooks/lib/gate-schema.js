@@ -32,17 +32,21 @@ function validateGateCheck(entry) {
     return { valid: false, issues: ["Entry is null/undefined"] };
   }
 
-  // Must have at least one reviewer field
-  const hasAnyReviewer = entry.evaluator || entry.security || entry.compliance;
+  // Must have at least one reviewer field. Schema renamed 2026-04-29:
+  // entry.reviewer is the canonical key; entry.evaluator is the legacy alias
+  // (still accepted on read so historical GATE_CHECK entries validate).
+  const reviewerVerdict = entry.reviewer || entry.evaluator;
+  const hasAnyReviewer = reviewerVerdict || entry.security || entry.compliance;
   if (!hasAnyReviewer) {
     issues.push(
-      "GATE_CHECK has no reviewer fields (evaluator/security/compliance)",
+      "GATE_CHECK has no reviewer fields (reviewer/security/compliance)",
     );
   }
 
-  // Validate each reviewer field
-  for (const field of ["evaluator", "security", "compliance"]) {
-    const val = entry[field];
+  // Validate each reviewer field. Reads `reviewer` first; if missing, falls
+  // back to legacy `evaluator`. Uses pseudo-field name `reviewer` for issues.
+  for (const field of ["reviewer", "security", "compliance"]) {
+    const val = field === "reviewer" ? reviewerVerdict : entry[field];
     if (!val) continue;
 
     const lower = String(val).toLowerCase();
@@ -93,10 +97,13 @@ function isPassingStatus(val) {
  */
 function hashGateCheck(entry) {
   const crypto = require("crypto");
+  // Hash uses canonical `reviewer` field name. Legacy entries with
+  // `evaluator` field re-hash to a different value — that's intentional;
+  // a migrated entry has different content so it's a different hash.
   const normalized = JSON.stringify({
     feature: entry.feature || "",
     phase: entry.phase || "",
-    evaluator: entry.evaluator || "",
+    reviewer: entry.reviewer || entry.evaluator || "",
     security: entry.security || "",
     compliance: entry.compliance || "",
   });

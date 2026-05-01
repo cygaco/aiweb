@@ -41,13 +41,25 @@ const SCAN_EXTENSIONS = new Set([
   ".tsx",
 ]);
 
-// Files/dirs to skip
+// Files/dirs to skip. Two classes:
+//   1. Build artifacts / vendor (node_modules, .git, .next, dist) — never relevant.
+//   2. Append-only historical archives (event logs, runtime dumps, dispatch
+//      backups, oneshot retros, one-time audit dumps). Their broken refs
+//      reflect filesystem snapshots from past sessions, not current breakage.
+//      Run /discover:systems run-12 (2026-05-01) found 2,148 of 2,290 broken
+//      refs lived under these archive prefixes; the remaining 142 in active
+//      code are the real signal.
 const SKIP_PATTERNS = [
   /node_modules/,
   /\.git[/\\]/,
   /\.obsidian/,
   /\.next/,
   /dist[/\\]/,
+  /\.claude[/\\]project[/\\]events[/\\]/,
+  /\.claude[/\\]runtime[/\\]/,
+  /\.claude[/\\]agents[/\\]\.system[/\\]dispatch-backups[/\\]/,
+  /\.claude[/\\]agents[/\\]02-oneshot[/\\]\.system[/\\]retros[/\\]/,
+  /docs[/\\]audit-reports[/\\]/,
 ];
 
 // ── Reference extraction patterns ───────────────────────

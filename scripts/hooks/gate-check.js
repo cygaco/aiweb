@@ -18,10 +18,12 @@ const FEATURE_NAMES = getFeatureIds();
 // Non-builder role keywords — if present, skip gating.
 // Matches adhoc agent names (Batch A rename 2026-04-17): security→redteam, fix→fixer.
 const SKIP_ROLES = [
-  "evaluator",
+  "reviewer",
+  "evaluator", // legacy alias
   "redteam",
   "fixer",
-  "auditor",
+  "learner",
+  "auditor", // legacy alias
   "compliance",
   "qa",
 ];

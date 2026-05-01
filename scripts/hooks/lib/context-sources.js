@@ -164,13 +164,47 @@ function getSystemState() {
     // Code without specs
     const { query } = require("./logger");
     const codeEvents = query({ cat: "code", limit: 20 });
-    const specEvents = query({ cat: "spec", limit: 50 });
-    const specFeatures = new Set(
-      specEvents.map((e) => e.data?.feature).filter(Boolean),
-    );
-    const unmatchedCode = codeEvents.filter(
-      (e) => e.data?.feature && !specFeatures.has(e.data.feature),
-    );
+    // RT-011 fix: exclude paths in manifest.fileOwnership.foundation. UI
+    // primitives (src/components/ui/**) and shared libs are foundation —
+    // they legitimately have no feature-spec folder and were false-flagged
+    // as "code without specs" across run-7/8/9. See traces.jsonl RT-011.
+    //
+    // 2026-04-29 fix: previously we built specFeatures from recent cat:"spec"
+    // events (limit 50). Features whose specs hadn't been touched recently
+    // got flagged as orphan code (Step8Skills, Step13Apply in run-12).
+    // Now we check the filesystem: a feature has a spec iff its
+    // requirements/05-features/<feature>/PRD.md exists.
+    let foundationSet = new Set();
+    let specsDir = path.join(PROJECT, "docs", "05-features");
+    try {
+      const manifestPath = path.join(PROJECT, ".claude", "manifest.json");
+      if (fs.existsSync(manifestPath)) {
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+        foundationSet = new Set(manifest?.fileOwnership?.foundation ?? []);
+        const projectSpecs = manifest?.projectPaths?.specs;
+        if (projectSpecs) {
+          specsDir = path.isAbsolute(projectSpecs)
+            ? projectSpecs
+            : path.join(PROJECT, projectSpecs);
+        }
+      }
+    } catch {
+      /* no manifest — treat as empty foundation, default specs dir */
+    }
+    function featureHasSpec(feature) {
+      if (!feature) return false;
+      try {
+        return fs.existsSync(path.join(specsDir, feature, "PRD.md"));
+      } catch {
+        return false;
+      }
+    }
+    const unmatchedCode = codeEvents.filter((e) => {
+      if (!e.data?.feature || featureHasSpec(e.data.feature)) return false;
+      const file = e.data?.file;
+      if (typeof file === "string" && foundationSet.has(file)) return false;
+      return true;
+    });
     if (unmatchedCode.length > 0) {
       const files = [...new Set(unmatchedCode.map((e) => e.data?.file))].slice(
         0,

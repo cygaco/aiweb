@@ -23,12 +23,16 @@
  *                           verified_at, reason? }.
  *                  Emitted when /learn:integrate marks a learning implemented,
  *                  and re-emitted by validators when the target disappears.
+ *   learning     — tracer event for a learning appended to learnings.jsonl.
+ *                  Emitted by logLearning(); the learning entry itself is
+ *                  written to paths.learningsFile, not this log.
  *
  * Usage:
- *   const { log, query, logEvent } = require("./lib/logger");
+ *   const { log, query, logEvent, logLearning } = require("./lib/logger");
  *   log("prompt", { raw, stripped, length, is_slash }, { actor: "user" });
  *   log("tool", { tool: "Bash", success: true, file: "...", keywords: [...] });
  *   logEvent("block", "system", "merge-guard-blocked", "agent/auth", "reason");
+ *   logLearning({ intent: "bug_fix", tip: "...", source: "learn:conversation" });
  *   const recent = query({ cat: "inbox", since: Date.now() - 86400000, limit: 5 });
  */
 
@@ -40,8 +44,12 @@ const { PROJECT, PATHS } = require("./paths");
 
 const EVENTS_DIR =
   PATHS.events || path.join(PROJECT, ".claude", "project", "events");
+const MEMORY_DIR =
+  PATHS.memory || path.join(PROJECT, ".claude", "project", "memory");
 const RUNTIME_DIR = PATHS.runtime || path.join(PROJECT, ".claude", "runtime");
 const LOG_FILE = path.join(EVENTS_DIR, "events.jsonl");
+const LEARNINGS_FILE =
+  PATHS.learningsFile || path.join(MEMORY_DIR, "learnings.jsonl");
 const LOCK_FILE = path.join(PROJECT, ".claude", ".store-lock");
 const SESSION_ID_FILE = path.join(RUNTIME_DIR, ".session-id");
 
@@ -140,6 +148,9 @@ function ensureDir() {
     if (!fs.existsSync(RUNTIME_DIR)) {
       fs.mkdirSync(RUNTIME_DIR, { recursive: true });
     }
+    if (!fs.existsSync(MEMORY_DIR)) {
+      fs.mkdirSync(MEMORY_DIR, { recursive: true });
+    }
     _dirChecked = true;
   } catch {
     /* ignore */
@@ -209,6 +220,97 @@ function logEvent(type, actor, action, target, detail, meta) {
     data.meta = meta;
   }
   log("audit", data, { actor: actor || "unknown" });
+}
+
+// ── logLearning() — canonical write path for learnings.jsonl ────
+//
+// Fixes the "silent write" bug where callers invoked
+// `log('conversation_learning', {...})` expecting the entry to land
+// in learnings.jsonl — but log() only routes to events.jsonl + its
+// category fan-out, never to memory stores.
+//
+// This helper:
+//   1. Appends the learning entry (as-is) to paths.learningsFile
+//   2. Emits a tracer event to events.jsonl with cat="learning"
+//      so there is a paper trail of when/where it was written.
+//
+// Usage:
+//   const { logLearning } = require("./lib/logger");
+//   logLearning({
+//     ts: "2026-04-21",
+//     intent: "bug_fix",
+//     tip: "...",
+//     conditions: { ... },
+//     status: "logged",
+//     score: 0,
+//     source: "learn:conversation",
+//   });
+//
+// Validates minimal shape (tip + source required). Silently drops
+// malformed entries after emitting a warn event — never crashes the
+// caller.
+function logLearning(entry, opts) {
+  try {
+    ensureDir();
+    if (!entry || typeof entry !== "object") {
+      log("audit", {
+        type: "warn",
+        action: "learning-drop",
+        detail: "logLearning called with non-object entry",
+      });
+      return false;
+    }
+    if (!entry.tip || !entry.source) {
+      log("audit", {
+        type: "warn",
+        action: "learning-drop",
+        detail: `logLearning missing required field: ${!entry.tip ? "tip" : "source"}`,
+      });
+      return false;
+    }
+
+    // Default fields (non-destructive: only fill missing keys)
+    const normalized = {
+      ts: entry.ts || new Date().toISOString().slice(0, 10),
+      ...entry,
+    };
+    if (normalized.status === undefined) normalized.status = "logged";
+    if (normalized.score === undefined) normalized.score = 0;
+
+    // 1. Append to learnings.jsonl (the primary write)
+    fs.appendFileSync(
+      LEARNINGS_FILE,
+      JSON.stringify(normalized) + "\n",
+      "utf8",
+    );
+
+    // 2. Tracer event — so events.jsonl shows the paper trail.
+    //    Keep data small: enough to find the entry later, not the whole tip.
+    log(
+      "learning",
+      {
+        action: "appended",
+        source: normalized.source,
+        intent: normalized.intent || null,
+        tip_preview: String(normalized.tip).slice(0, 120),
+      },
+      opts,
+    );
+
+    return true;
+  } catch (e) {
+    // Best-effort — never crash caller
+    try {
+      log("audit", {
+        type: "error",
+        action: "logLearning-failed",
+        detail: String(e).slice(0, 200),
+      });
+    } catch {
+      /* swallow */
+    }
+    return false;
+  }
 }
 
 // ── Query: read with filters ────────────────────────────
@@ -330,6 +432,7 @@ module.exports = {
   query,
   queryCategory,
   logEvent,
+  logLearning,
   getSessionId,
   acquireStoreLock,
   releaseStoreLock,
@@ -337,5 +440,7 @@ module.exports = {
   LOG_FILE,
   EVENTS_DIR,
   RUNTIME_DIR,
+  MEMORY_DIR,
+  LEARNINGS_FILE,
   CATEGORY_FILES,
 };
