@@ -283,6 +283,46 @@ Treat WarpOS itself as a product-in-WarpOS with its own `requirements/05-feature
 
 Out-of-scope items deferred from the Pizza Order Intake Upgrade plan (`~/.claude/plans/pizza-size-in-inches-snazzy-bunny.md`, 2026-05-02). These are product-side, not framework. Each is a meaningful project in its own right — flagged here so they don't get lost.
 
+### Pickup point — pizza intake upgrade, mid-flight (2026-05-02)
+
+Branch `feat/p1-sizes-and-address-speech` has 6 commits with W1+W2+W3+W4+P6 done. W5 and W6 remain. To resume cleanly:
+
+1. **Read context**: `~/.claude/plans/pizza-size-in-inches-snazzy-bunny.md` (full plan with GPT-5.5 review baked in), `docs/99-resources/01-research/chain-menus/SAMPLES.md` (chain ontology), `src/lib/cart.ts` (already-shipped domain model), `src/data/restaurants.ts` (Vlad's enriched fixture).
+2. **Verify branch state**: `git log --oneline feat/p1-sizes-and-address-speech ^master` should show 6 commits. `npm test` should report 61/61 pass. `npm run build` clean.
+3. **Note**: build-chain agent dispatch (Gamma → builder via `claude -p`) is currently blocked by a self-modification guard on `.claude/settings.local.json`. The user must add `Bash(claude -p *)` and `Bash(claude --print *)` to the allow list (via `/config` or by editing `.claude/settings.local.json` directly) before Gamma can write files. Until then, Alex α writes directly per the user's "full authority through all phases" directive from this session.
+
+#### W5 — Cart-mutation tools / schema *(largest remaining)*
+
+Wires the `Cart` domain model into the agent-facing tool contracts. Each sub-step is independently shippable; recommend committing one at a time.
+
+- [ ] **W5.a — extend `start_pizza_order` response** with optional fields: `customization_options` (per-pizza, derived from `restaurant.menu.pizzas[i].{crusts, toppings, sauce_options, cheese_options, dipping_sauces}`), `drink_options` (from `restaurant.menu.drinks`), `side_options` (existing `restaurant.menu.sides` re-exposed), `applicable_deals` (filter `restaurant.menu.deals` by cart-shape match — phase 1 surfaces all deals; matching logic deferred to W6 surfacing rules). Touches `src/server.ts`. Additive — no breaking change.
+- [ ] **W5.b — new MCP tool `update_order(cart_diff)`** that accepts a typed diff over the cart: add/remove a `CartItem`, add modifiers to an existing line, swap to a deal. Returns the updated `Cart`. zod schema lives in `src/server.ts` next to existing tool defs. The "diff" shape: `{ op: "add"|"remove"|"add_modifier"|"swap_to_deal", line_index?: number, item?: CartItem, modifier?: SelectedModifier, deal_id?: string }`.
+- [ ] **W5.c — extend `prepare_order` and `place_order` zod schemas** to accept a full `Cart` (in addition to the existing `OrderItem[]` shape). Migration strategy: add a new optional `cart?: Cart` field; if present, use it; else fall back to legacy `items: OrderItem[]`. Eventually deprecate `items`. Touches `src/server.ts` zod blocks.
+- [ ] **W5.d — confirmation-token cart-hash extension**. `src/lib/confirmation-token.ts` currently hashes `(restaurant_id, items, customer_name, customer_phone, delivery_address)`. Extend the hash payload to optionally include the canonicalized cart (`canonicalizeCart(cart)` from `src/lib/cart.ts`) when present. Old tokens (legacy items shape) still verify; new tokens cover the full cart. **Risk**: changing the hash invalidates any in-flight tokens — but tokens are 10-minute TTL and stored in-memory only, so this is acceptable on a fresh deploy.
+- [ ] **W5.e — A2A executor `awaiting-customization` state**. After emitting `proposed_cart` artifact and before `confirmed`, accept an intermediate message carrying chosen modifiers/drinks/deal. Two round-trips before placement. Touches `src/a2a/executor.ts`. Update `a2a-test-messages.txt` with a customization round-trip fixture.
+
+**Tests**: extend `tests/cart-schema.test.ts` with tool-boundary cases. New file `tests/update-order-tool.test.ts` for the diff semantics. Snapshot test of `start_pizza_order` response shape against Vlad's enriched menu (validates customization_options surface).
+
+#### W6 — Adaptive intake flow *(cross-surface lockstep)*
+
+The W4+W5 schema and tools are useless without the agent knowing how/when to use them. W6 is mostly prompt engineering across three surfaces. Critical: ship MCP description, A2A executor, and webapp system prompt as a single PR — divergence breaks consistency.
+
+- [ ] **W6.a — MCP `start_pizza_order` description rewrite**. Grow the existing 150-line description with the new response shape and the adaptive decision tree:
+  - "If the user already specified everything (style, size, modifiers, drink, deal) → skip to confirmation, do not ask follow-up questions."
+  - "Otherwise: required clarifications first (size if missing, headcount if preset needs it). Then ONE concise upsell turn combining extras + drinks + sides + deals: 'Want extra cheese, a soda, or to bundle with the family deal ($X total)?' — never list as 4 separate prompts."
+  - "Surface deals only when their components match the cart shape; never claim a savings number unless the math is explicit and verified."
+  - "Always render the full cart with prices before `prepare_order`."
+- [ ] **W6.b — A2A executor state arm**. The new `awaiting-customization` state from W5.e needs a complementary state-machine arm. Same surface-specific rules as W6.a baked into the artifact descriptions.
+- [ ] **W6.c — webapp system prompt update** (`webapp/app/api/chat/route.ts`). Same rules. Specifically the order flow line `start_pizza_order → show cart → user confirms → prepare_order → place_order` extends to `start_pizza_order → upsell turn → update_order(diff) → show full cart → user confirms → prepare_order → place_order`.
+- [ ] **W6 verification — 12-case scenario walkthrough**. (cold/known user) × (preset/intent/freeform) × (no-modifiers/full-modifiers) × (deal/no deal). For each, snapshot the conversation transcript and resulting Bland prompt across all three surfaces. Live smoke: order via webapp on `:3001` with extras + drink + deal + "Rd" address; verify Bland recording.
+
+#### Validation before merge
+
+- [ ] **Live Bland smoke** — at least one real call to `TEST_OVERRIDE_PHONE` with the full enriched flow. Confirms address normalization, per-restaurant size, and the new modifier/drink rendering all reach the voice agent correctly.
+- [ ] **Cross-surface consistency check** — same input prompt to MCP/A2A/webapp produces the same Bland prompt output (modulo timing). Catches drift between the three surface implementations.
+
+---
+
 ### Menu connector enrichment
 - [ ] **Real Domino's API menu adapter** that emits the new `Cart` schema's modifiers, drinks, and deals (today: emits only `pizzas[]` and `sides[]`). Likely 2x the size of the intake-upgrade plan. Touches `src/connectors/dominos.ts`.
 - [ ] **Google Places menu enrichment** — Places returns minimal menu data; need either a vision-based menu OCR layer or a per-restaurant "best-effort modifier estimation" stub. Touches `src/connectors/places.ts`.
