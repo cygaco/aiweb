@@ -213,13 +213,14 @@ export class PizzaAgentExecutor implements AgentExecutor {
       const items: OrderItem[] = input.items?.length
         ? input.items
         : input.intent_style
-          ? orderFromIntent({
+          ? orderFromIntent(restaurant, {
               style: input.intent_style,
               size: input.intent_size,
               quantity: input.intent_quantity,
             })
           : input.occasion
             ? (COLD_PRESETS.find((p) => p.id === input.occasion)?.items(
+                restaurant,
                 input.headcount ?? 4,
               ) ?? [])
             : [];
@@ -330,13 +331,14 @@ export class PizzaAgentExecutor implements AgentExecutor {
     const items: OrderItem[] = input.items?.length
       ? input.items
       : input.intent_style
-        ? orderFromIntent({
+        ? orderFromIntent(restaurant, {
             style: input.intent_style,
             size: input.intent_size,
             quantity: input.intent_quantity,
           })
         : input.occasion
           ? (COLD_PRESETS.find((p) => p.id === input.occasion)?.items(
+              restaurant,
               input.headcount ?? 4,
             ) ?? [])
           : [];

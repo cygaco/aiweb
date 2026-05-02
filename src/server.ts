@@ -521,11 +521,23 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
             ? "high"
             : "medium";
 
+      // Cannot build orders or preset previews without a restaurant.
+      // Return the empty restaurants list with a note for the agent.
+      if (!primaryRestaurant) {
+        result.note =
+          "No restaurants near that address — cannot build an order or preview presets.";
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      }
+
       // Delegate mode: agent picks large pepperoni as default
       if (delegate) {
-        const items = orderFromIntent({
+        const items = orderFromIntent(primaryRestaurant, {
           style: "pepperoni",
-          size: 'Large 14"',
+          size: "large",
           quantity: 1,
         });
         const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
@@ -550,7 +562,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
 
       // If user specified what they want, build the order immediately
       if (intent_style) {
-        const items = orderFromIntent({
+        const items = orderFromIntent(primaryRestaurant, {
           style: intent_style,
           size: intent_size,
           quantity: intent_quantity,
@@ -574,9 +586,10 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
       else if (occasion) {
         const preset = COLD_PRESETS.find((p) => p.occasion === occasion);
         if (preset) {
-          const items = preset.items(headcount);
-          const sides = preset.suggestedSides?.(headcount) ?? [];
-          const total = preset.estimateTotal(headcount);
+          const items = preset.items(primaryRestaurant, headcount);
+          const sides =
+            preset.suggestedSides?.(primaryRestaurant, headcount) ?? [];
+          const total = preset.estimateTotal(primaryRestaurant, headcount);
           result.suggested_order = {
             items: [...items, ...sides],
             estimatedTotal: total,
@@ -609,7 +622,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           label: p.label,
           description: p.description,
           needsHeadcount: p.needsHeadcount,
-          estimatedTotal: p.estimateTotal(headcount),
+          estimatedTotal: p.estimateTotal(primaryRestaurant, headcount),
         }));
         result.presets_note =
           "These are WHAT-THE-USER-WANTS options — NOT the restaurant's menu. " +
