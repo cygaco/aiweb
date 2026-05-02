@@ -6,11 +6,30 @@
 
 import { findNearbyDominosStores } from "../connectors/dominos.js";
 import { findNearbyPizzaPlaces } from "../connectors/places.js";
+import type { Drink, Deal, ModifierGroup, PriceMatrix } from "../lib/cart.js";
 
 export interface MenuItem {
   name: string;
   sizes: { name: string; price: number }[];
   description?: string;
+}
+
+/**
+ * Pizza menu item — extends MenuItem with optional configurator groups
+ * (crust, toppings, sauce, cheese, dipping sauces) and optional per-
+ * (crust × size) price matrix for chains like Papa John's.
+ *
+ * All extension fields are optional — TEST_RESTAURANTS need no edits to
+ * keep working. Real menu adapters (dominos.ts, places.ts) populate these
+ * progressively as we extend their parsers.
+ */
+export interface PizzaMenuItem extends MenuItem {
+  crusts?: ModifierGroup;
+  toppings?: ModifierGroup;
+  sauce_options?: ModifierGroup;
+  cheese_options?: ModifierGroup;
+  dipping_sauces?: ModifierGroup;
+  priceMatrix?: PriceMatrix;
 }
 
 export interface Restaurant {
@@ -24,8 +43,12 @@ export interface Restaurant {
   estimatedDeliveryMinutes: number;
   acceptsCash: boolean;
   menu: {
-    pizzas: MenuItem[];
+    pizzas: PizzaMenuItem[];
     sides: MenuItem[];
+    /** Beverage lineup — optional; populated by enriched menu adapters. */
+    drinks?: Drink[];
+    /** Active deals/promotions — optional; populated by enriched adapters. */
+    deals?: Deal[];
   };
   hours: string;
   isTest?: boolean; // always included in results, labeled for the agent
