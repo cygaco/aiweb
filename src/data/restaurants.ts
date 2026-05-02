@@ -54,6 +54,94 @@ export interface Restaurant {
   isTest?: boolean; // always included in results, labeled for the agent
 }
 
+// Shared configurator groups for Vlad's — every pizza on Vlad's menu uses
+// the same crust/topping/sauce/cheese/dipping options. Defined once for
+// readability.
+const VLAD_CRUSTS: import("../lib/cart.js").ModifierGroup = {
+  id: "crust",
+  label: "Crust",
+  selection: "one",
+  required: true,
+  modifiers: [
+    {
+      id: "hand_tossed",
+      name: "Hand Tossed",
+      priceDelta: 0,
+      default: true,
+      tier: "base",
+    },
+    { id: "thin", name: "Thin Crust", priceDelta: 0, tier: "base" },
+    { id: "deep_dish", name: "Deep Dish", priceDelta: 1.5, tier: "base" },
+    {
+      id: "stuffed",
+      name: "Stuffed Crust",
+      priceDelta: 2.5,
+      tier: "premium",
+      validSizeIds: ['Large 14"'],
+    },
+  ],
+};
+
+const VLAD_TOPPINGS: import("../lib/cart.js").ModifierGroup = {
+  id: "toppings",
+  label: "Add toppings",
+  selection: "many",
+  max: 8,
+  modifiers: [
+    { id: "extra_cheese", name: "Extra Cheese", priceDelta: 1.5 },
+    { id: "pepperoni", name: "Pepperoni", priceDelta: 1.5 },
+    { id: "italian_sausage", name: "Italian Sausage", priceDelta: 1.5 },
+    { id: "mushrooms", name: "Mushrooms", priceDelta: 1.0 },
+    { id: "onions", name: "Onions", priceDelta: 1.0 },
+    { id: "green_peppers", name: "Green Peppers", priceDelta: 1.0 },
+    { id: "olives", name: "Black Olives", priceDelta: 1.0 },
+    { id: "jalapenos", name: "Jalapeños", priceDelta: 1.0 },
+    { id: "pineapple", name: "Pineapple", priceDelta: 1.0 },
+    { id: "bacon", name: "Bacon", priceDelta: 2.0 },
+  ],
+};
+
+const VLAD_SAUCE: import("../lib/cart.js").ModifierGroup = {
+  id: "sauce",
+  label: "Sauce",
+  selection: "one",
+  modifiers: [
+    {
+      id: "tomato",
+      name: "Classic Tomato",
+      priceDelta: 0,
+      default: true,
+    },
+    { id: "marinara", name: "Marinara", priceDelta: 0 },
+    { id: "garlic_white", name: "Garlic White", priceDelta: 0 },
+    { id: "bbq", name: "BBQ", priceDelta: 0 },
+    { id: "no_sauce", name: "No Sauce", priceDelta: 0 },
+  ],
+};
+
+const VLAD_CHEESE: import("../lib/cart.js").ModifierGroup = {
+  id: "cheese",
+  label: "Cheese amount",
+  selection: "one",
+  modifiers: [
+    { id: "light", name: "Light", priceDelta: 0 },
+    { id: "normal", name: "Normal", priceDelta: 0, default: true },
+    { id: "extra", name: "Extra", priceDelta: 1.5 },
+  ],
+};
+
+const VLAD_DIPS: import("../lib/cart.js").ModifierGroup = {
+  id: "dipping_sauces",
+  label: "Dipping sauces",
+  selection: "many",
+  modifiers: [
+    { id: "garlic_dip", name: "Garlic Dipping Sauce", priceDelta: 0.79 },
+    { id: "ranch", name: "Ranch", priceDelta: 0.79 },
+    { id: "marinara_dip", name: "Marinara", priceDelta: 0.79 },
+    { id: "bbq_dip", name: "BBQ", priceDelta: 0.79 },
+  ],
+};
+
 // Always included in results regardless of location. Real phones — answer as staff when called.
 export const TEST_RESTAURANTS: Restaurant[] = [
   {
@@ -76,6 +164,11 @@ export const TEST_RESTAURANTS: Restaurant[] = [
             { name: 'Medium 12"', price: 10.99 },
             { name: 'Large 14"', price: 12.99 },
           ],
+          crusts: VLAD_CRUSTS,
+          toppings: VLAD_TOPPINGS,
+          sauce_options: VLAD_SAUCE,
+          cheese_options: VLAD_CHEESE,
+          dipping_sauces: VLAD_DIPS,
         },
         {
           name: "Cheese",
@@ -84,6 +177,11 @@ export const TEST_RESTAURANTS: Restaurant[] = [
             { name: 'Medium 12"', price: 9.99 },
             { name: 'Large 14"', price: 11.99 },
           ],
+          crusts: VLAD_CRUSTS,
+          toppings: VLAD_TOPPINGS,
+          sauce_options: VLAD_SAUCE,
+          cheese_options: VLAD_CHEESE,
+          dipping_sauces: VLAD_DIPS,
         },
         {
           name: "Meat Lovers",
@@ -93,6 +191,11 @@ export const TEST_RESTAURANTS: Restaurant[] = [
             { name: 'Medium 12"', price: 13.99 },
             { name: 'Large 14"', price: 15.99 },
           ],
+          crusts: VLAD_CRUSTS,
+          toppings: VLAD_TOPPINGS,
+          sauce_options: VLAD_SAUCE,
+          cheese_options: VLAD_CHEESE,
+          dipping_sauces: VLAD_DIPS,
         },
         {
           name: "Veggie",
@@ -102,11 +205,89 @@ export const TEST_RESTAURANTS: Restaurant[] = [
             { name: 'Medium 12"', price: 12.99 },
             { name: 'Large 14"', price: 14.99 },
           ],
+          crusts: VLAD_CRUSTS,
+          toppings: VLAD_TOPPINGS,
+          sauce_options: VLAD_SAUCE,
+          cheese_options: VLAD_CHEESE,
+          dipping_sauces: VLAD_DIPS,
         },
       ],
       sides: [
         { name: "Wings (8pc)", sizes: [{ name: "Regular", price: 8.99 }] },
         { name: "Cheesy Bread", sizes: [{ name: "Regular", price: 6.99 }] },
+      ],
+      drinks: [
+        {
+          id: "coke_20oz",
+          name: "Coca-Cola",
+          brand: "Coca-Cola",
+          sizes: [
+            { id: "20oz", name: "20oz Bottle", price: 2.49 },
+            { id: "2l", name: "2L Bottle", price: 3.99 },
+          ],
+        },
+        {
+          id: "diet_coke",
+          name: "Diet Coke",
+          brand: "Coca-Cola",
+          sizes: [
+            { id: "20oz", name: "20oz Bottle", price: 2.49 },
+            { id: "2l", name: "2L Bottle", price: 3.99 },
+          ],
+        },
+        {
+          id: "sprite",
+          name: "Sprite",
+          brand: "Coca-Cola",
+          sizes: [
+            { id: "20oz", name: "20oz Bottle", price: 2.49 },
+            { id: "2l", name: "2L Bottle", price: 3.99 },
+          ],
+        },
+        {
+          id: "dasani",
+          name: "Dasani Water",
+          brand: "Coca-Cola",
+          sizes: [{ id: "20oz", name: "20oz Bottle", price: 2.0 }],
+        },
+      ],
+      deals: [
+        {
+          id: "vlad_mix_match",
+          name: "Mix & Match",
+          description:
+            "Pick any 2+ items from medium 1-topping pizza, wings, cheesy bread, or 2L drink",
+          type: "mix_match",
+          components: [
+            {
+              kind: "pizza",
+              constraints: { size: "medium", maxToppings: 1 },
+            },
+            { kind: "side", constraints: { category: "any" } },
+            { kind: "drink", constraints: { size: "2L" } },
+          ],
+          priceRule: {
+            kind: "per_item_fixed",
+            perItemPrice: 6.99,
+            minItems: 2,
+          },
+        },
+        {
+          id: "vlad_family_combo",
+          name: "Family Combo",
+          description:
+            "2 Large pizzas + 8pc wings + 2L Coke — feeds 4-6, save vs ordering separately",
+          type: "bundle",
+          components: [
+            {
+              kind: "pizza",
+              constraints: { size: "large", count: 2, maxToppings: 2 },
+            },
+            { kind: "side", constraints: { item: "wings_8pc" } },
+            { kind: "drink", constraints: { item: "coke_2l" } },
+          ],
+          priceRule: { kind: "total_fixed", totalPrice: 32.99 },
+        },
       ],
     },
     hours: "11:00 AM - 11:00 PM",
