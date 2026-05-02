@@ -12,6 +12,7 @@
     "audit": "npm audit --audit-level=high"
   },
   "dependencies": {
+    "@a2a-js/sdk": "^0.3.13",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "better-sqlite3": "^12.9.0",
     "express": "^5.2.1",

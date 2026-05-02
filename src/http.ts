@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import rateLimit from "express-rate-limit";
 import { createServer } from "./server.js";
 import { initProfileStore, HEX_64 } from "./lib/profile-store.js";
+import { buildA2AHandlers } from "./a2a/server.js";
 
 const PORT = parseInt(process.env.PORT ?? "8080", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -147,6 +148,24 @@ app.get("/mcp", ...mcpChain, (_req, res) => {
   res.status(405).json({ error: "method not allowed in stateless mode" });
 });
 
+// ─────────────────────────────────────────────
+// A2A surface (Google Agent2Agent v0.3)
+// ─────────────────────────────────────────────
+//
+// /.well-known/agent-card.json — public, no auth (per A2A discovery spec)
+// POST /a2a — JSON-RPC task submission, requires Bearer
+//
+// The agent card MUST be reachable without auth so external agents can
+// discover the service. The task endpoint reuses the same WARP_MCP_KEY
+// bearer + host validation + rate limits as /mcp — one auth story.
+const a2a = buildA2AHandlers();
+
+app.use("/.well-known/agent-card.json", a2a.cardHandler);
+
+app.use("/a2a", ...mcpChain, globalLimiter, a2a.jsonRpcHandler);
+
 app.listen(PORT, HOST, () => {
-  console.log(`AI Web MCP server listening on ${HOST}:${PORT} (POST /mcp)`);
+  console.log(
+    `AI Web MCP+A2A server listening on ${HOST}:${PORT} (POST /mcp, POST /a2a, GET /.well-known/agent-card.json)`,
+  );
 });
