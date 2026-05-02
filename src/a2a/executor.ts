@@ -22,6 +22,7 @@ import {
   type OrderItem,
   type PlaceOrderRequest,
 } from "../connectors/bland.js";
+import { issueToken, verifyToken } from "../lib/confirmation-token.js";
 
 const POLL_INTERVAL_MS = 15_000;
 const POLL_TIMEOUT_MS = 5 * 60_000;
@@ -42,6 +43,7 @@ interface OrderInput {
   delivery_instructions?: string;
   max_total?: number;
   confirmed?: boolean;
+  confirmation_token?: string;
 }
 
 function extractInput(message: Message): OrderInput {
@@ -225,6 +227,19 @@ export class PizzaAgentExecutor implements AgentExecutor {
         (s: number, i: OrderItem) => s + i.price * i.quantity,
         0,
       );
+      let proposedToken: string | undefined;
+      try {
+        proposedToken = issueToken({
+          restaurant_id: restaurant.id,
+          items,
+          customer_name: input.name!,
+          customer_phone: input.phone!,
+          delivery_address: input.address!,
+        });
+      } catch {
+        // PROFILE_ENCRYPTION_SECRET missing — token feature unavailable;
+        // executor still emits the cart so the caller can decide.
+      }
       eventBus.publish(
         artifact(taskId, contextId, "proposed_cart", {
           restaurant_id: restaurant.id,
@@ -236,6 +251,8 @@ export class PizzaAgentExecutor implements AgentExecutor {
           customer_name: input.name,
           customer_phone: input.phone,
           payment: "Cash on delivery",
+          confirmation_token: proposedToken,
+          confirmation_token_ttl_seconds: proposedToken ? 600 : undefined,
         }),
       );
       eventBus.publish(
@@ -243,7 +260,9 @@ export class PizzaAgentExecutor implements AgentExecutor {
           taskId,
           contextId,
           "input-required",
-          `Proposed cart from ${restaurant.name}. Re-submit the same params with confirmed:true to place the order.`,
+          proposedToken
+            ? `Proposed cart from ${restaurant.name}. Re-submit the same params with confirmed:true AND confirmation_token from the artifact to place the order.`
+            : `Proposed cart from ${restaurant.name}. Re-submit the same params with confirmed:true to place the order.`,
           true,
         ),
       );
@@ -329,6 +348,44 @@ export class PizzaAgentExecutor implements AgentExecutor {
           contextId,
           "failed",
           "Could not derive any order items.",
+          true,
+        ),
+      );
+      return;
+    }
+
+    // Confirmation gate. When REQUIRE_CONFIRMATION_TOKEN=1, the caller must
+    // present the confirmation_token from a prior input-required artifact.
+    // Stops adversarial callers from setting confirmed:true on a first
+    // message and skipping cart-show.
+    const requireToken = process.env.REQUIRE_CONFIRMATION_TOKEN === "1";
+    if (input.confirmation_token) {
+      const verdict = verifyToken(input.confirmation_token, {
+        restaurant_id: restaurant.id,
+        items,
+        customer_name: input.name!,
+        customer_phone: input.phone!,
+        delivery_address: input.address!,
+      });
+      if (!verdict.ok) {
+        eventBus.publish(
+          status(
+            taskId,
+            contextId,
+            "failed",
+            `Confirmation token rejected: ${verdict.reason}. Re-submit without confirmed to receive a fresh proposed_cart with a new token.`,
+            true,
+          ),
+        );
+        return;
+      }
+    } else if (requireToken) {
+      eventBus.publish(
+        status(
+          taskId,
+          contextId,
+          "failed",
+          "confirmation_token required. Submit without confirmed:true first to receive a proposed_cart with a token, then resubmit with confirmed:true and that token.",
           true,
         ),
       );

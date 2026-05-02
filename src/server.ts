@@ -28,6 +28,7 @@ import {
   type PlaceOrderRequest,
 } from "./connectors/bland.js";
 import { getProfile, updateProfile, E164_REGEX } from "./lib/profile-store.js";
+import { issueToken, verifyToken } from "./lib/confirmation-token.js";
 
 export function createServer(tokenHash?: string): McpServer {
   const server = new McpServer({
@@ -176,6 +177,90 @@ export function createServer(tokenHash?: string): McpServer {
               text: JSON.stringify({
                 status: "error",
                 message: userFacing ? msg : "Failed to update profile.",
+              }),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  // ─────────────────────────────────────────────
+  // TOOL: prepare_order — issue a confirmation_token
+  // ─────────────────────────────────────────────
+
+  server.tool(
+    "prepare_order",
+
+    `Issue a server-signed confirmation_token for a specific cart. Call this AFTER the user has confirmed the full cart and BEFORE place_order. Pass the same restaurant_id, items, name, phone, and address you'll use in place_order — the token binds to those exact fields with a 10-minute TTL. The token proves the cart was reviewed before being voiced to the restaurant; place_order rejects calls without one when REQUIRE_CONFIRMATION_TOKEN is set on the server.`,
+
+    {
+      restaurant_id: z
+        .string()
+        .describe("Restaurant ID from start_pizza_order."),
+      items: z
+        .array(
+          z.object({
+            name: z.string(),
+            size: z.string(),
+            quantity: z.number(),
+            price: z.number(),
+            substitution: z.string().optional(),
+          }),
+        )
+        .describe("The exact items the user has confirmed."),
+      delivery_address: z.string(),
+      customer_name: z.string(),
+      customer_phone: z.string(),
+    },
+
+    async ({
+      restaurant_id,
+      items,
+      delivery_address,
+      customer_name,
+      customer_phone,
+    }) => {
+      try {
+        const token = issueToken({
+          restaurant_id,
+          items,
+          customer_name,
+          customer_phone,
+          delivery_address,
+          token_hash: tokenHash,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  status: "ok",
+                  confirmation_token: token,
+                  expires_in_seconds: 600,
+                  next_step:
+                    "Pass confirmation_token to place_order along with the same restaurant_id + items + customer fields. Modifying any of those will invalidate the token.",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (err) {
+        console.error(
+          "prepare_order error:",
+          err instanceof Error ? err.message : err,
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                status: "error",
+                message:
+                  "Failed to issue confirmation token. Check server has PROFILE_ENCRYPTION_SECRET set.",
               }),
             },
           ],
@@ -621,6 +706,12 @@ Then call check_order_status with the returned call_id to get the result.`,
         .describe(
           'Dietary requirement to confirm on the call. E.g. "gluten-free", "vegan". Bland will ask the restaurant before ordering.',
         ),
+      confirmation_token: z
+        .string()
+        .optional()
+        .describe(
+          "Server-issued token from prepare_order. Required when REQUIRE_CONFIRMATION_TOKEN is set; binds the call to a reviewed cart. Modifying restaurant_id, items, name, phone, or address after issuance invalidates the token.",
+        ),
     },
 
     async ({
@@ -633,6 +724,7 @@ Then call check_order_status with the returned call_id to get the result.`,
       delivery_instructions,
       max_total,
       dietary_requirements,
+      confirmation_token,
     }) => {
       // Resolve optional fields from profile if available
       let resolvedAddress = delivery_address;
@@ -716,6 +808,61 @@ Then call check_order_status with the returned call_id to get the result.`,
           ],
         };
       }
+      // Confirmation gate. When REQUIRE_CONFIRMATION_TOKEN=1 we refuse to
+      // dispatch unless the caller presents a server-issued token bound to
+      // this exact (restaurant_id, items, customer_*) tuple. The token is
+      // produced by prepare_order, expires in 10 min, and any drift in the
+      // bound fields invalidates it. This stops external A2A/MCP callers
+      // from skipping the cart-show step. When unset, we accept calls
+      // without a token (legacy mode) but still verify a token if present.
+      const requireToken = process.env.REQUIRE_CONFIRMATION_TOKEN === "1";
+      if (confirmation_token) {
+        const verdict = verifyToken(confirmation_token, {
+          restaurant_id,
+          items: items as OrderItem[],
+          customer_name: resolvedName_,
+          customer_phone: resolvedPhone_,
+          delivery_address: resolvedAddress_,
+          token_hash: tokenHash,
+        });
+        if (!verdict.ok) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    status: "error",
+                    error_code: "confirmation_token_invalid",
+                    message: `Confirmation token rejected: ${verdict.reason}. Re-run prepare_order with the final cart and pass the new token to place_order.`,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+      } else if (requireToken) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  status: "error",
+                  error_code: "confirmation_token_required",
+                  message:
+                    "place_order requires a confirmation_token. Call prepare_order first with the same restaurant_id + items + customer fields and include the returned token here.",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
       const orderRequest: PlaceOrderRequest = {
         restaurantName: restaurant_name,
         restaurantPhone: resolvedRestaurantPhone,
