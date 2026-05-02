@@ -1,0 +1,17 @@
+{
+  "schema": "warpos/release/v1",
+  "version": "0.1.1",
+  "createdAt": "2026-05-01T00:00:00.000Z",
+  "commit": "39ffe45",
+  "minUpgradeableFrom": "0.1.0",
+  "requiresFreshInstallFromBelow": null,
+  "manifestSchema": "warpos/framework-manifest/v2",
+  "pathRegistryVersion": "v4",
+  "migrations": [],
+  "postUpdateChecks": [
+    "node scripts/paths/build.js --check",
+    "node scripts/paths/gate.js",
+    "node scripts/requirements/gate.js"
+  ],
+  "checksumsFile": "checksums.json"
+}

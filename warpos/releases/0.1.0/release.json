@@ -1,0 +1,51 @@
+{
+  "schema": "warpos/release/v1",
+  "version": "0.1.0",
+  "createdAt": "2026-04-30T23:30:00.000Z",
+  "commit": "0351e7b",
+  "minUpgradeableFrom": null,
+  "requiresFreshInstallFromBelow": null,
+  "manifestSchema": "warpos/framework-manifest/v2",
+  "pathRegistryVersion": "v4",
+  "migrations": [
+    {
+      "id": "001-path-registry-v4",
+      "from": "0.0.0",
+      "to": "0.1.0",
+      "file": "../../../migrations/0.0.0-to-0.1.0/001-path-registry-v4.js",
+      "description": "Rebuild .claude/paths.json from warpos/paths.registry.json with $schema warpos/paths/v4.",
+      "destructive": false
+    },
+    {
+      "id": "002-framework-manifest-v2",
+      "from": "0.0.0",
+      "to": "0.1.0",
+      "file": "../../../migrations/0.0.0-to-0.1.0/002-framework-manifest-v2.js",
+      "description": "Regenerate .claude/framework-manifest.json with v2 schema (id, sha256, mergeStrategy, owner, introducedIn, removedIn, replaces).",
+      "destructive": false
+    },
+    {
+      "id": "003-docs-to-requirements",
+      "from": "0.0.0",
+      "to": "0.1.0",
+      "file": "../../../migrations/0.0.0-to-0.1.0/003-docs-to-requirements.js",
+      "description": "git mv legacy specs root to requirements/05-features and codemod 135 hardcoded references.",
+      "destructive": true
+    },
+    {
+      "id": "004-rename-warp-sync-to-update",
+      "from": "0.0.0",
+      "to": "0.1.0",
+      "file": "../../../migrations/0.0.0-to-0.1.0/004-rename-warp-sync-to-update.js",
+      "description": "Rewrite /warp:sync as a deprecation alias that calls /warp:update.",
+      "destructive": false
+    }
+  ],
+  "postUpdateChecks": [
+    "node scripts/paths/build.js --check",
+    "node scripts/paths/gate.js",
+    "node scripts/requirements/gate.js",
+    "/check:requirements"
+  ],
+  "checksumsFile": "checksums.json"
+}

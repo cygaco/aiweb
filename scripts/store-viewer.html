@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jobzooka — Agent Store Viewer</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --cyan: #39d2c0;
+    --magenta: #bc8cff;
+    --orange: #f0883e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  h2 { font-size: 1.1rem; color: var(--blue); margin: 24px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h3 { font-size: 0.95rem; color: var(--text-dim); margin: 16px 0 8px; }
+
+  .header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 20px; }
+  .header .meta { font-size: 0.85rem; color: var(--text-dim); }
+
+  .load-area { text-align: center; padding: 60px 20px; }
+  .load-area p { color: var(--text-dim); margin-bottom: 16px; }
+  .load-area button, #reload-btn {
+    background: var(--blue); color: #fff; border: none; padding: 8px 20px;
+    border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+  }
+  .load-area button:hover, #reload-btn:hover { opacity: 0.85; }
+  #reload-btn { margin-left: 12px; font-size: 0.8rem; padding: 4px 12px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; font-size: 0.85rem;
+  }
+  .card .name { font-weight: 600; margin-bottom: 4px; word-break: break-word; }
+  .card .owner { color: var(--text-dim); font-size: 0.75rem; }
+  .card .files { color: var(--text-dim); font-size: 0.75rem; }
+
+  .badge {
+    display: inline-block; padding: 1px 8px; border-radius: 10px;
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .badge-done { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-in_progress { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .badge-not_started { background: rgba(139,148,158,0.1); color: var(--text-dim); }
+  .badge-built { background: rgba(88,166,255,0.15); color: var(--blue); }
+  .badge-eval_pass { background: rgba(57,210,192,0.15); color: var(--cyan); }
+  .badge-eval_fail { background: rgba(248,81,73,0.15); color: var(--red); }
+
+  .progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 8px 0; }
+  .progress-fill { height: 100%; background: var(--green); border-radius: 4px; transition: width 0.3s; }
+
+  .stats { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0; }
+  .stat { text-align: center; }
+  .stat .num { font-size: 1.8rem; font-weight: 700; }
+  .stat .label { font-size: 0.75rem; color: var(--text-dim); }
+  .stat.green .num { color: var(--green); }
+  .stat.yellow .num { color: var(--yellow); }
+  .stat.red .num { color: var(--red); }
+  .stat.blue .num { color: var(--blue); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; color: var(--text-dim); font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 10px; border-bottom: 1px solid rgba(48,54,61,0.5); vertical-align: top; }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+
+  .bug-id { font-weight: 600; color: var(--orange); white-space: nowrap; }
+  .recurrence { color: var(--red); font-weight: 600; }
+
+  .timeline-item {
+    border-left: 2px solid var(--border); padding: 8px 0 8px 16px; margin-left: 8px;
+    position: relative;
+  }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -5px; top: 14px;
+    width: 8px; height: 8px; border-radius: 50%; background: var(--blue);
+  }
+  .timeline-item .time { font-size: 0.75rem; color: var(--text-dim); }
+  .timeline-item .who { color: var(--magenta); font-size: 0.8rem; }
+  .timeline-item .what { margin-top: 2px; }
+  .timeline-item .why { color: var(--text-dim); font-size: 0.8rem; margin-top: 2px; }
+
+  .points-table td.rank { font-weight: 600; }
+  .rank-rookie { color: var(--text-dim); }
+  .rank-solid { color: var(--green); }
+  .rank-ace { color: var(--yellow); }
+  .rank-elite { color: var(--magenta); }
+
+  .gate { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin: 10px 0; }
+  .gate .phase-label { font-weight: 600; color: var(--blue); margin-bottom: 6px; }
+  .gate .result { font-size: 0.85rem; margin: 2px 0; }
+  .gate .result.pass { color: var(--green); }
+  .gate .result.fail { color: var(--red); }
+  .gate .notes { color: var(--text-dim); font-size: 0.8rem; margin-top: 4px; }
+
+  .collapsible { cursor: pointer; user-select: none; }
+  .collapsible::before { content: '▸ '; color: var(--text-dim); }
+  .collapsible.open::before { content: '▾ '; }
+  .collapsible-content { display: none; }
+  .collapsible-content.open { display: block; }
+
+  .empty { color: var(--text-dim); font-style: italic; padding: 8px 0; }
+
+  .locked-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .locked-tag {
+    background: rgba(188,140,255,0.1); color: var(--magenta);
+    font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; font-family: monospace;
+  }
+
+  #dashboard { display: none; }
+
+  @media (max-width: 600px) {
+    body { padding: 12px; }
+    .cards { grid-template-columns: 1fr 1fr; }
+    .stats { gap: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="load-screen" class="load-area">
+  <h1>Jobzooka Agent Store Viewer</h1>
+  <p>Load <code>store.json</code> to see a human-readable dashboard.</p>
+  <input type="file" id="file-input" accept=".json" style="display:none">
+  <button onclick="document.getElementById('file-input').click()">Open store.json</button>
+  <p style="margin-top:16px;font-size:0.8rem;color:var(--text-dim)">
+    Or drag &amp; drop the file anywhere on this page.
+  </p>
+</div>
+
+<div id="dashboard">
+  <div class="header">
+    <h1>Jobzooka Agent Store</h1>
+    <span class="meta" id="run-meta"></span>
+    <button id="reload-btn" onclick="document.getElementById('file-input').click()">Load another</button>
+    <input type="file" id="file-input-2" accept=".json" style="display:none">
+  </div>
+
+  <div id="summary-stats" class="stats"></div>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  <div id="progress-label" style="font-size:0.8rem;color:var(--text-dim)"></div>
+
+  <h2>Features</h2>
+  <div id="features" class="cards"></div>
+
+  <h2>Builder Points</h2>
+  <div id="points"></div>
+
+  <h2>Bug Dataset (<span id="bug-count">0</span>)</h2>
+  <div id="bugs"></div>
+
+  <h2>Evolution Timeline</h2>
+  <div id="evolution"></div>
+
+  <h2>Run Log</h2>
+  <div id="runlog"></div>
+
+  <h2>System State</h2>
+  <div id="system"></div>
+
+  <h2>Known Stubs</h2>
+  <div id="stubs"></div>
+</div>
+
+<script>
+// ── Helpers ──────────────────────────────────────────
+function esc(s) {
+  if (typeof s !== 'string') s = String(s ?? '');
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function badgeFor(status) {
+  const cls = 'badge-' + (status || 'not_started');
+  const label = (status || 'not_started').replace(/_/g, ' ');
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function timeSince(iso) {
+  if (!iso) return 'never';
+  const ms = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${mins % 60}m ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+// ── Phase grouping (matches TASK-MANIFEST) ──────────
+const PHASES = [
+  { name: 'P0 — Foundation', keys: ['foundation-types','foundation-constants','foundation-storage','foundation-validators','foundation-pipeline','foundation-api','foundation-utils','foundation-prompts','foundation-ui','foundation-layout'] },
+  { name: 'P1 — Auth + Rockets', keys: ['auth','rockets'] },
+  { name: 'P2 — Onboarding', keys: ['onboarding'] },
+  { name: 'P2.5 — Shell + Profile', keys: ['shell','profile'] },
+  { name: 'P3 — Market Research', keys: ['market-research'] },
+  { name: 'P4 — Analysis', keys: ['deep-dive-qa','skills-curation','competitiveness'] },
+  { name: 'P5 — Content', keys: ['resume-generation','linkedin'] },
+  { name: 'P6 — Apply', keys: ['extension','auto-apply'] },
+  { name: 'P7 — Dev Tools', keys: ['deus-mechanicus'] },
+];
+
+// ── Render ───────────────────────────────────────────
+function render(store) {
+  document.getElementById('load-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+
+  const features = store.features || {};
+  const allKeys = Object.keys(features);
+  const done = allKeys.filter(k => features[k].status === 'done').length;
+  const inProgress = allKeys.filter(k => features[k].status === 'in_progress').length;
+  const notStarted = allKeys.filter(k => features[k].status === 'not_started').length;
+  const total = allKeys.length;
+
+  // Run meta
+  const rl = store.runLog || {};
+  const hb = store.heartbeat || {};
+  document.getElementById('run-meta').innerHTML =
+    `Run: <strong>${esc(rl.runId || '?')}</strong> &nbsp;|&nbsp; ` +
+    `Status: <strong>${esc(rl.finalStatus || '?')}</strong> &nbsp;|&nbsp; ` +
+    `Cycle: <strong>${store.cycle || '?'}</strong> &nbsp;|&nbsp; ` +
+    `Circuit: <strong style="color:${store.circuitBreaker === 'closed' ? 'var(--green)' : 'var(--red)'}">${esc(store.circuitBreaker || '?')}</strong>` +
+    (hb.timestamp ? ` &nbsp;|&nbsp; Heartbeat: ${timeSince(hb.timestamp)}` : '');
+
+  // Summary stats
+  document.getElementById('summary-stats').innerHTML =
+    `<div class="stat green"><div class="num">${done}</div><div class="label">Done</div></div>` +
+    `<div class="stat yellow"><div class="num">${inProgress}</div><div class="label">In Progress</div></div>` +
+    `<div class="stat"><div class="num">${notStarted}</div><div class="label">Not Started</div></div>` +
+    `<div class="stat blue"><div class="num">${(store.bugDataset || []).length}</div><div class="label">Bugs Logged</div></div>` +
+    `<div class="stat"><div class="num">${(store.evolution || []).length}</div><div class="label">Evolutions</div></div>`;
+
+  // Progress bar
+  const pct = total > 0 ? (done / total * 100) : 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = `${done}/${total} features complete (${Math.round(pct)}%)`;
+
+  // Features by phase
+  let featHtml = '';
+  for (const phase of PHASES) {
+    const phaseFeatures = phase.keys.filter(k => features[k]);
+    const phaseDone = phaseFeatures.filter(k => features[k].status === 'done').length;
+    const phaseTotal = phaseFeatures.length;
+    const allDone = phaseDone === phaseTotal;
+
+    featHtml += `<div style="grid-column:1/-1;margin-top:12px">
+      <h3 class="collapsible${allDone ? '' : ' open'}" onclick="toggleCollapse(this)">
+        ${esc(phase.name)} &nbsp; ${badgeFor(allDone ? 'done' : (phaseDone > 0 ? 'in_progress' : 'not_started'))} &nbsp;
+        <span style="font-size:0.75rem;color:var(--text-dim)">${phaseDone}/${phaseTotal}</span>
+      </h3>
+      <div class="collapsible-content${allDone ? '' : ' open'}">
+        <div class="cards" style="margin-top:6px">`;
+
+    for (const key of phaseFeatures) {
+      const f = features[key];
+      const locked = (f.lockedInterfaces || []);
+      featHtml += `<div class="card">
+        <div class="name">${esc(key)}</div>
+        ${badgeFor(f.status)}
+        ${f.owner ? `<div class="owner">${esc(f.owner)}</div>` : ''}
+        <div class="files">${(f.files || []).length} file${(f.files||[]).length !== 1 ? 's' : ''}</div>
+        ${f.fixAttempts ? `<div style="color:var(--orange);font-size:0.75rem">${f.fixAttempts} fix attempt${f.fixAttempts > 1 ? 's' : ''}</div>` : ''}
+        ${f.note ? `<div style="color:var(--text-dim);font-size:0.75rem;margin-top:4px">${esc(f.note)}</div>` : ''}
+        ${locked.length > 0 ? `<div class="locked-list">${locked.map(l => `<span class="locked-tag">${esc(l)}</span>`).join('')}</div>` : ''}
+      </div>`;
+    }
+    featHtml += '</div></div></div>';
+  }
+  // Orphans (features not in any phase)
+  const knownKeys = PHASES.flatMap(p => p.keys);
+  const orphans = allKeys.filter(k => !knownKeys.includes(k));
+  if (orphans.length > 0) {
+    featHtml += '<div style="grid-column:1/-1;margin-top:12px"><h3>Uncategorized</h3><div class="cards">';
+    for (const key of orphans) {
+      const f = features[key];
+      featHtml += `<div class="card"><div class="name">${esc(key)}</div>${badgeFor(f.status)}</div>`;
+    }
+    featHtml += '</div></div>';
+  }
+  document.getElementById('features').innerHTML = featHtml;
+
+  // Points
+  const pts = store.points?.configs || {};
+  const ptKeys = Object.keys(pts);
+  if (ptKeys.length === 0) {
+    document.getElementById('points').innerHTML = '<p class="empty">No builder points recorded yet.</p>';
+  } else {
+    let ptHtml = '<table class="points-table"><tr><th>Builder Config</th><th>XP</th><th>Rank</th><th>Runs</th><th>Best Score</th></tr>';
+    for (const key of ptKeys) {
+      const p = pts[key];
+      const best = Math.max(...(p.runs || []).map(r => r.total));
+      const rankCls = 'rank-' + (p.rank || 'rookie');
+      ptHtml += `<tr>
+        <td><code>${esc(key)}</code></td>
+        <td style="font-weight:600">${p.currentXP || 0}</td>
+        <td class="rank ${rankCls}">${esc(p.rank || 'rookie')}</td>
+        <td>${(p.runs || []).length}</td>
+        <td>${best}</td>
+      </tr>`;
+    }
+    ptHtml += '</table>';
+    document.getElementById('points').innerHTML = ptHtml;
+  }
+
+  // Bugs
+  const bugs = store.bugDataset || [];
+  document.getElementById('bug-count').textContent = bugs.length;
+  if (bugs.length === 0) {
+    document.getElementById('bugs').innerHTML = '<p class="empty">No bugs recorded.</p>';
+  } else {
+    let bugHtml = '<table><tr><th>ID</th><th>Pattern</th><th>Feature</th><th>Agent</th><th>Root Cause</th><th>Fix / Prevention</th><th style="text-align:center">Seen</th></tr>';
+    for (const b of bugs) {
+      bugHtml += `<tr>
+        <td class="bug-id">${esc(b.id)}</td>
+        <td>${esc(b.pattern)}</td>
+        <td>${esc(b.feature)}</td>
+        <td style="color:var(--magenta)">${esc(b.agent)}</td>
+        <td style="color:var(--text-dim);font-size:0.8rem">${esc(b.root_cause)}</td>
+        <td style="font-size:0.8rem">
+          <div style="color:var(--green)">${esc(b.fix)}</div>
+          ${b.prevention ? `<div style="color:var(--text-dim);margin-top:2px">${esc(b.prevention)}</div>` : ''}
+        </td>
+        <td style="text-align:center" class="${(b.recurrence || 1) > 1 ? 'recurrence' : ''}">${b.recurrence || 1}x</td>
+      </tr>`;
+    }
+    bugHtml += '</table>';
+    document.getElementById('bugs').innerHTML = bugHtml;
+  }
+
+  // Evolution
+  const evo = store.evolution || [];
+  if (evo.length === 0) {
+    document.getElementById('evolution').innerHTML = '<p class="empty">No evolution entries.</p>';
+  } else {
+    let evoHtml = '';
+    for (const e of [...evo].reverse()) {
+      evoHtml += `<div class="timeline-item">
+        <div class="time">Cycle ${e.cycle} &nbsp; ${e.timestamp ? new Date(e.timestamp).toLocaleDateString() : ''}</div>
+        <div class="who">${esc(e.author)}</div>
+        <div class="what">${esc(e.change)}</div>
+        <div class="why">${esc(e.reason)}</div>
+      </div>`;
+    }
+    document.getElementById('evolution').innerHTML = evoHtml;
+  }
+
+  // Run log
+  const entries = rl.entries || [];
+  if (entries.length === 0) {
+    document.getElementById('runlog').innerHTML = '<p class="empty">No run log entries.</p>';
+  } else {
+    let logHtml = '';
+    for (const entry of entries) {
+      logHtml += `<div class="gate">
+        <div class="phase-label">${esc(entry.type)} — Phase ${esc(String(entry.phase))}</div>`;
+
+      if (entry.features) {
+        logHtml += `<div style="font-size:0.8rem;color:var(--text-dim)">Features: ${entry.features.map(esc).join(', ')}</div>`;
+      }
+
+      // Build result
+      const buildPass = entry.buildResult === 'pass';
+      logHtml += `<div class="result ${buildPass ? 'pass' : 'fail'}">Build: ${esc(entry.buildResult)}</div>`;
+
+      // Evaluator
+      if (entry.evaluatorResult) {
+        if (typeof entry.evaluatorResult === 'string') {
+          logHtml += `<div class="result">${esc(entry.evaluatorResult)}</div>`;
+        } else {
+          for (const [feat, ev] of Object.entries(entry.evaluatorResult)) {
+            const evPass = ev.pass !== false;
+            logHtml += `<div class="result ${evPass ? 'pass' : 'fail'}">Evaluator [${esc(feat)}]: score ${ev.score || '?'} ${evPass ? '✓' : '✗'} ${ev.fixCycles ? `(${ev.fixCycles} fix cycle${ev.fixCycles > 1 ? 's' : ''})` : ''}</div>`;
+          }
+        }
+      }
+
+      // Security
+      if (entry.securityResult) {
+        if (typeof entry.securityResult === 'string') {
+          logHtml += `<div class="result">${esc(entry.securityResult)}</div>`;
+        } else if (entry.securityResult.fixedVulnerabilities) {
+          const sr = entry.securityResult;
+          logHtml += `<div class="result ${sr.pass ? 'pass' : 'fail'}">Security: ${sr.pass ? 'pass' : 'fail'} (${sr.fixCycles || 0} fix cycles)</div>`;
+          if (sr.fixedVulnerabilities.length > 0) {
+            logHtml += '<div class="notes">Fixed: ' + sr.fixedVulnerabilities.map(esc).join(', ') + '</div>';
+          }
+        } else {
+          for (const [feat, sv] of Object.entries(entry.securityResult)) {
+            if (typeof sv === 'object') {
+              logHtml += `<div class="result ${sv.pass ? 'pass' : 'fail'}">Security [${esc(feat)}]: ${sv.pass ? 'pass' : 'fail'} ${sv.highVulns !== undefined ? `(${sv.highVulns} high vulns)` : ''}</div>`;
+            }
+          }
+        }
+      }
+
+      // Compliance
+      if (entry.complianceResult) {
+        if (typeof entry.complianceResult === 'string') {
+          logHtml += `<div class="notes">Compliance: ${esc(entry.complianceResult)}</div>`;
+        } else {
+          for (const [feat, cr] of Object.entries(entry.complianceResult)) {
+            if (feat === 'triage') {
+              logHtml += `<div class="notes"><strong>Triage:</strong> ${esc(cr)}</div>`;
+            } else if (feat === 'provider') {
+              logHtml += `<div style="font-size:0.8rem;color:var(--text-dim)">Provider: ${esc(cr)}</div>`;
+            } else if (typeof cr === 'object') {
+              logHtml += `<div class="result ${cr.overallPass ? 'pass' : 'fail'}">Compliance [${esc(feat)}]: ${cr.overallPass ? 'PASS' : 'FAIL'}</div>`;
+              if (cr.notes) logHtml += `<div class="notes">${esc(cr.notes)}</div>`;
+            }
+          }
+        }
+      }
+
+      if (entry.timestamp) {
+        logHtml += `<div style="font-size:0.75rem;color:var(--text-dim);margin-top:6px">${new Date(entry.timestamp).toLocaleString()}</div>`;
+      }
+      logHtml += '</div>';
+    }
+    document.getElementById('runlog').innerHTML = logHtml;
+  }
+
+  // System state
+  document.getElementById('system').innerHTML = `<table>
+    <tr><td style="color:var(--text-dim)">Cycle</td><td>${store.cycle || 0}</td></tr>
+    <tr><td style="color:var(--text-dim)">Circuit Breaker</td><td style="color:${store.circuitBreaker === 'closed' ? 'var(--green)' : 'var(--red)'}">${esc(store.circuitBreaker)}</td></tr>
+    <tr><td style="color:var(--text-dim)">Consecutive Failures</td><td>${store.consecutiveFailures || 0}</td></tr>
+    <tr><td style="color:var(--text-dim)">Total Failures</td><td>${store.totalFailures || 0}</td></tr>
+    <tr><td style="color:var(--text-dim)">Last Cooldown</td><td>${store.lastCooldownMs || 0}ms</td></tr>
+    <tr><td style="color:var(--text-dim)">Compliance Tool</td><td>${esc(store.compliance?.command || '?')} (fallback: ${esc(store.compliance?.fallback || '?')})</td></tr>
+    <tr><td style="color:var(--text-dim)">Heartbeat</td><td>Phase ${hb.phase || '?'} → ${esc(hb.feature || '?')} [${esc(hb.status || '?')}] (${esc(hb.agent || '?')})</td></tr>
+    <tr><td style="color:var(--text-dim)">Conflicts</td><td>${(store.conflictDataset || []).length} recorded</td></tr>
+  </table>`;
+
+  // Known stubs
+  const stubs = store.knownStubs || [];
+  if (stubs.length === 0) {
+    document.getElementById('stubs').innerHTML = '<p class="empty">None.</p>';
+  } else {
+    document.getElementById('stubs').innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
+      stubs.map(s => `<code style="background:var(--surface);border:1px solid var(--border);padding:2px 8px;border-radius:4px;font-size:0.8rem">${esc(s)}</code>`).join('') +
+      '</div>';
+  }
+}
+
+function toggleCollapse(el) {
+  el.classList.toggle('open');
+  const content = el.nextElementSibling;
+  if (content) content.classList.toggle('open');
+}
+
+// ── File loading ─────────────────────────────────────
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      render(data);
+    } catch (err) {
+      alert('Invalid JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('file-input').addEventListener('change', (e) => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+// Drag & drop
+document.body.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
+document.body.addEventListener('drop', (e) => {
+  e.preventDefault(); e.stopPropagation();
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+// Auto-load if opened with file protocol and store.json is relative
+// (won't work due to CORS, but the drag/drop and file picker cover it)
+</script>
+</body>
+</html>

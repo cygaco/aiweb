@@ -1,0 +1,110 @@
+feature: onboarding
+
+You are a Fix Agent in the multi-agent build system.
+
+## MANDATORY FIRST ACTION
+Before any git command, run: `pwd && git worktree list --porcelain | head`
+Your cwd MUST be inside a `.worktrees/wt-*` path. If it resolves to the main project root, halt immediately and return `{"status": "isolation-violation", "cwd": "<resolved-path>"}`. Do not commit, do not checkout, do not branch.
+
+## Fix Brief — Attempt 1 of 3
+
+### TASK
+Fix the following issues found by the gauntlet reviewers in the onboarding feature:
+
+**CRITICAL — Must fix (genuine builder failures):**
+
+1. **Education inline editing phantom completion** (Compliance: GS-ONB-09, phantom completion)
+   - `Step4Profile.tsx` renders `<EduCard education={entry} onRemove={...} />` but never passes `onEdit`
+   - Edit button never renders; new entries added via EMPTY_EDU have no way to fill fields
+   - Fix: Pass `onEdit` callback to EduCard that opens inline editing form for the entry
+
+2. **Hardcoded hex colors** (Evaluator violation)
+   - `Step3Preferences.tsx:149` — `color: "#fff"` → use `var(--primary-text)` or `var(--white)` CSS variable
+   - `Step3Preferences.tsx:130` — `rgba(255,90,23,0.08)` in CardToggle active background → use CSS variable
+   - `Step3Preferences.tsx:265` — `rgba(255,90,23,0.08)` in Dealbreaker card active → use CSS variable
+
+3. **Raw `<button>` for tab controls** (Evaluator violation)
+   - `Step1Resume.tsx:376` — Replace raw `<button>` tabs with `<TabBar>` component from `src/components/ui/TabBar.tsx`
+   - The TabBar component has matching API for file/paste tab switching
+
+4. **Resume text not wrapped in untrusted tags** (Redteam RT-801 HIGH)
+   - Any call to `callClaude("PARSE", ...)` or `callClaude("PROFILE", ...)` that embeds `resumeRaw` in the prompt must wrap the resume content in `<untrusted_user_data nonce="...">` tags
+   - Generate a random nonce (e.g. `crypto.randomUUID()` or `Math.random().toString(36)`) per call
+   - Check `src/lib/prompts.ts` to see if PARSE/PROFILE prompts already have placeholder for this; if not, add wrapping in the callClaude call site in OnboardingPage.tsx / Step4Profile.tsx
+
+5. **Cancel action not accessible during background parse** (Compliance GS-ONB-05)
+   - User is on Step 2 (Step3Preferences) while parse is in background; Step1Resume is unmounted
+   - ParseBanner in Step3Preferences has no cancel button
+   - Fix: Add a cancel action to the ParseBanner component (or pass a cancel callback from OnboardingPage)
+   - OnboardingPage has the abort controller / parse state; pass `onCancelParse` prop down to the banner
+
+6. **backgroundGenError prop not synced via useEffect** (Compliance phantom completion)
+   - `Step4Profile.tsx`: `backgroundGenError` prop is used in useState initializer but no useEffect syncs it when prop changes after mount
+   - If background gen errors during Step 2 and user arrives at Step 3, error state is silently dropped
+   - Fix: Add `useEffect(() => { if (backgroundGenError) setGenStatus('error'); setGenError(backgroundGenError); }, [backgroundGenError])`
+
+7. **Compensation field hidden with user-entered value** (Compliance GS-ONB-16)
+   - When switching employment type from Full-time to Contract-only, salary input is hidden even if it has a user-entered value
+   - Spec: "The system does not hide a compensation input that contains a user-entered value"
+   - Fix: Only hide salary/hourly field if it is empty; if it has a value, keep it visible
+
+8. **Sub-step position not persisted** (Compliance GS-ONB-26)
+   - `OnboardingPage` always renders `Step3Preferences` from substep 0 ("direction") on mount
+   - On refresh, user restarts at 'direction' even if they were on 'dealbreakers'
+   - Fix: Persist current substep index to session on advance (as part of existing saveSession call); restore it on mount via `loadSession()`
+
+### DONE MEANS
+- EduCard receives onEdit callback; clicking edit on an existing entry opens inline editing form with pre-filled fields
+- No hardcoded hex colors in CardToggle or Dealbreaker styles — CSS variables used
+- TabBar component used for file/paste tab controls in Step1Resume
+- Resume raw text wrapped in <untrusted_user_data> tags before PARSE/PROFILE Claude calls
+- ParseBanner has a cancel action accessible from Step 2 while background parse is running
+- backgroundGenError prop synced to component state when it changes after mount
+- Salary/hourly inputs only hidden if empty; shown (even if secondary) when they contain user values
+- Active substep index within Step3Preferences persisted to session and restored on return
+
+### CONSTRAINTS
+- File scope — ONLY these files:
+  - src/components/steps/Step1Resume.tsx
+  - src/components/steps/Step3Preferences.tsx
+  - src/components/steps/Step4Profile.tsx
+  - src/components/pages/OnboardingPage.tsx
+  - src/components/OnboardingProgress.tsx
+  - src/components/OnboardingCelebration.tsx
+  - src/lib/upload.ts
+- Do NOT touch api.ts, prompts.ts, types.ts, constants.ts, or any other foundation files
+- Do NOT touch IntroScreen.tsx, page.tsx, or any other feature files
+- If a fix requires a foundation file change, write FOUNDATION-UPDATE-REQUEST: <file> — <reason>
+
+### IF STUCK
+- After 3 failed attempts: revert changes and report
+- If fix requires changes outside scope: escalate with FOUNDATION-UPDATE-REQUEST
+
+### QUALITY STANDARDS
+From gauntlet findings:
+- Evaluator: score was 74 — needs to reach 80+
+- Compliance: droppedRequirements and phantomCompletions must be empty
+- Redteam: RT-801 HIGH (prompt injection) must be resolved
+- All React hooks must run before any conditional returns (HYGIENE Rule 32)
+- saveSession() must be called before substep advancement (HYGIENE Rule 29)
+- Every useEffect that modifies a ref must reset it at the top of the effect body (Rule 35)
+
+## Environment
+You are running on branch agent/onboarding (worktree). Commit your fix before returning.
+Run `node <main-repo>/node_modules/typescript/bin/tsc --noEmit` using the MAIN REPO's node_modules (worktrees don't have their own). Use path: `node $(git rev-parse --show-toplevel)/../jobhunter-app/node_modules/typescript/bin/tsc --noEmit` or equivalent.
+
+## Output
+Return JSON as the LAST fenced block:
+```json
+{
+  "feature": "onboarding",
+  "fixAttempt": 1,
+  "status": "fixed",
+  "commit": "<sha>",
+  "filesModified": [],
+  "itemsFixed": [],
+  "itemsUnfixed": [],
+  "foundationUpdateRequests": [],
+  "notes": ""
+}
+```

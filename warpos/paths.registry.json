@@ -1,0 +1,579 @@
+{
+  "$schema": "warpos/paths-registry/v1",
+  "version": 4,
+  "_doc": "Path identity registry. Source of truth for project-relative paths. Consumed by scripts/paths/build.js, which derives: (1) .claude/paths.json (flat key→string used by hooks at runtime), (2) scripts/hooks/lib/paths.generated.js (fallback when paths.json missing), (3) scripts/path-lint.rules.generated.json (regex arrays for path-lint critical+warn), (4) schemas/paths.schema.json (validator), (5) docs/04-architecture/PATH_KEYS.md (human reference). To rename a path: edit here, run scripts/paths/build.js, commit all generated artifacts together.",
+  "_field_meaning": {
+    "path": "Project-relative path from repo root, forward slashes",
+    "kind": "dir | file | jsonl | json | md | js — drives schema validators + lint rules",
+    "owner": "framework (shipped by WarpOS) | generated (built by tooling) | runtime (session-written state) | project (user/team-owned content)",
+    "mutable": "true if files inside are written during normal operation; affects release scrubbing + retention policy",
+    "aliases": "alternative spellings/keys still accepted at the consumer boundary (warn-on-use)",
+    "deprecatedAliases": "old keys/paths whose use is hard-blocked by path-guard",
+    "introducedIn": "WarpOS version when this key first existed",
+    "removedIn": "WarpOS version when this key was removed; null if still active",
+    "replaces": "previous key name if this entry was renamed",
+    "docsToken": "the token used in markdown prose (e.g. paths.eventsFile)"
+  },
+  "paths": {
+    "events": {
+      "path": ".claude/project/events",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.events"
+    },
+    "decisions": {
+      "path": ".claude/project/decisions",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.1.0",
+      "docsToken": "paths.decisions"
+    },
+    "memory": {
+      "path": ".claude/project/memory",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.memory"
+    },
+    "maps": {
+      "path": ".claude/project/maps",
+      "kind": "dir",
+      "owner": "generated",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.maps"
+    },
+    "reference": {
+      "path": ".claude/project/reference",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.reference"
+    },
+    "runtime": {
+      "path": ".claude/runtime",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.runtime"
+    },
+    "logs": {
+      "path": ".claude/runtime/logs",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.logs"
+    },
+    "handoffs": {
+      "path": ".claude/runtime/handoffs",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.handoffs"
+    },
+    "handoffLatest": {
+      "path": ".claude/runtime/handoff.md",
+      "kind": "md",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.handoffLatest"
+    },
+    "plans": {
+      "path": ".claude/runtime/plans",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.plans"
+    },
+    "agents": {
+      "path": ".claude/agents",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.agents"
+    },
+    "agentSystem": {
+      "path": ".claude/agents/00-alex/.system",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.agentSystem"
+    },
+    "betaSystem": {
+      "path": ".claude/agents/00-alex/.system/beta",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.betaSystem"
+    },
+    "policy": {
+      "path": ".claude/agents/00-alex/.system/policy",
+      "kind": "dir",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.policy"
+    },
+    "decisionPolicy": {
+      "path": ".claude/agents/00-alex/.system/policy/decision-policy.md",
+      "kind": "md",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.decisionPolicy"
+    },
+    "currentStage": {
+      "path": ".claude/agents/00-alex/.system/policy/current-stage.md",
+      "kind": "md",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.currentStage"
+    },
+    "adrIndex": {
+      "path": ".claude/agents/00-alex/.system/policy/adr/INDEX.md",
+      "kind": "md",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.adrIndex"
+    },
+    "commands": {
+      "path": ".claude/commands",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.commands"
+    },
+    "content": {
+      "path": ".claude/content",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.content"
+    },
+    "dreams": {
+      "path": ".claude/dreams",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.dreams"
+    },
+    "favorites": {
+      "path": ".claude/content/favorites",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.favorites"
+    },
+    "hooks": {
+      "path": "scripts/hooks",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.hooks"
+    },
+    "hookLib": {
+      "path": "scripts/hooks/lib",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.hookLib"
+    },
+    "patterns": {
+      "path": "patterns",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.patterns"
+    },
+    "requirements": {
+      "path": "requirements",
+      "kind": "dir",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.requirements"
+    },
+    "requirementsRoot": {
+      "path": "requirements",
+      "kind": "dir",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.1.0",
+      "aliases": ["requirements"],
+      "docsToken": "paths.requirementsRoot",
+      "_note": "Phase 1 introduced this alias to make 'spec home' explicit. Existing 'requirements' key remains for backward compat."
+    },
+    "specsRoot": {
+      "path": "requirements/05-features",
+      "kind": "dir",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.1.0",
+      "replaces": "manifest.projectPaths.specs (was docs/05-features)",
+      "deprecatedAliases": ["docs/05-features"],
+      "docsToken": "paths.specsRoot",
+      "_note": "Phase 1 final-A moved docs/05-features → requirements/05-features. Manifest projectPaths.specs is bound to this in Phase 1 final-D."
+    },
+    "research": {
+      "path": "docs/99-resources/01-research",
+      "kind": "dir",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.research"
+    },
+    "karpathyRuns": {
+      "path": "docs/99-resources/02-karpathy-autoresearch",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.karpathyRuns"
+    },
+    "manifest": {
+      "path": ".claude/manifest.json",
+      "kind": "json",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.manifest"
+    },
+    "settings": {
+      "path": ".claude/settings.json",
+      "kind": "json",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.settings"
+    },
+    "store": {
+      "path": ".claude/agents/store.json",
+      "kind": "json",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.store"
+    },
+    "oneshotStore": {
+      "path": ".claude/agents/02-oneshot/.system/store.json",
+      "kind": "json",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.oneshotStore"
+    },
+    "oneshotSystem": {
+      "path": ".claude/agents/02-oneshot/.system",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.oneshotSystem"
+    },
+    "oneshotRetros": {
+      "path": ".claude/agents/02-oneshot/.system/retros",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.oneshotRetros"
+    },
+    "eventsFile": {
+      "path": ".claude/project/events/events.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.eventsFile"
+    },
+    "toolsFile": {
+      "path": ".claude/project/events/tools.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.toolsFile"
+    },
+    "requirementsFile": {
+      "path": ".claude/project/events/requirements.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.requirementsFile"
+    },
+    "requirementsStagedFile": {
+      "path": ".claude/project/events/requirements-staged.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.requirementsStagedFile"
+    },
+    "decisionLedger": {
+      "path": ".claude/project/decisions/decision-ledger.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.1.0",
+      "docsToken": "paths.decisionLedger"
+    },
+    "providerTrace": {
+      "path": ".claude/project/decisions/provider-trace.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.1.0",
+      "docsToken": "paths.providerTrace"
+    },
+    "learningsFile": {
+      "path": ".claude/project/memory/learnings.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.learningsFile"
+    },
+    "tracesFile": {
+      "path": ".claude/project/memory/traces.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.tracesFile"
+    },
+    "systemsFile": {
+      "path": ".claude/project/memory/systems.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.systemsFile"
+    },
+    "recurringIssuesFile": {
+      "path": ".claude/project/memory/recurring-issues.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.recurringIssuesFile"
+    },
+    "specGraph": {
+      "path": ".claude/project/maps/SPEC_GRAPH.json",
+      "kind": "json",
+      "owner": "generated",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.specGraph"
+    },
+    "judgmentModel": {
+      "path": ".claude/agents/00-alex/.system/beta/judgement-model.md",
+      "kind": "md",
+      "owner": "framework",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.judgmentModel"
+    },
+    "judgmentRecommendations": {
+      "path": ".claude/agents/00-alex/.system/beta/judgement-model-recommendations.md",
+      "kind": "md",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.judgmentRecommendations"
+    },
+    "betaSourceData": {
+      "path": ".claude/agents/00-alex/.system/beta/beta-source-data.md",
+      "kind": "md",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.betaSourceData"
+    },
+    "betaEvents": {
+      "path": ".claude/agents/00-alex/.system/beta/events.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.betaEvents"
+    },
+    "lexicon": {
+      "path": ".claude/agents/00-alex/.system/lexicon.md",
+      "kind": "md",
+      "owner": "framework",
+      "mutable": true,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.lexicon"
+    },
+    "pathsLib": {
+      "path": "scripts/hooks/lib/paths.js",
+      "kind": "js",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.pathsLib"
+    },
+    "loggerLib": {
+      "path": "scripts/hooks/lib/logger.js",
+      "kind": "js",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.0.0",
+      "docsToken": "paths.loggerLib"
+    }
+  },
+  "lintRules": {
+    "_doc": "Mirror of WARN/CRITICAL regex arrays from scripts/path-lint.js. Migrated here so build.js can regenerate path-lint.rules.generated.json. Lint rules are generated artifact; edit registry not script.",
+    "critical": [
+      {
+        "match": "\\.claude\\/events\\/[^/\\s\"'`)\\]]",
+        "suggestion": ".claude/project/events/ (or paths.events)",
+        "why": "path moved under .claude/project/ in v2 layout"
+      },
+      {
+        "match": "\\.claude\\/memory\\/[^/\\s\"'`)\\]]",
+        "suggestion": ".claude/project/memory/ (or paths.memory)",
+        "why": "path moved under .claude/project/ in v2 layout"
+      },
+      {
+        "match": "\\.claude\\/maps\\/[^/\\s\"'`)\\]]",
+        "suggestion": ".claude/project/maps/ (or paths.maps)",
+        "why": "path moved under .claude/project/ in v2 layout"
+      },
+      {
+        "match": "\\.claude\\/handoffs\\/",
+        "suggestion": ".claude/runtime/handoffs/ (or paths.handoffs)",
+        "why": "handoffs moved under .claude/runtime/"
+      },
+      {
+        "match": "\\.claude\\/logs\\/",
+        "suggestion": ".claude/runtime/logs/ (or paths.logs)",
+        "why": "logs moved under .claude/runtime/"
+      },
+      {
+        "match": "\\.claude\\/plans\\/",
+        "suggestion": ".claude/runtime/plans/ (or paths.plans)",
+        "why": "plans moved under .claude/runtime/"
+      },
+      {
+        "match": "context-enhancer\\.js",
+        "suggestion": "smart-context.js",
+        "why": "renamed"
+      },
+      {
+        "match": "prompt-enhancer\\.js",
+        "suggestion": "smart-context.js",
+        "why": "merged into smart-context.js"
+      },
+      {
+        "match": "\\.claude\\/agents\\/\\.system\\/oneshot\\/store\\.json",
+        "suggestion": ".claude/agents/store.json (or paths.store)",
+        "why": "wrong path — no .system/oneshot/ dir"
+      },
+      {
+        "match": "\\bbeta-persona\\.md\\b",
+        "suggestion": "judgement-model.md (or paths.judgmentModel)",
+        "why": "renamed during privacy pass"
+      },
+      {
+        "match": "\\.beta-mining-recommendations\\.md",
+        "suggestion": "judgement-model-recommendations.md",
+        "why": "renamed during privacy pass"
+      },
+      {
+        "match": "docs\\/05-features\\/",
+        "suggestion": "requirements/05-features/ (or paths.specsRoot)",
+        "why": "Phase 1 final-A: docs/05-features → requirements/05-features"
+      },
+      {
+        "match": "docs\\/03-requirement-standards\\/",
+        "suggestion": "requirements/_standards/ (or paths.requirementsRoot)",
+        "why": "Phase 1 final-A: docs/03-requirement-standards → requirements/_standards"
+      }
+    ],
+    "_critical_doc": "Above are paths that resolve to NOTHING in the current layout (or to-be-current after Phase 1 final-A). Lint exits 1 on any hit.",
+    "warnKeys": [
+      "eventsFile",
+      "toolsFile",
+      "requirementsFile",
+      "requirementsStagedFile",
+      "decisionLedger",
+      "providerTrace",
+      "learningsFile",
+      "tracesFile",
+      "systemsFile",
+      "recurringIssuesFile",
+      "judgmentModel",
+      "judgmentRecommendations",
+      "betaEvents",
+      "betaSourceData",
+      "lexicon",
+      "pathsLib",
+      "loggerLib",
+      "handoffLatest",
+      "store",
+      "specGraph",
+      "manifest",
+      "settings"
+    ],
+    "_warnKeys_doc": "These keys point at single files. Hardcoded literal use should warn (paths.X is preferred). build.js generates regex arrays from the registry path values."
+  },
+  "skipSubstrings": [
+    ".claude/runtime/",
+    ".claude/project/events/",
+    ".claude/project/decisions/",
+    ".claude/project/memory/",
+    ".claude/project/maps/",
+    "requirements/99-audits/",
+    "docs/99-resources/",
+    ".claude/paths.json",
+    "scripts/path-lint.js",
+    "scripts/hooks/path-guard.js",
+    "/check/references.md",
+    ".claude/dreams/",
+    ".claude/agents/02-oneshot/.system/retros/",
+    ".claude/agents/.system/dispatch-backups/",
+    "backups/",
+    "SYSTEMS-REFERENCE.md",
+    "warpos-system-updates",
+    "warpos-roadmap.md",
+    "ROADMAP.md",
+    "warpos/paths.registry.json",
+    "scripts/path-lint.rules.generated.json",
+    "scripts/hooks/lib/paths.generated.js"
+  ],
+  "_skipSubstrings_doc": "File substrings excluded from path-lint scan. Mostly archives, runtime, the linter itself, and (post-1B) the generated artifacts.",
+  "skipDirs": [
+    "node_modules",
+    ".git",
+    ".next",
+    "out",
+    "build",
+    "coverage",
+    ".worktrees",
+    ".warpos-backup"
+  ]
+}

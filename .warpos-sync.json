@@ -1,0 +1,15 @@
+{
+  "syncedAt": "2026-05-01T21:03:02.472Z",
+  "sourceVersion": "0.1.1",
+  "sourceCommit": "c322a99",
+  "counts": {
+    "copied": 0,
+    "updated": 3,
+    "deleted": 0,
+    "deletes_skipped": 0,
+    "migrations_copied": 4,
+    "skipped_ignore": 0,
+    "errors": 0
+  },
+  "notes": "Written by scripts/warpos/promote.js --apply. Do not hand-edit; this is the canonical sync record."
+}

@@ -1,0 +1,11 @@
+sync(from-jobhunter): warpos@0.1.1
+
+Promotion via scripts/warpos/promote.js --apply.
+
+- 0 files added
+- 3 files updated
+- 4 migrations copied
+- 0 files deleted
+- 0 files skipped (generated/runtime/project-specific)
+
+See .warpos-sync.json for the full sync record.

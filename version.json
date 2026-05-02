@@ -1,0 +1,14 @@
+{
+  "$schema": "warpos/version/v1",
+  "name": "warpos",
+  "version": "0.1.1",
+  "description": "WarpOS — autonomous AI operating system for software engineering. Phase 4-6 quality-gate hardening + lib-bypass hygiene rule.",
+  "releasedAt": "2026-05-01",
+  "minUpgradeableFrom": null,
+  "channel": "main",
+  "frameworkManifestSchema": "warpos/framework-manifest/v2",
+  "pathRegistrySchema": "warpos/paths/v4",
+  "decisionPolicySchema": "warpos/decision-policy/v1",
+  "previousVersions": ["0.1.0"],
+  "notes": "Patch release capturing post-0.1.0 phase 4-6 quality-gate hardening, session telemetry, and the third Refactor & Rename Hygiene rule (lib-only fixes don't protect bypassing callers). No schema changes; no migrations required."
+}

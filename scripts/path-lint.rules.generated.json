@@ -1,0 +1,195 @@
+{
+  "$schema": "warpos/path-lint-rules/v1",
+  "generated_by": "scripts/paths/build.js",
+  "critical": [
+    {
+      "match": "\\.claude\\/events\\/[^/\\s\"'`)\\]]",
+      "suggestion": ".claude/project/events/ (or paths.events)",
+      "why": "path moved under .claude/project/ in v2 layout"
+    },
+    {
+      "match": "\\.claude\\/memory\\/[^/\\s\"'`)\\]]",
+      "suggestion": ".claude/project/memory/ (or paths.memory)",
+      "why": "path moved under .claude/project/ in v2 layout"
+    },
+    {
+      "match": "\\.claude\\/maps\\/[^/\\s\"'`)\\]]",
+      "suggestion": ".claude/project/maps/ (or paths.maps)",
+      "why": "path moved under .claude/project/ in v2 layout"
+    },
+    {
+      "match": "\\.claude\\/handoffs\\/",
+      "suggestion": ".claude/runtime/handoffs/ (or paths.handoffs)",
+      "why": "handoffs moved under .claude/runtime/"
+    },
+    {
+      "match": "\\.claude\\/logs\\/",
+      "suggestion": ".claude/runtime/logs/ (or paths.logs)",
+      "why": "logs moved under .claude/runtime/"
+    },
+    {
+      "match": "\\.claude\\/plans\\/",
+      "suggestion": ".claude/runtime/plans/ (or paths.plans)",
+      "why": "plans moved under .claude/runtime/"
+    },
+    {
+      "match": "context-enhancer\\.js",
+      "suggestion": "smart-context.js",
+      "why": "renamed"
+    },
+    {
+      "match": "prompt-enhancer\\.js",
+      "suggestion": "smart-context.js",
+      "why": "merged into smart-context.js"
+    },
+    {
+      "match": "\\.claude\\/agents\\/\\.system\\/oneshot\\/store\\.json",
+      "suggestion": ".claude/agents/store.json (or paths.store)",
+      "why": "wrong path — no .system/oneshot/ dir"
+    },
+    {
+      "match": "\\bbeta-persona\\.md\\b",
+      "suggestion": "judgement-model.md (or paths.judgmentModel)",
+      "why": "renamed during privacy pass"
+    },
+    {
+      "match": "\\.beta-mining-recommendations\\.md",
+      "suggestion": "judgement-model-recommendations.md",
+      "why": "renamed during privacy pass"
+    },
+    {
+      "match": "docs\\/05-features\\/",
+      "suggestion": "requirements/05-features/ (or paths.specsRoot)",
+      "why": "Phase 1 final-A: docs/05-features → requirements/05-features"
+    },
+    {
+      "match": "docs\\/03-requirement-standards\\/",
+      "suggestion": "requirements/_standards/ (or paths.requirementsRoot)",
+      "why": "Phase 1 final-A: docs/03-requirement-standards → requirements/_standards"
+    }
+  ],
+  "warn": [
+    {
+      "match": "\\.claude/project/events/events\\.jsonl",
+      "key": "eventsFile"
+    },
+    {
+      "match": "\\.claude/project/events/tools\\.jsonl",
+      "key": "toolsFile"
+    },
+    {
+      "match": "\\.claude/project/events/requirements\\.jsonl",
+      "key": "requirementsFile"
+    },
+    {
+      "match": "\\.claude/project/events/requirements-staged\\.jsonl",
+      "key": "requirementsStagedFile"
+    },
+    {
+      "match": "\\.claude/project/decisions/decision-ledger\\.jsonl",
+      "key": "decisionLedger"
+    },
+    {
+      "match": "\\.claude/project/decisions/provider-trace\\.jsonl",
+      "key": "providerTrace"
+    },
+    {
+      "match": "\\.claude/project/memory/learnings\\.jsonl",
+      "key": "learningsFile"
+    },
+    {
+      "match": "\\.claude/project/memory/traces\\.jsonl",
+      "key": "tracesFile"
+    },
+    {
+      "match": "\\.claude/project/memory/systems\\.jsonl",
+      "key": "systemsFile"
+    },
+    {
+      "match": "\\.claude/project/memory/recurring-issues\\.jsonl",
+      "key": "recurringIssuesFile"
+    },
+    {
+      "match": "\\.claude/agents/00-alex/\\.system/beta/judgement-model\\.md",
+      "key": "judgmentModel"
+    },
+    {
+      "match": "\\.claude/agents/00-alex/\\.system/beta/judgement-model-recommendations\\.md",
+      "key": "judgmentRecommendations"
+    },
+    {
+      "match": "\\.claude/agents/00-alex/\\.system/beta/events\\.jsonl",
+      "key": "betaEvents"
+    },
+    {
+      "match": "\\.claude/agents/00-alex/\\.system/beta/beta-source-data\\.md",
+      "key": "betaSourceData"
+    },
+    {
+      "match": "\\.claude/agents/00-alex/\\.system/lexicon\\.md",
+      "key": "lexicon"
+    },
+    {
+      "match": "scripts/hooks/lib/paths\\.js",
+      "key": "pathsLib"
+    },
+    {
+      "match": "scripts/hooks/lib/logger\\.js",
+      "key": "loggerLib"
+    },
+    {
+      "match": "\\.claude/runtime/handoff\\.md",
+      "key": "handoffLatest"
+    },
+    {
+      "match": "\\.claude/agents/store\\.json",
+      "key": "store"
+    },
+    {
+      "match": "\\.claude/project/maps/SPEC_GRAPH\\.json",
+      "key": "specGraph"
+    },
+    {
+      "match": "\\.claude/manifest\\.json",
+      "key": "manifest"
+    },
+    {
+      "match": "\\.claude/settings\\.json",
+      "key": "settings"
+    }
+  ],
+  "skipSubstrings": [
+    ".claude/runtime/",
+    ".claude/project/events/",
+    ".claude/project/decisions/",
+    ".claude/project/memory/",
+    ".claude/project/maps/",
+    "requirements/99-audits/",
+    "docs/99-resources/",
+    ".claude/paths.json",
+    "scripts/path-lint.js",
+    "scripts/hooks/path-guard.js",
+    "/check/references.md",
+    ".claude/dreams/",
+    ".claude/agents/02-oneshot/.system/retros/",
+    ".claude/agents/.system/dispatch-backups/",
+    "backups/",
+    "SYSTEMS-REFERENCE.md",
+    "warpos-system-updates",
+    "warpos-roadmap.md",
+    "ROADMAP.md",
+    "warpos/paths.registry.json",
+    "scripts/path-lint.rules.generated.json",
+    "scripts/hooks/lib/paths.generated.js"
+  ],
+  "skipDirs": [
+    "node_modules",
+    ".git",
+    ".next",
+    "out",
+    "build",
+    "coverage",
+    ".worktrees",
+    ".warpos-backup"
+  ]
+}

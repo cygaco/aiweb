@@ -1,0 +1,7 @@
+{
+  "name": "warpos-install-empty-next-app-fixture",
+  "private": true,
+  "scripts": {
+    "build": "echo fixture"
+  }
+}

@@ -1,0 +1,3661 @@
+You are the Security Red Team Agent in the multi-agent build system.
+
+Feature: onboarding
+Scan for security vulnerabilities. Do NOT write code.
+
+## Checks:
+1. Injection — SQL/NoSQL/command injection in API routes
+2. Broken auth — JWT validation missing or incorrect
+3. Sensitive data exposure — API keys in client bundle, env vars in client components
+4. XSS — unsanitized input rendered (dangerouslySetInnerHTML)
+5. Broken access control — missing auth on protected routes
+6. Security misconfiguration — permissive CORS, missing security headers
+7. Insecure deserialization — JSON.parse on untrusted input without validation
+8. Prompt injection — external/user data NOT wrapped in <untrusted_user_data nonce=...> tags in Claude prompts
+9. Rate limiting — public API routes must have per-IP + global limits
+10. CSRF — mutating routes must call validateOrigin() as if-guard (NEVER try/catch on a boolean)
+11. Client-controlled billing — cost must come from server-side lookup, never from request body
+
+## Output (LAST fenced block — pass false if ANY critical or high severity):
+```json
+{"scanDate":"2026-04-26T06:38:56.185Z","pass":true,"vulnerabilities":[]}
+```
+
+---
+## Built Files
+--- BEGIN built file: src/components/steps/Step1Resume.tsx ---
+"use client";
+// Step 1: Resume Upload — file drag-and-drop + paste text.
+// BUG-017 FIX: re-entry/returning-user flow implemented (Continue + Upload different).
+// BUG-020 FIX: DOCX extraction uses JSZip (via upload.ts).
+
+import React, { useRef, useState, useEffect } from "react";
+import { Btn } from "@/components/ui/Btn";
+import { Spin } from "@/components/ui/Spin";
+import { TabBar } from "@/components/ui/TabBar";
+import { validateFile, extractText } from "@/lib/upload";
+
+// ── Preserved type exports ─────────────────────────────────
+export type ParseStatus = "idle" | "parsing" | "done" | "error" | "cancelled";
+
+export interface Step1ResumeProps {
+  onUpload: (resumeRaw: string) => void;
+  parseStatus?: ParseStatus;
+  onRetryParse?: () => void;
+  onCancelParse?: () => void;
+  initialResumeRaw?: string;
+}
+
+type Tab = "file" | "paste";
+type ProcessingState = "idle" | "processing" | "success" | "error";
+
+// ── ParseBanner (exported for reuse in Step3Preferences) ──────────────────────
+
+export interface ParseBannerProps {
+  status: "parsing" | "done" | "error" | "cancelled";
+  onRetry?: () => void;
+  onCancel?: () => void;
+}
+
+export function ParseBanner({ status, onRetry, onCancel }: ParseBannerProps) {
+  const cfg = {
+    parsing: {
+      bg: "var(--warning-light)",
+      border: "var(--warning-border)",
+      color: "var(--warning)",
+      text: "Parsing your resume in the background...",
+    },
+    done: {
+      bg: "var(--success-light)",
+      border: "var(--success-border)",
+      color: "var(--success)",
+      text: "Resume parsed ✓",
+    },
+    error: {
+      bg: "var(--error-light)",
+      border: "var(--error-border)",
+      color: "var(--error)",
+      text: "Resume parsing failed. Retry?",
+    },
+    cancelled: {
+      bg: "var(--surface)",
+      border: "var(--border)",
+      color: "var(--text-muted)",
+      text: "Cancelled. You can try again.",
+    },
+  }[status];
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        background: cfg.bg,
+        border: `1px solid ${cfg.border}`,
+        borderRadius: "var(--radius)",
+        padding: "8px 12px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8,
+        flexWrap: "wrap",
+      }}
+    >
+      <span style={{ fontSize: 13, color: cfg.color }}>{cfg.text}</span>
+      <div style={{ display: "flex", gap: 6 }}>
+        {status === "error" && onRetry && (
+          <Btn
+            variant="ghost"
+            size="sm"
+            onClick={onRetry}
+            aria-label="Retry resume parsing"
+          >
+            Retry
+          </Btn>
+        )}
+        {status === "parsing" && onCancel && (
+          <Btn
+            variant="ghost"
+            size="sm"
+            onClick={onCancel}
+            aria-label="Cancel resume parsing"
+          >
+            Cancel
+          </Btn>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Step1Resume ───────────────────────────────────────────────────────────────
+
+export function Step1Resume({
+  onUpload,
+  parseStatus = "idle",
+  onRetryParse,
+  onCancelParse,
+  initialResumeRaw,
+}: Step1ResumeProps) {
+  const [tab, setTab] = useState<Tab>("file");
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [procState, setProcState] = useState<ProcessingState>("idle");
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteError, setPasteError] = useState<string | null>(null);
+  // BUG-017: show "continue" when returning user has existing resume
+  const [showContinue, setShowContinue] = useState(!!initialResumeRaw);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
+
+  // Keep continue state in sync if initialResumeRaw changes
+  useEffect(() => {
+    if (initialResumeRaw) setShowContinue(true);
+  }, [initialResumeRaw]);
+
+  async function processFile(file: File) {
+    setFileError(null);
+    const check = validateFile(file);
+    if (!check.valid) {
+      setFileError(check.error);
+      return;
+    }
+    setProcState("processing");
+    try {
+      const text = await extractText(file);
+      if (!text || text.trim().length === 0) {
+        setProcState("error");
+        setFileError("No text could be extracted from this file.");
+        return;
+      }
+      setProcState("success");
+      // Brief success animation (~1s) before advancing (INPUTS.md)
+      successTimerRef.current = setTimeout(() => {
+        onUpload(text);
+      }, 900);
+    } catch (err) {
+      setProcState("error");
+      setFileError(
+        err instanceof Error ? err.message : "Failed to process file.",
+      );
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+    e.target.value = "";
+  }
+
+  function handlePasteSubmit() {
+    setPasteError(null);
+    const trimmed = pasteText.trim();
+    if (!trimmed) {
+      setPasteError("Please paste your resume text first.");
+      return;
+    }
+    if (trimmed.length < 50) {
+      setPasteError("Text is too short. Please paste your full resume.");
+      return;
+    }
+    onUpload(trimmed);
+  }
+
+  function handleUploadDifferent() {
+    setShowContinue(false);
+    setProcState("idle");
+    setFileError(null);
+    setPasteText("");
+    setPasteError(null);
+  }
+
+  // ── Returning user: show Continue + Upload different ──────────────────────
+  // BUG-017: re-entry flow
+  if (showContinue && procState === "idle") {
+    return (
+      <div style={outerStyle}>
+        <div style={innerStyle}>
+          <div>
+            <h2 style={h2Style}>Upload your resume</h2>
+            <p style={subtitleStyle}>
+              We extracted this from your resume. Edit anything that looks off.
+            </p>
+          </div>
+
+          {parseStatus !== "idle" && (
+            <ParseBanner
+              status={parseStatus}
+              onRetry={onRetryParse}
+              onCancel={onCancelParse}
+            />
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Btn
+              variant="primary"
+              size="lg"
+              onClick={() => initialResumeRaw && onUpload(initialResumeRaw)}
+              style={{ width: "100%", justifyContent: "center" }}
+              aria-label="Continue with existing resume"
+            >
+              Continue with existing resume
+            </Btn>
+            <Btn
+              variant="ghost"
+              size="md"
+              onClick={handleUploadDifferent}
+              style={{ width: "100%", justifyContent: "center" }}
+              aria-label="Upload a different resume"
+            >
+              Upload different
+            </Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Processing state ───────────────────────────────────────────────────────
+  if (procState === "processing") {
+    return (
+      <div style={outerStyle}>
+        <div style={{ ...innerStyle, alignItems: "center", gap: 20 }}>
+          <Spin size="lg" />
+          <div style={{ textAlign: "center" }}>
+            <p
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                color: "var(--text)",
+                margin: "0 0 12px 0",
+              }}
+            >
+              Processing your resume...
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {[
+                "Reading document…",
+                "Extracting structure…",
+                "Building profile…",
+              ].map((phase) => (
+                <p
+                  key={phase}
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-muted)",
+                    margin: 0,
+                  }}
+                >
+                  {phase}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Success state ──────────────────────────────────────────────────────────
+  if (procState === "success") {
+    return (
+      <div style={outerStyle}>
+        <div style={{ ...innerStyle, alignItems: "center", gap: 16 }}>
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: "50%",
+              background: "var(--success-light)",
+              border: "2px solid var(--success-border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 24,
+              color: "var(--success)",
+            }}
+            aria-hidden="true"
+          >
+            ✓
+          </div>
+          <p
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              color: "var(--text)",
+              textAlign: "center",
+              margin: 0,
+            }}
+          >
+            Got it! Setting things up...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Normal upload UI ───────────────────────────────────────────────────────
+  return (
+    <div style={outerStyle}>
+      <div style={innerStyle}>
+        {/* Heading */}
+        <div>
+          <h2 style={h2Style}>Upload your resume</h2>
+          <p style={subtitleStyle}>
+            We&apos;ll extract your info and get everything set up fast.
+          </p>
+        </div>
+
+        {/* Trust signals */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {[
+            "Processed locally first",
+            "Encrypted in your browser",
+            "No data stored by AI",
+          ].map((t) => (
+            <span
+              key={t}
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-full)",
+                padding: "3px 10px",
+              }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+
+        {/* Parse status banner (shown when parseStatus is active) */}
+        {parseStatus !== "idle" && (
+          <ParseBanner
+            status={parseStatus}
+            onRetry={onRetryParse}
+            onCancel={onCancelParse}
+          />
+        )}
+
+        {/* Tabs */}
+        <TabBar
+          tabs={[
+            { id: "file", label: "Upload file" },
+            { id: "paste", label: "Paste text" },
+          ]}
+          activeTab={tab}
+          onChange={(id) => setTab(id as Tab)}
+        />
+
+        {/* Tab content */}
+        {tab === "file" ? (
+          <div role="tabpanel">
+            {/* Drop zone */}
+            <div
+              onDrop={handleDrop}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) =>
+                (e.key === "Enter" || e.key === " ") &&
+                fileInputRef.current?.click()
+              }
+              role="button"
+              tabIndex={0}
+              aria-label="Drop your resume here or click to browse"
+              style={{
+                border: `2px dashed ${isDragOver ? "var(--primary)" : "var(--border)"}`,
+                borderRadius: "var(--radius-lg)",
+                padding: "40px 24px",
+                textAlign: "center",
+                cursor: "pointer",
+                background: isDragOver
+                  ? "rgba(255,90,23,0.04)"
+                  : "var(--surface)",
+                transition: "all 0.15s",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "var(--text)",
+                  margin: "0 0 4px 0",
+                }}
+              >
+                Drag &amp; drop your resume here
+              </p>
+              <p
+                style={{
+                  fontSize: 13,
+                  color: "var(--text-muted)",
+                  margin: "0 0 10px 0",
+                }}
+              >
+                or click to browse
+              </p>
+              <p
+                style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}
+              >
+                PDF, DOCX, TXT, MD — 10 MB max
+              </p>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.txt,.md"
+              onChange={handleFileChange}
+              style={{ display: "none" }}
+              aria-hidden="true"
+              tabIndex={-1}
+            />
+            {fileError && (
+              <p
+                role="alert"
+                style={{
+                  fontSize: 13,
+                  color: "var(--error)",
+                  marginTop: 8,
+                  margin: "8px 0 0 0",
+                }}
+              >
+                {fileError}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div
+            role="tabpanel"
+            style={{ display: "flex", flexDirection: "column", gap: 10 }}
+          >
+            <textarea
+              value={pasteText}
+              onChange={(e) => {
+                setPasteText(e.target.value);
+                if (pasteError) setPasteError(null);
+              }}
+              placeholder="Paste your resume text here…"
+              aria-label="Resume text"
+              rows={12}
+              style={{
+                width: "100%",
+                background: "var(--surface-alt)",
+                border: `1px solid ${pasteError ? "var(--error)" : "var(--border)"}`,
+                borderRadius: "var(--radius)",
+                color: "var(--text)",
+                fontFamily: "var(--font-body)",
+                fontSize: 13,
+                padding: "10px 12px",
+                outline: "none",
+                resize: "vertical",
+                boxSizing: "border-box",
+                transition: "border-color 0.15s",
+              }}
+            />
+            {pasteError && (
+              <p
+                role="alert"
+                style={{ fontSize: 12, color: "var(--error)", margin: 0 }}
+              >
+                {pasteError}
+              </p>
+            )}
+            <Btn
+              variant="primary"
+              onClick={handlePasteSubmit}
+              aria-label="Parse pasted resume text"
+              style={{ alignSelf: "flex-start" }}
+            >
+              Parse resume →
+            </Btn>
+          </div>
+        )}
+
+        {/* Disclosure */}
+        <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
+          Your resume will be sent to Claude for processing. Claude does not
+          store your data.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Shared styles ──────────────────────────────────────────────────────────────
+
+const outerStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: "100%",
+  padding: "40px 24px",
+  background: "var(--bg)",
+};
+
+const innerStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  width: "100%",
+  maxWidth: 560,
+  gap: 20,
+};
+
+const h2Style: React.CSSProperties = {
+  fontSize: 22,
+  fontWeight: 700,
+  color: "var(--text)",
+  margin: "0 0 6px 0",
+};
+
+const subtitleStyle: React.CSSProperties = {
+  fontSize: 14,
+  color: "var(--text-muted)",
+  margin: 0,
+};
+
+export default Step1Resume;
+
+--- END built file ---
+
+--- BEGIN built file: src/components/steps/Step3Preferences.tsx ---
+"use client";
+// Step 2: Preferences — 6 substeps: direction → worktype → comp → location → quickcheck → dealbreakers
+// BUG-018 FIX: auto-save at each substep boundary via onSubStepComplete callback.
+// BUG-019 FIX: zero/negative compensation blocked.
+// HYGIENE Rule 11: locationTypes/employmentTypes/dealBreakers fallbacks never empty.
+
+import React, { useState } from "react";
+import { Btn } from "@/components/ui/Btn";
+import { Inp } from "@/components/ui/Inp";
+import { Sel } from "@/components/ui/Sel";
+import { LocCombo } from "@/components/ui/LocCombo";
+import type { Preferences, Demographics, Context } from "@/lib/types";
+import {
+  DIRECTION_PRESETS,
+  DEFAULT_DEAL_BREAKERS,
+  DEFAULT_DEMOGRAPHICS,
+  QUICK_CHECK_ITEMS,
+  COMP_STRUCTURES,
+  START_DATE_OPTIONS,
+} from "@/lib/constants";
+import { ParseBanner } from "./Step1Resume";
+
+// ── Preserved type exports ─────────────────────────────────
+export type Step3SubStep =
+  | "direction"
+  | "worktype"
+  | "comp"
+  | "location"
+  | "quickcheck"
+  | "dealbreakers";
+
+export interface Step3PreferencesProps {
+  initialSubStep?: Step3SubStep;
+  initialPreferences?: Partial<Preferences>;
+  initialContext?: Partial<Context>;
+  initialDemographics?: Partial<Demographics>;
+  parseStatus?: "idle" | "parsing" | "done" | "error" | "cancelled";
+  onRetryParse?: () => void;
+  onSubStepComplete: (
+    subStep: Step3SubStep,
+    data: {
+      preferences: Partial<Preferences>;
+      context: Partial<Context>;
+      demographics: Partial<Demographics>;
+    },
+  ) => void;
+  onComplete: (data: {
+    preferences: Partial<Preferences>;
+    context: Partial<Context>;
+    demographics: Partial<Demographics>;
+  }) => void;
+}
+
+const SUBSTEP_ORDER: Step3SubStep[] = [
+  "direction",
+  "worktype",
+  "comp",
+  "location",
+  "quickcheck",
+  "dealbreakers",
+];
+
+// ── Shared layout styles ──────────────────────────────────────────────────────
+
+const pageStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "flex-start",
+  minHeight: "100%",
+  padding: "32px 24px 60px",
+  background: "var(--bg)",
+};
+
+const cardStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  width: "100%",
+  maxWidth: 560,
+  gap: 24,
+};
+
+const h2Style: React.CSSProperties = {
+  fontSize: 22,
+  fontWeight: 700,
+  color: "var(--text)",
+  margin: "0 0 6px 0",
+};
+
+const subtitleStyle: React.CSSProperties = {
+  fontSize: 14,
+  color: "var(--text-muted)",
+  margin: 0,
+};
+
+const navRowStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  marginTop: 8,
+};
+
+// ── Card Row Toggle (COMPONENT_LIBRARY.md "Card Row Toggle" pattern) ──────────
+
+function CardToggle({
+  label,
+  active,
+  indicator,
+  onToggle,
+}: {
+  label: string;
+  active: boolean;
+  indicator: "check" | "x";
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      role="checkbox"
+      aria-checked={active}
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggle()}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 16px",
+        borderRadius: "var(--radius)",
+        border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
+        background: active ? "rgba(255,90,23,0.08)" : "var(--surface)",
+        cursor: "pointer",
+        transition: "all 0.15s",
+      }}
+    >
+      {/* 18×18 indicator box */}
+      <div
+        aria-hidden="true"
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: "var(--radius)",
+          border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
+          background: active ? "var(--primary)" : "transparent",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          fontSize: 11,
+          color: "var(--primary-text)",
+          fontWeight: 700,
+        }}
+      >
+        {active ? (indicator === "check" ? "✓" : "✕") : null}
+      </div>
+      <span
+        style={{
+          fontSize: 14,
+          color: "var(--text)",
+          fontWeight: active ? 600 : 400,
+        }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
+// ── Pill button (for work-type / location / start-date pills) ─────────────────
+
+function Pill({
+  label,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Btn
+      variant="chip"
+      size="md"
+      selected={selected}
+      onClick={onToggle}
+      aria-pressed={selected}
+      style={{
+        borderRadius: "var(--radius-full)",
+        background: selected ? "var(--primary)" : "var(--surface)",
+        color: selected ? "var(--primary-text)" : "var(--text)",
+        border: `1px solid ${selected ? "var(--primary)" : "var(--border)"}`,
+        fontWeight: selected ? 600 : 400,
+      }}
+    >
+      {label}
+    </Btn>
+  );
+}
+
+// ── Direction sub-step ────────────────────────────────────────────────────────
+
+function DirectionStep({
+  ctx,
+  onNext,
+  onBack,
+}: {
+  ctx: Partial<Context>;
+  onNext: (ctx: Partial<Context>) => void;
+  onBack?: () => void;
+}) {
+  const [selected, setSelected] = useState<string[]>(
+    ctx.directionPresets?.length ? ctx.directionPresets : ["same"],
+  );
+  const [detail, setDetail] = useState(ctx.careerDirectionText ?? "");
+  const [detailError, setDetailError] = useState("");
+
+  const needsDetail = selected.some(
+    (id) => DIRECTION_PRESETS.find((p) => p.id === id)?.needsDetail,
+  );
+
+  function togglePreset(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+    setDetailError("");
+  }
+
+  function handleNext() {
+    if (!selected.length) return;
+    if (needsDetail && detail.trim().length < 10) {
+      setDetailError(
+        "Please describe your direction (at least 10 characters).",
+      );
+      return;
+    }
+    onNext({
+      directionPresets: selected,
+      careerDirectionText: needsDetail ? detail.trim() : detail,
+      careerDirection: needsDetail ? detail.trim() : "",
+    });
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div>
+        <h2 style={h2Style}>What are you looking for?</h2>
+        <p style={subtitleStyle}>Pick the direction that fits best.</p>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {DIRECTION_PRESETS.map((preset) => (
+          <div
+            key={preset.id}
+            role="checkbox"
+            aria-checked={selected.includes(preset.id)}
+            tabIndex={0}
+            onClick={() => togglePreset(preset.id)}
+            onKeyDown={(e) =>
+              (e.key === "Enter" || e.key === " ") && togglePreset(preset.id)
+            }
+            style={{
+              padding: "14px 16px",
+              borderRadius: "var(--radius)",
+              border: `1px solid ${selected.includes(preset.id) ? "var(--primary)" : "var(--border)"}`,
+              background: selected.includes(preset.id)
+                ? "rgba(255,90,23,0.08)"
+                : "var(--surface)",
+              cursor: "pointer",
+              fontSize: 14,
+              fontWeight: selected.includes(preset.id) ? 600 : 400,
+              color: "var(--text)",
+              transition: "all 0.15s",
+            }}
+          >
+            {preset.label}
+          </div>
+        ))}
+      </div>
+
+      {needsDetail && (
+        <Inp
+          label="Tell us more about your direction"
+          value={detail}
+          onChange={(v) => {
+            setDetail(v);
+            if (detailError) setDetailError("");
+          }}
+          placeholder="Describe your target direction, industry switch, or career goals…"
+          maxLength={500}
+          error={detailError}
+        />
+      )}
+
+      <div style={navRowStyle}>
+        {onBack ? (
+          <Btn variant="ghost" onClick={onBack} aria-label="Go back">
+            ← Back
+          </Btn>
+        ) : (
+          <span />
+        )}
+        <Btn
+          variant="primary"
+          onClick={handleNext}
+          disabled={selected.length === 0}
+          aria-label="Continue to work type"
+        >
+          Next →
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Work Type sub-step ────────────────────────────────────────────────────────
+
+const WORK_TYPES = ["Full-time", "Part-time", "Contract"] as const;
+
+function WorkTypeStep({
+  prefs,
+  onNext,
+  onBack,
+}: {
+  prefs: Partial<Preferences>;
+  onNext: (prefs: Partial<Preferences>) => void;
+  onBack: () => void;
+}) {
+  const [empTypes, setEmpTypes] = useState<string[]>(
+    prefs.employmentTypes?.length ? prefs.employmentTypes : ["Full-time"],
+  );
+  const [startDate, setStartDate] = useState(prefs.startDate ?? "Immediately");
+
+  function toggleEmpType(type: string) {
+    setEmpTypes((prev) =>
+      prev.includes(type) ? prev.filter((x) => x !== type) : [...prev, type],
+    );
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div>
+        <h2 style={h2Style}>What type of work?</h2>
+        <p style={subtitleStyle}>We&apos;ll tailor everything to match.</p>
+      </div>
+
+      <div>
+        <p
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: "var(--text-muted)",
+            margin: "0 0 8px 0",
+          }}
+        >
+          Employment type
+        </p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {WORK_TYPES.map((type) => (
+            <Pill
+              key={type}
+              label={type}
+              selected={empTypes.includes(type)}
+              onToggle={() => toggleEmpType(type)}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: "var(--text-muted)",
+            margin: "0 0 8px 0",
+          }}
+        >
+          When can you start?
+        </p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {START_DATE_OPTIONS.map((opt) => (
+            <Pill
+              key={opt}
+              label={opt}
+              selected={startDate === opt}
+              onToggle={() => setStartDate(opt)}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div style={navRowStyle}>
+        <Btn variant="ghost" onClick={onBack} aria-label="Go back">
+          ← Back
+        </Btn>
+        <Btn
+          variant="primary"
+          onClick={() =>
+            onNext({
+              // HYGIENE Rule: fallback never empty array
+              employmentTypes: empTypes.length ? empTypes : ["Full-time"],
+              startDate,
+            })
+          }
+          disabled={empTypes.length === 0}
+          aria-label="Continue to compensation"
+        >
+          Next →
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Compensation sub-step ─────────────────────────────────────────────────────
+
+function CompStep({
+  prefs,
+  onNext,
+  onBack,
+}: {
+  prefs: Partial<Preferences>;
+  onNext: (prefs: Partial<Preferences>) => void;
+  onBack: () => void;
+}) {
+  const [compStructure, setCompStructure] = useState(
+    prefs.compStructure ?? "Open to discussion",
+  );
+  const [hourly, setHourly] = useState(prefs.hourlyFloor ?? "");
+  const [salary, setSalary] = useState(prefs.salaryFloor ?? "");
+  const [errors, setErrors] = useState<{ hourly?: string; salary?: string }>(
+    {},
+  );
+
+  const empTypes = prefs.employmentTypes ?? ["Full-time"];
+  const hasContract =
+    empTypes.includes("Contract") || empTypes.includes("Part-time");
+  const hasFT = empTypes.includes("Full-time");
+  const showBoth = hasContract && hasFT;
+  const showHourlyPrimary = hasContract && !hasFT;
+
+  // Bidirectional sync: hourly × 2080 = annual
+  function onHourlyChange(val: string) {
+    setHourly(val);
+    setErrors((e) => ({ ...e, hourly: undefined }));
+    const n = parseFloat(val);
+    if (!isNaN(n) && n > 0) {
+      setSalary(String(Math.round(n * 2080)));
+    } else if (val === "") {
+      setSalary("");
+    }
+  }
+
+  function onSalaryChange(val: string) {
+    setSalary(val);
+    setErrors((e) => ({ ...e, salary: undefined }));
+    const n = parseFloat(val.replace(/[,$]/g, ""));
+    if (!isNaN(n) && n > 0) {
+      setHourly(String(Math.round((n / 2080) * 100) / 100));
+    } else if (val === "") {
+      setHourly("");
+    }
+  }
+
+  function validate(): boolean {
+    const newErrors: { hourly?: string; salary?: string } = {};
+    // BUG-019: zero/negative compensation blocked
+    if (hourly !== "") {
+      const n = parseFloat(hourly);
+      if (isNaN(n) || n <= 0) {
+        newErrors.hourly = "Hourly rate must be a positive number.";
+      }
+    }
+    if (salary !== "") {
+      const n = parseFloat(salary.replace(/[,$]/g, ""));
+      if (isNaN(n) || n <= 0) {
+        newErrors.salary = "Annual salary must be a positive number.";
+      }
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }
+
+  function handleNext() {
+    if (!validate()) return;
+    onNext({
+      compStructure,
+      hourlyFloor: hourly,
+      salaryFloor: salary,
+    });
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div>
+        <h2 style={h2Style}>What are your compensation expectations?</h2>
+      </div>
+
+      <Sel
+        label="Compensation structure"
+        value={compStructure}
+        onChange={setCompStructure}
+        options={COMP_STRUCTURES.map((s) => ({ value: s, label: s }))}
+      />
+
+      {/* Adaptive compensation inputs */}
+      {(showHourlyPrimary || showBoth) && (
+        <Inp
+          label={showBoth ? "Hourly floor" : "Hourly floor"}
+          value={hourly}
+          onChange={onHourlyChange}
+          placeholder="e.g. 75"
+          type="number"
+          error={errors.hourly}
+        />
+      )}
+
+      {(hasFT || showBoth) && (
+        <Inp
+          label={showBoth ? "Annual salary floor" : "Annual salary floor"}
+          value={salary}
+          onChange={onSalaryChange}
+          placeholder="e.g. $120,000"
+          error={errors.salary}
+        />
+      )}
+
+      {/* Bidirectional sync helper */}
+      {hourly && salary && (
+        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+          ${hourly}/hr ↔ ${parseInt(salary).toLocaleString()}/yr (based on 2,080
+          hrs/yr)
+        </p>
+      )}
+
+      <div style={navRowStyle}>
+        <Btn variant="ghost" onClick={onBack} aria-label="Go back">
+          ← Back
+        </Btn>
+        <Btn
+          variant="primary"
+          onClick={handleNext}
+          aria-label="Continue to location"
+        >
+          Next →
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Location sub-step ─────────────────────────────────────────────────────────
+
+const LOCATION_TYPES = ["Remote", "Hybrid", "On-site"] as const;
+
+function LocationStep({
+  prefs,
+  onNext,
+  onBack,
+}: {
+  prefs: Partial<Preferences>;
+  onNext: (prefs: Partial<Preferences>) => void;
+  onBack: () => void;
+}) {
+  // HYGIENE Rule 11: fallback must be ['Remote'] not empty array
+  const [locTypes, setLocTypes] = useState<string[]>(
+    prefs.locationTypes?.length ? prefs.locationTypes : ["Remote"],
+  );
+  const [city, setCity] = useState(prefs.preferredLocation ?? "");
+  const [cityError, setCityError] = useState("");
+
+  const needsCity = locTypes.includes("Hybrid") || locTypes.includes("On-site");
+
+  function toggleLocType(type: string) {
+    setLocTypes((prev) =>
+      prev.includes(type) ? prev.filter((x) => x !== type) : [...prev, type],
+    );
+    setCityError("");
+  }
+
+  function handleNext() {
+    if (!locTypes.length) return;
+    if (needsCity && !city.trim()) {
+      setCityError("Please select or enter a city.");
+      return;
+    }
+    onNext({
+      locationTypes: locTypes.length ? locTypes : ["Remote"],
+      preferredLocation: needsCity ? city.trim() : "",
+    });
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div>
+        <h2 style={h2Style}>Where do you want to work?</h2>
+        <p style={subtitleStyle}>This shapes which jobs we find.</p>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {LOCATION_TYPES.map((type) => (
+          <Pill
+            key={type}
+            label={type}
+            selected={locTypes.includes(type)}
+            onToggle={() => toggleLocType(type)}
+          />
+        ))}
+      </div>
+
+      {needsCity && (
+        <div>
+          <LocCombo
+            label="Preferred city"
+            value={city}
+            onChange={(v) => {
+              setCity(v);
+              if (cityError) setCityError("");
+            }}
+            placeholder="City, State"
+          />
+          {cityError && (
+            <p style={{ fontSize: 12, color: "var(--error)", marginTop: 4 }}>
+              {cityError}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div style={navRowStyle}>
+        <Btn variant="ghost" onClick={onBack} aria-label="Go back">
+          ← Back
+        </Btn>
+        <Btn
+          variant="primary"
+          onClick={handleNext}
+          disabled={locTypes.length === 0}
+          aria-label="Continue to quick check"
+        >
+          Next →
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Quick Check sub-step ──────────────────────────────────────────────────────
+
+function QuickCheckStep({
+  demo,
+  onNext,
+  onBack,
+}: {
+  demo: Partial<Demographics>;
+  onNext: (demo: Partial<Demographics>) => void;
+  onBack: () => void;
+}) {
+  const [values, setValues] = useState<Record<string, boolean>>({
+    isUSCitizen: demo.isUSCitizen ?? DEFAULT_DEMOGRAPHICS.isUSCitizen,
+    authorizedToWork:
+      demo.authorizedToWork ?? DEFAULT_DEMOGRAPHICS.authorizedToWork,
+    noSponsorshipNeeded:
+      demo.noSponsorshipNeeded ?? DEFAULT_DEMOGRAPHICS.noSponsorshipNeeded,
+    hasDriversLicense:
+      demo.hasDriversLicense ?? DEFAULT_DEMOGRAPHICS.hasDriversLicense,
+    isVeteran: demo.isVeteran ?? DEFAULT_DEMOGRAPHICS.isVeteran,
+    hasDisability: demo.hasDisability ?? DEFAULT_DEMOGRAPHICS.hasDisability,
+    hasSecurityClearance:
+      demo.hasSecurityClearance ?? DEFAULT_DEMOGRAPHICS.hasSecurityClearance,
+  });
+
+  function toggle(key: string) {
+    setValues((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div>
+        <h2 style={h2Style}>Quick check</h2>
+        <p style={subtitleStyle}>
+          These help us auto-fill application forms. Change anything that&apos;s
+          off.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {QUICK_CHECK_ITEMS.map((item) => (
+          <CardToggle
+            key={item.key}
+            label={item.label}
+            active={!!values[item.key]}
+            indicator="check"
+            onToggle={() => toggle(item.key)}
+          />
+        ))}
+      </div>
+
+      <div style={navRowStyle}>
+        <Btn variant="ghost" onClick={onBack} aria-label="Go back">
+          ← Back
+        </Btn>
+        <Btn
+          variant="primary"
+          onClick={() =>
+            onNext({
+              isUSCitizen: !!values.isUSCitizen,
+              authorizedToWork: !!values.authorizedToWork,
+              noSponsorshipNeeded: !!values.noSponsorshipNeeded,
+              hasDriversLicense: !!values.hasDriversLicense,
+              isVeteran: !!values.isVeteran,
+              hasDisability: !!values.hasDisability,
+              hasSecurityClearance: !!values.hasSecurityClearance,
+            })
+          }
+          aria-label="Continue to deal-breakers"
+        >
+          Looks good, let&apos;s go
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Deal-Breakers sub-step ────────────────────────────────────────────────────
+
+function DealBreakersStep({
+  prefs,
+  locationTypes,
+  onNext,
+  onBack,
+}: {
+  prefs: Partial<Preferences>;
+  locationTypes: string[];
+  onNext: (prefs: Partial<Preferences>) => void;
+  onBack: () => void;
+}) {
+  // HYGIENE Rule: fallback must be DEFAULT_DEAL_BREAKERS not []
+  const [active, setActive] = useState<string[]>(
+    prefs.dealBreakers !== undefined
+      ? prefs.dealBreakers
+      : [...DEFAULT_DEAL_BREAKERS],
+  );
+
+  function toggle(item: string) {
+    setActive((prev) =>
+      prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item],
+    );
+  }
+
+  // "Return-to-office mandate" hidden when ONLY On-site is selected
+  const isOnSiteOnly =
+    locationTypes.length === 1 && locationTypes[0] === "On-site";
+  const visibleBreakers = DEFAULT_DEAL_BREAKERS.filter(
+    (b) => !(b === "Return-to-office mandate" && isOnSiteOnly),
+  );
+
+  return (
+    <div style={cardStyle}>
+      <div>
+        <h2 style={h2Style}>We&apos;ll skip these.</h2>
+        <p style={subtitleStyle}>
+          Smart defaults based on your profile. Toggle off any that don&apos;t
+          apply.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {visibleBreakers.map((item) => (
+          <CardToggle
+            key={item}
+            label={item}
+            active={active.includes(item)}
+            indicator="x"
+            onToggle={() => toggle(item)}
+          />
+        ))}
+      </div>
+
+      <div style={navRowStyle}>
+        <Btn variant="ghost" onClick={onBack} aria-label="Go back">
+          ← Back
+        </Btn>
+        <Btn
+          variant="primary"
+          onClick={() => onNext({ dealBreakers: active })}
+          aria-label="Complete preferences"
+        >
+          Looks good
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Step3Preferences (orchestrator) ──────────────────────────────────────────
+
+export function Step3Preferences({
+  initialSubStep,
+  initialPreferences,
+  initialContext,
+  initialDemographics,
+  parseStatus = "idle",
+  onRetryParse,
+  onSubStepComplete,
+  onComplete,
+}: Step3PreferencesProps) {
+  const [currentSubStep, setCurrentSubStep] = useState<Step3SubStep>(
+    initialSubStep ?? "direction",
+  );
+  const [prefs, setPrefs] = useState<Partial<Preferences>>(
+    initialPreferences ?? {},
+  );
+  const [ctx, setCtx] = useState<Partial<Context>>(initialContext ?? {});
+  const [demo, setDemo] = useState<Partial<Demographics>>(
+    initialDemographics ?? {},
+  );
+
+  const subStepIdx = SUBSTEP_ORDER.indexOf(currentSubStep);
+
+  function goBack() {
+    const prev = SUBSTEP_ORDER[subStepIdx - 1];
+    if (prev) setCurrentSubStep(prev);
+  }
+
+  // BUG-018 FIX: auto-save at each substep boundary via onSubStepComplete
+  function advanceWithPrefs(newPrefs: Partial<Preferences>) {
+    const merged = { ...prefs, ...newPrefs };
+    setPrefs(merged);
+    const next = SUBSTEP_ORDER[subStepIdx + 1];
+    if (next) {
+      onSubStepComplete(currentSubStep, {
+        preferences: merged,
+        context: ctx,
+        demographics: demo,
+      });
+      setCurrentSubStep(next);
+    } else {
+      onComplete({ preferences: merged, context: ctx, demographics: demo });
+    }
+  }
+
+  function advanceWithCtx(newCtx: Partial<Context>) {
+    const merged = { ...ctx, ...newCtx };
+    setCtx(merged);
+    const next = SUBSTEP_ORDER[subStepIdx + 1];
+    if (next) {
+      onSubStepComplete(currentSubStep, {
+        preferences: prefs,
+        context: merged,
+        demographics: demo,
+      });
+      setCurrentSubStep(next);
+    }
+  }
+
+  function advanceWithDemo(newDemo: Partial<Demographics>) {
+    const merged = { ...demo, ...newDemo };
+    setDemo(merged);
+    const next = SUBSTEP_ORDER[subStepIdx + 1];
+    if (next) {
+      onSubStepComplete(currentSubStep, {
+        preferences: prefs,
+        context: ctx,
+        demographics: merged,
+      });
+      setCurrentSubStep(next);
+    } else {
+      onComplete({ preferences: prefs, context: ctx, demographics: merged });
+    }
+  }
+
+  return (
+    <div style={pageStyle}>
+      <div style={{ ...cardStyle }}>
+        {/* Parse status banner — visible on all substeps */}
+        {parseStatus !== "idle" && (
+          <ParseBanner status={parseStatus} onRetry={onRetryParse} />
+        )}
+
+        {/* Substep content */}
+        {currentSubStep === "direction" && (
+          <DirectionStep
+            ctx={ctx}
+            onNext={advanceWithCtx}
+            onBack={subStepIdx > 0 ? goBack : undefined}
+          />
+        )}
+
+        {currentSubStep === "worktype" && (
+          <WorkTypeStep
+            prefs={prefs}
+            onNext={advanceWithPrefs}
+            onBack={goBack}
+          />
+        )}
+
+        {currentSubStep === "comp" && (
+          <CompStep prefs={prefs} onNext={advanceWithPrefs} onBack={goBack} />
+        )}
+
+        {currentSubStep === "location" && (
+          <LocationStep
+            prefs={prefs}
+            onNext={advanceWithPrefs}
+            onBack={goBack}
+          />
+        )}
+
+        {currentSubStep === "quickcheck" && (
+          <QuickCheckStep
+            demo={demo}
+            onNext={advanceWithDemo}
+            onBack={goBack}
+          />
+        )}
+
+        {currentSubStep === "dealbreakers" && (
+          <DealBreakersStep
+            prefs={prefs}
+            locationTypes={prefs.locationTypes ?? ["Remote"]}
+            onNext={(newPrefs) => {
+              const merged = { ...prefs, ...newPrefs };
+              setPrefs(merged);
+              onComplete({
+                preferences: merged,
+                context: ctx,
+                demographics: demo,
+              });
+            }}
+            onBack={goBack}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default Step3Preferences;
+
+--- END built file ---
+
+--- BEGIN built file: src/components/steps/Step4Profile.tsx ---
+"use client";
+// Step 3: Profile Generation & Resume Verification
+// GS-ONB-33: background profile state handling
+// GS-ONB-34: late-parse personal/education sync via useEffect (user edits NOT overwritten)
+// GS-ONB-36: waiting state when parse in progress
+// GS-ONB-37: parse error recovery (Retry + Upload different)
+// GS-ONB-38: profile generation error + retry
+// GS-ONB-39: portfolio URL validation messages
+// GS-ONB-19: Discipline is free-text Inp (NOT Sel)
+
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Btn } from "@/components/ui/Btn";
+import { Inp } from "@/components/ui/Inp";
+import { Sel } from "@/components/ui/Sel";
+import { Spin } from "@/components/ui/Spin";
+import { EduCard } from "@/components/ui/EduCard";
+import type {
+  Profile,
+  Personal,
+  EducationEntry,
+  ResumeStructured,
+  Context,
+  Preferences,
+} from "@/lib/types";
+import { callClaude, cleanJson, safeErrorMessage } from "@/lib/api";
+import { DEGREE_OPTIONS } from "@/lib/constants";
+
+// ── Preserved type exports ─────────────────────────────────
+export type Step4ParseStatus =
+  | "idle"
+  | "parsing"
+  | "done"
+  | "error"
+  | "cancelled";
+
+export type Step4ProfileGenStatus = "idle" | "generating" | "done" | "error";
+
+export interface Step4ProfileProps {
+  resumeStructured: ResumeStructured;
+  personal: Personal;
+  education: EducationEntry[];
+  context: Partial<Context>;
+  preferences: Partial<Preferences>;
+  parseStatus: Step4ParseStatus;
+  existingProfile?: Profile;
+  backgroundProfile?: Profile | null;
+  backgroundGenStatus?: Step4ProfileGenStatus;
+  backgroundGenPhase?: number;
+  backgroundGenError?: string | null;
+  onRetryParse?: () => void;
+  onComplete: (data: {
+    profile: Profile;
+    personal: Personal;
+    education: EducationEntry[];
+    context: Partial<Context>;
+  }) => void;
+  onUploadDifferent?: () => void;
+}
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+// GS-ONB-19: must match PROFILE_SYSTEM enum exactly
+const SENIORITY_OPTIONS = [
+  "Internship",
+  "Entry level",
+  "Associate",
+  "Mid-Senior level",
+  "Director",
+  "Executive",
+];
+
+const PROFILE_PHASES = [
+  "Reading your resume…",
+  "Identifying strengths…",
+  "Mapping experience…",
+  "Building your profile…",
+];
+
+const EMPTY_PERSONAL: Personal = {
+  name: "",
+  email: "",
+  phone: "",
+  location: "",
+  linkedin: "",
+  portfolio: "",
+};
+
+const EMPTY_EDU: EducationEntry = {
+  degree: "",
+  field: "",
+  school: "",
+  graduation_date: "",
+  gpa: "",
+  honors: "",
+  notable: "",
+};
+
+// ── Small helpers ─────────────────────────────────────────────────────────────
+
+function validatePortfolio(url: string): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "http:" && u.protocol !== "https:") {
+      return "Portfolio link must be an HTTP or HTTPS URL";
+    }
+    return null;
+  } catch {
+    return "Portfolio link must be a valid URL (e.g. https://yoursite.com)";
+  }
+}
+
+// ── Education inline form ─────────────────────────────────────────────────────
+
+const GRAD_YEARS = Array.from({ length: 61 }, (_, i) => String(2030 - i));
+const HONORS_OPTIONS = [
+  "N/A",
+  "Cum Laude",
+  "Magna Cum Laude",
+  "Summa Cum Laude",
+  "Dean's List",
+];
+
+function EduForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial?: EducationEntry;
+  onSave: (entry: EducationEntry) => void;
+  onCancel: () => void;
+}) {
+  const [entry, setEntry] = useState<EducationEntry>(
+    initial ?? { ...EMPTY_EDU },
+  );
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  function setField(k: keyof EducationEntry, v: string) {
+    setEntry((prev) => ({ ...prev, [k]: v }));
+    setErrors((prev) => ({ ...prev, [k]: "" }));
+  }
+
+  function handleSave() {
+    const errs: Record<string, string> = {};
+    if (!entry.degree) errs.degree = "Degree is required.";
+    if (!entry.field) errs.field = "Field of study is required.";
+    if (!entry.school) errs.school = "School is required.";
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      return;
+    }
+    onSave(entry);
+  }
+
+  return (
+    <div
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-lg)",
+        padding: "16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+      }}
+    >
+      <Sel
+        label="Degree"
+        value={entry.degree}
+        onChange={(v) => setField("degree", v)}
+        options={DEGREE_OPTIONS.map((d) => ({ value: d, label: d }))}
+        placeholder="Select degree"
+        error={errors.degree}
+      />
+      <Inp
+        label="Field of study"
+        value={entry.field}
+        onChange={(v) => setField("field", v)}
+        placeholder="e.g. Computer Science"
+        required
+        error={errors.field}
+      />
+      <Inp
+        label="School"
+        value={entry.school}
+        onChange={(v) => setField("school", v)}
+        placeholder="e.g. MIT"
+        required
+        error={errors.school}
+      />
+      <Sel
+        label="Graduation year"
+        value={entry.graduation_date}
+        onChange={(v) => setField("graduation_date", v)}
+        options={GRAD_YEARS.map((y) => ({ value: y, label: y }))}
+        placeholder="Year"
+      />
+      <Inp
+        label="GPA (optional)"
+        value={entry.gpa}
+        onChange={(v) => setField("gpa", v)}
+        placeholder="e.g. 3.8"
+      />
+      <Sel
+        label="Honors (optional)"
+        value={entry.honors || "N/A"}
+        onChange={(v) => setField("honors", v === "N/A" ? "" : v)}
+        options={HONORS_OPTIONS.map((h) => ({ value: h, label: h }))}
+      />
+      <Inp
+        label="Notable (optional)"
+        value={entry.notable}
+        onChange={(v) => setField("notable", v)}
+        placeholder="e.g. Published research, thesis title"
+      />
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <Btn variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Btn>
+        <Btn variant="primary" size="sm" onClick={handleSave}>
+          Save
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Chip (de-selectable) ──────────────────────────────────────────────────────
+
+function Chip({
+  label,
+  active,
+  onToggle,
+}: {
+  label: string;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Btn
+      variant="chip"
+      size="sm"
+      selected={active}
+      onClick={onToggle}
+      aria-pressed={active}
+      style={{
+        borderRadius: "var(--radius-full)",
+        background: active ? "var(--surface-alt)" : "transparent",
+        color: active ? "var(--text)" : "var(--text-muted)",
+        border: `1px solid ${active ? "var(--border)" : "transparent"}`,
+        opacity: active ? 1 : 0.45,
+        textDecoration: active ? "none" : "line-through",
+        transition: "all 0.15s",
+      }}
+    >
+      {label}
+    </Btn>
+  );
+}
+
+// ── Section wrapper ───────────────────────────────────────────────────────────
+
+function Section({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+      }}
+    >
+      <div>
+        <h3
+          style={{
+            fontSize: 16,
+            fontWeight: 700,
+            color: "var(--text)",
+            margin: "0 0 2px 0",
+          }}
+        >
+          {title}
+        </h3>
+        {subtitle && (
+          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
+            {subtitle}
+          </p>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Step4Profile ──────────────────────────────────────────────────────────────
+
+export function Step4Profile({
+  resumeStructured,
+  personal: personalProp,
+  education: educationProp,
+  context,
+  preferences,
+  parseStatus,
+  existingProfile,
+  backgroundProfile,
+  backgroundGenStatus = "idle",
+  backgroundGenPhase = 0,
+  backgroundGenError,
+  onRetryParse,
+  onComplete,
+  onUploadDifferent,
+}: Step4ProfileProps) {
+  // ── Personal info local state + touched guard (GS-ONB-34) ────────────────
+  const [personal, setPersonal] = useState<Personal>(
+    personalProp ?? EMPTY_PERSONAL,
+  );
+  const [personalTouched, setPersonalTouched] = useState(false);
+
+  // ── Education local state + touched guard (GS-ONB-34) ────────────────────
+  const [education, setEducation] = useState<EducationEntry[]>(
+    educationProp ?? [],
+  );
+  const [educationTouched, setEducationTouched] = useState(false);
+  const [editingEduIdx, setEditingEduIdx] = useState<number | null>(null);
+  const [addingEdu, setAddingEdu] = useState(false);
+
+  // ── Profile state ─────────────────────────────────────────────────────────
+  const [localProfile, setLocalProfile] = useState<Profile | null>(
+    existingProfile ?? backgroundProfile ?? null,
+  );
+  const [genStatus, setGenStatus] = useState<Step4ProfileGenStatus>(() => {
+    if (existingProfile || backgroundProfile) return "done";
+    return backgroundGenStatus;
+  });
+  const [genPhase, setGenPhase] = useState<number>(backgroundGenPhase);
+  const [genError, setGenError] = useState<string | null>(
+    backgroundGenError ?? null,
+  );
+
+  // ── Profile display state (editable fields) ───────────────────────────────
+  const [discipline, setDiscipline] = useState(localProfile?.discipline ?? "");
+  const [seniority, setSeniority] = useState(localProfile?.seniority ?? "");
+  const [targetDirection, setTargetDirection] = useState(
+    localProfile?.targetDirection ?? "",
+  );
+  const [activeSkills, setActiveSkills] = useState<Set<string>>(
+    new Set(localProfile?.hardSkills ?? []),
+  );
+  const [activeDomains, setActiveDomains] = useState<Set<string>>(
+    new Set(localProfile?.domains ?? []),
+  );
+  const [activeSoftSkills, setActiveSoftSkills] = useState<Set<string>>(
+    new Set(localProfile?.softSkills ?? []),
+  );
+
+  // ── Validation errors ─────────────────────────────────────────────────────
+  const [personalErrors, setPersonalErrors] = useState<Record<string, string>>(
+    {},
+  );
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
+
+  // ── AbortController for generation ───────────────────────────────────────
+  const abortRef = useRef<AbortController | null>(null);
+  const phaseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── GS-ONB-34: Sync personal from props when late parse arrives ───────────
+  useEffect(() => {
+    if (!personalTouched && personalProp?.name) {
+      setPersonal(personalProp);
+    }
+  }, [personalProp]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── GS-ONB-34: Sync education from props when late parse arrives ──────────
+  useEffect(() => {
+    if (!educationTouched && educationProp?.length) {
+      setEducation(educationProp);
+    }
+  }, [educationProp]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── GS-ONB-33: React to backgroundGenStatus prop changes ─────────────────
+  useEffect(() => {
+    if (backgroundGenStatus === "done" && backgroundProfile && !localProfile) {
+      setLocalProfile(backgroundProfile);
+      setGenStatus("done");
+      applyProfile(backgroundProfile);
+    } else if (backgroundGenStatus === "generating") {
+      if (genStatus !== "done") {
+        setGenStatus("generating");
+        setGenPhase(backgroundGenPhase);
+      }
+    } else if (backgroundGenStatus === "error" && genStatus !== "done") {
+      setGenStatus("error");
+      setGenError(backgroundGenError ?? "Profile generation failed.");
+    }
+  }, [
+    backgroundGenStatus,
+    backgroundProfile,
+    backgroundGenPhase,
+    backgroundGenError,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Auto-trigger generation if background gen didn't run ─────────────────
+  useEffect(() => {
+    if (
+      genStatus === "idle" &&
+      !localProfile &&
+      parseStatus === "done" &&
+      resumeStructured
+    ) {
+      triggerGeneration();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Cleanup on unmount ────────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
+    };
+  }, []);
+
+  function applyProfile(p: Profile) {
+    setDiscipline(p.discipline ?? "");
+    setSeniority(p.seniority ?? "");
+    setTargetDirection(p.targetDirection ?? "");
+    setActiveSkills(new Set(p.hardSkills ?? []));
+    setActiveDomains(new Set(p.domains ?? []));
+    setActiveSoftSkills(new Set(p.softSkills ?? []));
+  }
+
+  function startPhaseTicker() {
+    let phase = 0;
+    setGenPhase(0);
+    if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
+    phaseTimerRef.current = setInterval(() => {
+      phase = Math.min(phase + 1, PROFILE_PHASES.length - 1);
+      setGenPhase(phase);
+    }, 5000);
+  }
+
+  function stopPhaseTicker() {
+    if (phaseTimerRef.current) {
+      clearInterval(phaseTimerRef.current);
+      phaseTimerRef.current = null;
+    }
+  }
+
+  const triggerGeneration = useCallback(async () => {
+    if (genStatus === "generating") return;
+
+    // Cancel any in-flight generation
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    setGenStatus("generating");
+    setGenError(null);
+    startPhaseTicker();
+
+    const profileInput = JSON.stringify({
+      resume: resumeStructured,
+      personal: personalProp,
+      context: {
+        empStatus: context.empStatus ?? "employed",
+        careerDirection:
+          context.careerDirection ?? context.careerDirectionText ?? "",
+        directionPresets: context.directionPresets ?? [],
+        whyLeft: context.whyLeft ?? "",
+        latestRoleText: context.latestRoleText ?? "",
+      },
+      preferences: {
+        locationTypes: preferences.locationTypes ?? ["Remote"],
+        employmentTypes: preferences.employmentTypes ?? ["Full-time"],
+        compStructure: preferences.compStructure ?? "Open to discussion",
+        salaryFloor: preferences.salaryFloor ?? "",
+        hourlyFloor: preferences.hourlyFloor ?? "",
+        startDate: preferences.startDate ?? "Immediately",
+        dealBreakers: preferences.dealBreakers ?? [],
+      },
+    });
+
+    try {
+      const raw = await callClaude(
+        "PROFILE",
+        profileInput,
+        4096,
+        abortRef.current.signal,
+      );
+      stopPhaseTicker();
+
+      const parsed = JSON.parse(cleanJson(raw)) as Profile;
+      setLocalProfile(parsed);
+      applyProfile(parsed);
+      setGenStatus("done");
+    } catch (err) {
+      stopPhaseTicker();
+      if (err instanceof Error && err.message.includes("aborted")) return;
+      setGenStatus("error");
+      setGenError(
+        safeErrorMessage(err, "Profile generation failed. Please try again."),
+      );
+    }
+  }, [resumeStructured, personalProp, context, preferences]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Personal field updater ────────────────────────────────────────────────
+  function updatePersonal(field: keyof Personal, value: string) {
+    setPersonalTouched(true);
+    setPersonal((prev) => ({ ...prev, [field]: value }));
+    setPersonalErrors((prev) => ({ ...prev, [field]: "" }));
+    if (field === "portfolio") setPortfolioError(null);
+  }
+
+  // ── Confirm + validate ────────────────────────────────────────────────────
+  function handleConfirm() {
+    if (!localProfile) return;
+
+    const errs: Record<string, string> = {};
+    if (!personal.name.trim()) errs.name = "Name is required";
+    if (!personal.email.trim()) errs.email = "Email is required";
+    if (!personal.phone.trim()) errs.phone = "Phone is required";
+    if (!personal.location.trim()) errs.location = "Location is required";
+
+    const portErr = validatePortfolio(personal.portfolio ?? "");
+    if (portErr) {
+      setPortfolioError(portErr);
+      return;
+    }
+
+    if (Object.keys(errs).length) {
+      setPersonalErrors(errs);
+      return;
+    }
+
+    // Build final profile with user overrides
+    const finalProfile: Profile = {
+      ...localProfile,
+      discipline,
+      seniority,
+      targetDirection,
+      hardSkills: (localProfile.hardSkills ?? []).filter((s) =>
+        activeSkills.has(s),
+      ),
+      softSkills: (localProfile.softSkills ?? []).filter((s) =>
+        activeSoftSkills.has(s),
+      ),
+      domains: (localProfile.domains ?? []).filter((d) => activeDomains.has(d)),
+    };
+
+    // GS-ONB-24: context defaults (no empStatus etc on confirm screen)
+    const finalContext: Partial<Context> = {
+      ...context,
+      empStatus: context.empStatus ?? "employed",
+      notOnResume: context.notOnResume ?? "",
+      titleNotCapture: context.titleNotCapture ?? "",
+    };
+
+    onComplete({
+      profile: finalProfile,
+      personal,
+      education,
+      context: finalContext,
+    });
+  }
+
+  // ── Shared page layout ────────────────────────────────────────────────────
+  const outerStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    padding: "32px 24px 80px",
+    background: "var(--bg)",
+    minHeight: "100%",
+  };
+  const contentStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    width: "100%",
+    maxWidth: 600,
+    gap: 32,
+  };
+
+  // ── GS-ONB-36: Waiting for parse ──────────────────────────────────────────
+  if (parseStatus === "parsing") {
+    return (
+      <div style={outerStyle}>
+        <div
+          style={{
+            ...contentStyle,
+            alignItems: "center",
+            gap: 20,
+            paddingTop: 60,
+          }}
+        >
+          <Spin size="lg" />
+          <div style={{ textAlign: "center" }}>
+            <h2
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                color: "var(--text)",
+                margin: "0 0 8px 0",
+              }}
+            >
+              Waiting for resume parsing to complete…
+            </h2>
+            <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>
+              Profile generation will start as soon as parsing completes.
+            </p>
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              {[
+                "Reading document…",
+                "Extracting structure…",
+                "Building profile…",
+              ].map((p) => (
+                <p
+                  key={p}
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-muted)",
+                    margin: 0,
+                  }}
+                >
+                  {p}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── GS-ONB-37: Parse error recovery ──────────────────────────────────────
+  if (parseStatus === "error") {
+    return (
+      <div style={outerStyle}>
+        <div
+          style={{
+            ...contentStyle,
+            alignItems: "center",
+            gap: 20,
+            paddingTop: 60,
+          }}
+        >
+          <div
+            style={{
+              background: "var(--error-light)",
+              border: "1px solid var(--error-border)",
+              borderRadius: "var(--radius-lg)",
+              padding: "24px",
+              textAlign: "center",
+              width: "100%",
+            }}
+          >
+            <p
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                color: "var(--error)",
+                margin: "0 0 8px 0",
+              }}
+            >
+              Resume parsing failed.
+            </p>
+            <p
+              style={{
+                fontSize: 14,
+                color: "var(--text-muted)",
+                margin: "0 0 16px 0",
+              }}
+            >
+              We couldn&apos;t extract your resume data. Try again or upload a
+              different file.
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              {onRetryParse && (
+                <Btn
+                  variant="primary"
+                  onClick={onRetryParse}
+                  aria-label="Retry resume parsing"
+                >
+                  Retry
+                </Btn>
+              )}
+              {onUploadDifferent && (
+                <Btn
+                  variant="ghost"
+                  onClick={onUploadDifferent}
+                  aria-label="Upload a different resume"
+                >
+                  Upload different
+                </Btn>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Profile generating ────────────────────────────────────────────────────
+  if (genStatus === "generating") {
+    return (
+      <div style={outerStyle}>
+        <div
+          style={{
+            ...contentStyle,
+            alignItems: "center",
+            gap: 24,
+            paddingTop: 60,
+          }}
+        >
+          <Spin size="lg" />
+          <div style={{ textAlign: "center" }}>
+            <h2
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                color: "var(--text)",
+                margin: "0 0 16px 0",
+              }}
+            >
+              Building your profile…
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {PROFILE_PHASES.map((phase, i) => (
+                <p
+                  key={phase}
+                  style={{
+                    fontSize: 14,
+                    color:
+                      i === genPhase
+                        ? "var(--text)"
+                        : i < genPhase
+                          ? "var(--success)"
+                          : "var(--border)",
+                    fontWeight: i === genPhase ? 600 : 400,
+                    margin: 0,
+                    transition: "color 0.3s",
+                  }}
+                >
+                  {i < genPhase ? "✓ " : ""}
+                  {phase}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── GS-ONB-38: Generation error ───────────────────────────────────────────
+  if (genStatus === "error") {
+    return (
+      <div style={outerStyle}>
+        <div
+          style={{
+            ...contentStyle,
+            alignItems: "center",
+            gap: 20,
+            paddingTop: 60,
+          }}
+        >
+          <div
+            style={{
+              background: "var(--error-light)",
+              border: "1px solid var(--error-border)",
+              borderRadius: "var(--radius-lg)",
+              padding: "24px",
+              textAlign: "center",
+              width: "100%",
+            }}
+          >
+            <p
+              style={{
+                fontSize: 15,
+                color: "var(--error)",
+                margin: "0 0 8px 0",
+                fontWeight: 600,
+              }}
+            >
+              Profile generation failed.
+            </p>
+            {genError && (
+              <p
+                style={{
+                  fontSize: 13,
+                  color: "var(--text-muted)",
+                  margin: "0 0 16px 0",
+                }}
+              >
+                {genError}
+              </p>
+            )}
+            <Btn
+              variant="primary"
+              onClick={triggerGeneration}
+              aria-label="Retry profile generation"
+            >
+              Retry generation
+            </Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── genStatus === 'idle' and no profile yet ───────────────────────────────
+  if (genStatus === "idle" && !localProfile) {
+    return (
+      <div style={outerStyle}>
+        <div style={{ ...contentStyle, alignItems: "center", paddingTop: 60 }}>
+          <Spin size="lg" />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Full review form ──────────────────────────────────────────────────────
+
+  const profile = localProfile!;
+
+  const friendlyName = personal.name ? `, ${personal.name.split(" ")[0]}` : "";
+
+  return (
+    <div style={outerStyle}>
+      <div style={contentStyle}>
+        {/* Friendly intro */}
+        <div>
+          <h2
+            style={{
+              fontSize: 22,
+              fontWeight: 700,
+              color: "var(--text)",
+              margin: "0 0 6px 0",
+            }}
+          >
+            Confirm your info
+          </h2>
+          <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>
+            Thanks{friendlyName}. Fix anything that&apos;s off — this powers
+            everything we build for you.
+          </p>
+        </div>
+
+        {/* ── Section: Personal ─────────────────────────────────────────── */}
+        <Section
+          title="Personal"
+          subtitle="We extracted this from your resume. Edit anything that looks off."
+        >
+          <Inp
+            label="Name"
+            value={personal.name}
+            onChange={(v) => updatePersonal("name", v)}
+            required
+            error={personalErrors.name}
+          />
+          <Inp
+            label="Email"
+            value={personal.email}
+            onChange={(v) => updatePersonal("email", v)}
+            type="email"
+            required
+            error={personalErrors.email}
+          />
+          <Inp
+            label="Phone"
+            value={personal.phone}
+            onChange={(v) => updatePersonal("phone", v)}
+            required
+            error={personalErrors.phone}
+          />
+          <Inp
+            label="Location"
+            value={personal.location}
+            onChange={(v) => updatePersonal("location", v)}
+            required
+            error={personalErrors.location}
+          />
+          <Inp
+            label="LinkedIn URL"
+            value={personal.linkedin}
+            onChange={(v) => updatePersonal("linkedin", v)}
+            placeholder="https://linkedin.com/in/yourname"
+          />
+          <div>
+            <Inp
+              label="Portfolio URL (optional)"
+              value={personal.portfolio ?? ""}
+              onChange={(v) => {
+                updatePersonal("portfolio", v);
+                setPortfolioError(null);
+              }}
+              placeholder="https://yoursite.com"
+              error={portfolioError ?? undefined}
+            />
+          </div>
+        </Section>
+
+        {/* ── Section: Education ────────────────────────────────────────── */}
+        <Section title="Education">
+          {education.length === 0 && !addingEdu && (
+            <p style={{ fontSize: 14, color: "var(--text-muted)" }}>
+              No education found on your resume. Want to add one?
+            </p>
+          )}
+
+          {education.map((edu, idx) =>
+            editingEduIdx === idx ? (
+              <EduForm
+                key={idx}
+                initial={edu}
+                onSave={(updated) => {
+                  setEducationTouched(true);
+                  setEducation((prev) =>
+                    prev.map((e, i) => (i === idx ? updated : e)),
+                  );
+                  setEditingEduIdx(null);
+                }}
+                onCancel={() => setEditingEduIdx(null)}
+              />
+            ) : (
+              <EduCard
+                key={idx}
+                education={edu}
+                onEdit={() => setEditingEduIdx(idx)}
+                onRemove={() => {
+                  setEducationTouched(true);
+                  setEducation((prev) => prev.filter((_, i) => i !== idx));
+                }}
+              />
+            ),
+          )}
+
+          {addingEdu && (
+            <EduForm
+              onSave={(entry) => {
+                setEducationTouched(true);
+                setEducation((prev) => [...prev, entry]);
+                setAddingEdu(false);
+              }}
+              onCancel={() => setAddingEdu(false)}
+            />
+          )}
+
+          {!addingEdu && editingEduIdx === null && (
+            <Btn
+              variant="ghost"
+              size="sm"
+              onClick={() => setAddingEdu(true)}
+              style={{ alignSelf: "flex-start" }}
+              aria-label="Add education entry"
+            >
+              + Add education
+            </Btn>
+          )}
+        </Section>
+
+        {/* ── Section: Who you are (AI Profile) ────────────────────────── */}
+        <Section title="Who you are" subtitle="Your professional identity.">
+          {/* GS-ONB-38: show error box in profile section if gen failed after partial use */}
+
+          {/* GS-ONB-19: Discipline MUST be free-text Inp, NOT Sel */}
+          <Inp
+            label="Discipline"
+            value={discipline}
+            onChange={setDiscipline}
+            placeholder="e.g. Product Manager"
+          />
+          <Sel
+            label="Seniority"
+            value={seniority}
+            onChange={setSeniority}
+            options={SENIORITY_OPTIONS.map((s) => ({ value: s, label: s }))}
+            placeholder="Select seniority"
+          />
+        </Section>
+
+        {/* ── Section: Skills ───────────────────────────────────────────── */}
+        {(profile.hardSkills?.length ?? 0) > 0 && (
+          <Section
+            title="Your skills"
+            subtitle="We'll use these to match you with jobs."
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {profile.hardSkills?.map((skill) => (
+                <Chip
+                  key={skill}
+                  label={skill}
+                  active={activeSkills.has(skill)}
+                  onToggle={() =>
+                    setActiveSkills((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(skill)) next.delete(skill);
+                      else next.add(skill);
+                      return next;
+                    })
+                  }
+                />
+              ))}
+            </div>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+              Extracted {activeSkills.size} skills
+              {profile.differentiators
+                ? ` and ${profile.differentiators.length} differentiators`
+                : ""}{" "}
+              from your resume. You&apos;ll curate these after the market scan.
+            </p>
+          </Section>
+        )}
+
+        {/* ── Section: Domains ──────────────────────────────────────────── */}
+        {(profile.domains?.length ?? 0) > 0 && (
+          <Section title="Domains">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {profile.domains?.map((d) => (
+                <Chip
+                  key={d}
+                  label={d}
+                  active={activeDomains.has(d)}
+                  onToggle={() =>
+                    setActiveDomains((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(d)) next.delete(d);
+                      else next.add(d);
+                      return next;
+                    })
+                  }
+                />
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* ── Section: Soft skills ───────────────────────────────────────── */}
+        {(profile.softSkills?.length ?? 0) > 0 && (
+          <Section
+            title="Soft skills"
+            subtitle="Interpersonal and professional strengths."
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {profile.softSkills?.map((skill) => (
+                <Chip
+                  key={skill}
+                  label={skill}
+                  active={activeSoftSkills.has(skill)}
+                  onToggle={() =>
+                    setActiveSoftSkills((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(skill)) next.delete(skill);
+                      else next.add(skill);
+                      return next;
+                    })
+                  }
+                />
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* ── Section: What makes you stand out ────────────────────────── */}
+        {(profile.differentiators?.length ?? 0) > 0 && (
+          <Section
+            title="What makes you stand out"
+            subtitle="Your competitive edge."
+          >
+            <ul
+              style={{
+                margin: 0,
+                padding: "0 0 0 18px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              {profile.differentiators?.map((d, i) => (
+                <li key={i} style={{ fontSize: 14, color: "var(--text)" }}>
+                  {d}
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* ── Section: Key achievements ─────────────────────────────────── */}
+        {(profile.achievements?.length ?? 0) > 0 && (
+          <Section
+            title="Key achievements"
+            subtitle="The wins we'll highlight in your resumes."
+          >
+            <ul
+              style={{
+                margin: 0,
+                padding: "0 0 0 18px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              {profile.achievements?.map((a, i) => (
+                <li key={i} style={{ fontSize: 14, color: "var(--text)" }}>
+                  {a}
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* ── Section: Where you're headed ──────────────────────────────── */}
+        <Section
+          title="Where you're headed"
+          subtitle="This guides which jobs we target."
+        >
+          <Inp
+            label="Target direction"
+            value={targetDirection}
+            onChange={setTargetDirection}
+            placeholder="e.g. Senior PM at a growth-stage startup"
+          />
+        </Section>
+
+        {/* ── Section: Areas to strengthen ──────────────────────────────── */}
+        {(profile.gaps?.length ?? 0) > 0 && (
+          <Section
+            title="Areas to strengthen"
+            subtitle="We'll address these as we build your materials."
+          >
+            <ul
+              style={{
+                margin: 0,
+                padding: "0 0 0 18px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              {profile.gaps?.map((g, i) => (
+                <li
+                  key={i}
+                  style={{ fontSize: 14, color: "var(--text-muted)" }}
+                >
+                  {typeof g === "string" ? g : g.gap}
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* ── Action row ────────────────────────────────────────────────── */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            paddingTop: 8,
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          <Btn
+            variant="ghost"
+            onClick={triggerGeneration}
+            aria-label="Regenerate profile"
+          >
+            ↻ Regenerate
+          </Btn>
+          <Btn
+            variant="primary"
+            size="lg"
+            onClick={handleConfirm}
+            // GS-ONB-21, GS-ONB-38: disabled when no profile
+            disabled={genStatus !== "done" || !localProfile}
+            aria-label="Confirm profile and continue"
+          >
+            Looks good →
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default Step4Profile;
+
+--- END built file ---
+
+--- BEGIN built file: src/components/pages/OnboardingPage.tsx ---
+"use client";
+// OnboardingPage — main orchestrator for the 3-step onboarding flow.
+// Step 1: Resume upload  →  Step 2: Preferences (6 substeps)  →  Step 3: Profile review
+//
+// BUG-017 FIX: initialResumeRaw passed to Step1Resume for returning-user flow.
+// BUG-018 FIX: saveSession() at every substep boundary BEFORE advancing (HYGIENE Rule 29).
+//
+// Architecture:
+//   • Background PARSE triggered on upload; user proceeds to Step 2 immediately.
+//   • Background PROFILE GEN triggered when parse completes (during Step 2 ideally).
+//   • Step4Profile receives bgGenStatus/bgProfile via props; reacts via GS-ONB-33 useEffect.
+//   • sessionRef keeps a mutable latest-session copy so async callbacks never read stale state.
+
+import React, { useState, useEffect, useRef } from "react";
+import { loadSession, saveSession } from "@/lib/storage";
+import { callClaude, cleanJson, safeErrorMessage } from "@/lib/api";
+import type {
+  SessionData,
+  ResumeStructured,
+  Profile,
+  Personal,
+  EducationEntry,
+  Context,
+  Preferences,
+  Demographics,
+} from "@/lib/types";
+import type { Step3SubStep } from "@/components/steps/Step3Preferences";
+import type {
+  Step4ParseStatus,
+  Step4ProfileGenStatus,
+} from "@/components/steps/Step4Profile";
+
+import Step1Resume from "@/components/steps/Step1Resume";
+import Step3Preferences from "@/components/steps/Step3Preferences";
+import Step4Profile from "@/components/steps/Step4Profile";
+import { OnboardingProgress } from "@/components/OnboardingProgress";
+import { OnboardingCelebration } from "@/components/OnboardingCelebration";
+import { Spin } from "@/components/ui/Spin";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type InnerStep = 1 | 2 | 3 | "celebration";
+
+// ── Default empties ──────────────────────────────────────────────────────────
+
+const EMPTY_PERSONAL: Personal = {
+  name: "",
+  email: "",
+  phone: "",
+  location: "",
+  linkedin: "",
+  portfolio: "",
+};
+
+const EMPTY_RESUME_STRUCTURED: ResumeStructured = {
+  roles: [],
+  education: [],
+};
+
+// ── Substep → 0-based index map ───────────────────────────────────────────────
+
+const SUBSTEP_INDEX: Record<Step3SubStep, number> = {
+  direction: 0,
+  worktype: 1,
+  comp: 2,
+  location: 3,
+  quickcheck: 4,
+  dealbreakers: 5,
+};
+
+// ── OnboardingPage ────────────────────────────────────────────────────────────
+
+export function OnboardingPage() {
+  // ── Session load state ────────────────────────────────────────────────────
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [session, setSession] = useState<SessionData>({});
+  // Mutable ref — always current; safe to read from async callbacks
+  const sessionRef = useRef<SessionData>({});
+
+  // ── Routing ───────────────────────────────────────────────────────────────
+  const [innerStep, setInnerStep] = useState<InnerStep>(1);
+
+  // ── Background parse ──────────────────────────────────────────────────────
+  const [parseStatus, setParseStatus] = useState<Step4ParseStatus>("idle");
+  const [resumeStructured, setResumeStructured] = useState<ResumeStructured>(
+    EMPTY_RESUME_STRUCTURED,
+  );
+  const parseAbortRef = useRef<AbortController | null>(null);
+
+  // ── Background profile generation ─────────────────────────────────────────
+  const [bgGenStatus, setBgGenStatus] = useState<Step4ProfileGenStatus>("idle");
+  const [bgGenPhase, setBgGenPhase] = useState(0);
+  const [bgGenError, setBgGenError] = useState<string | null>(null);
+  const [bgProfile, setBgProfile] = useState<Profile | null>(null);
+  const profileGenAbortRef = useRef<AbortController | null>(null);
+  const phaseTickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Preferences substep progress ─────────────────────────────────────────
+  // Tracks which dot is "active" in OnboardingProgress
+  const [prefSubStep, setPrefSubStep] = useState(0);
+
+  // ── Background profile generation ────────────────────────────────────────
+
+  async function triggerProfileGen(parsedResume: ResumeStructured) {
+    // Cancel any in-flight gen
+    profileGenAbortRef.current?.abort();
+    const controller = new AbortController();
+    profileGenAbortRef.current = controller;
+
+    // Clear phase ticker
+    if (phaseTickerRef.current) {
+      clearInterval(phaseTickerRef.current);
+      phaseTickerRef.current = null;
+    }
+
+    setBgGenStatus("generating");
+    setBgGenPhase(0);
+    setBgProfile(null);
+    setBgGenError(null);
+
+    // Phase ticker — advances every 5s through 4 phases
+    let phase = 0;
+    phaseTickerRef.current = setInterval(() => {
+      phase = Math.min(phase + 1, 3);
+      setBgGenPhase(phase);
+    }, 5000);
+
+    // Use sessionRef.current for preferences/context — by the time gen starts,
+    // the user may have already completed step 2 (full data available).
+    const profilePayload = JSON.stringify({
+      resume: parsedResume,
+      personal: parsedResume.personal ?? EMPTY_PERSONAL,
+      context: sessionRef.current.context ?? {},
+      preferences: sessionRef.current.preferences ?? {},
+    });
+
+    // BUG-046: wrap user-sourced data (resume text + personal info) in untrusted tags
+    const profileNonce = (() => {
+      try {
+        return crypto.randomUUID();
+      } catch {
+        return Math.random().toString(36).slice(2);
+      }
+    })();
+    const profileInput = `<untrusted_user_data nonce="${profileNonce}">${profilePayload}</untrusted_user_data>`;
+
+    try {
+      const raw = await callClaude(
+        "PROFILE",
+        profileInput,
+        4096,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+
+      const cleaned = cleanJson(raw);
+      const profile = JSON.parse(cleaned) as Profile;
+
+      if (phaseTickerRef.current) {
+        clearInterval(phaseTickerRef.current);
+        phaseTickerRef.current = null;
+      }
+
+      setBgProfile(profile);
+      setBgGenStatus("done");
+
+      // Persist to session (non-blocking — don't await, not critical path)
+      const newSession: SessionData = { ...sessionRef.current, profile };
+      sessionRef.current = newSession;
+      setSession(newSession);
+      saveSession(newSession).catch(() => {});
+    } catch (err) {
+      if (controller.signal.aborted) return;
+
+      if (phaseTickerRef.current) {
+        clearInterval(phaseTickerRef.current);
+        phaseTickerRef.current = null;
+      }
+
+      setBgGenStatus("error");
+      setBgGenError(safeErrorMessage(err, "Profile generation failed."));
+    }
+  }
+
+  // ── Background parse ──────────────────────────────────────────────────────
+
+  async function triggerParse(resumeRaw: string) {
+    // Cancel any in-flight parse
+    parseAbortRef.current?.abort();
+    const controller = new AbortController();
+    parseAbortRef.current = controller;
+
+    setParseStatus("parsing");
+
+    try {
+      // BUG-046: wrap user-sourced resume text in untrusted_user_data tags (Security §7)
+      const nonce = (() => {
+        try {
+          return crypto.randomUUID();
+        } catch {
+          return Math.random().toString(36).slice(2);
+        }
+      })();
+      const wrappedInput = `<untrusted_user_data nonce="${nonce}">${resumeRaw}</untrusted_user_data>`;
+
+      const raw = await callClaude(
+        "PARSE",
+        wrappedInput,
+        4096,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+
+      const cleaned = cleanJson(raw);
+      const parsed = JSON.parse(cleaned) as ResumeStructured;
+
+      setResumeStructured(parsed);
+      setParseStatus("done");
+
+      // HYGIENE Rule 10: include ALL Step 1 WRITES (resumeStructured, personal,
+      // education, context defaults, demographics defaults)
+      const updated: SessionData = {
+        ...sessionRef.current,
+        resumeStructured: parsed,
+        // Carry personal + education extracted from parse (only if not already user-set)
+        personal: sessionRef.current.personal ?? parsed.personal,
+        education: sessionRef.current.education?.length
+          ? sessionRef.current.education
+          : (parsed.education ?? []),
+        // Context defaults per GS-ONB-03; user's directionPresets/careerDirection preserved
+        context: {
+          directionPresets: [],
+          careerDirectionText: "",
+          careerDirection: "",
+          empStatus: "employed",
+          whyLeft: "",
+          latestRoleText: "",
+          notOnResume: "",
+          titleNotCapture: "",
+          ...(sessionRef.current.context ?? {}),
+        },
+        demographics: {
+          workAuth: "",
+          highestEducation: "",
+          languages: "",
+          ...(sessionRef.current.demographics ?? {}),
+        },
+      };
+      sessionRef.current = updated;
+      setSession(updated);
+      await saveSession(updated);
+
+      // Immediately kick off profile gen (runs in background while user is on step 2 or 3)
+      triggerProfileGen(parsed);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      setParseStatus("error");
+      // Error is surfaced via ParseBanner — no need to store separately
+      void safeErrorMessage(err);
+    }
+  }
+
+  // ── Mount: load session and route to correct step ─────────────────────────
+
+  useEffect(() => {
+    loadSession().then((s) => {
+      const loaded = s ?? {};
+      sessionRef.current = loaded;
+      setSession(loaded);
+
+      const step = loaded.currentStep ?? 1;
+
+      if (step >= 3) {
+        // User is at step 3 (profile) — already has parsed resume
+        setInnerStep(3);
+        if (loaded.resumeStructured) {
+          setResumeStructured(loaded.resumeStructured);
+        }
+        // If bg gen was already persisted (previous session), treat as done
+        // Step4Profile will receive existingProfile and skip re-gen
+        setParseStatus("done");
+      } else if (step === 2) {
+        // User is at step 2 (preferences)
+        setInnerStep(2);
+        if (loaded.resumeStructured) {
+          // Parse already done in a previous session
+          setResumeStructured(loaded.resumeStructured);
+          setParseStatus("done");
+          // Re-trigger profile gen if it wasn't completed yet
+          if (!loaded.profile) {
+            triggerProfileGen(loaded.resumeStructured);
+          }
+        } else if (loaded.resumeRaw) {
+          // Parse didn't complete — re-trigger it
+          triggerParse(loaded.resumeRaw);
+        }
+      } else {
+        // Default to step 1
+        setInnerStep(1);
+      }
+
+      setSessionLoaded(true);
+    });
+
+    return () => {
+      // Cleanup all in-flight async work on unmount
+      parseAbortRef.current?.abort();
+      profileGenAbortRef.current?.abort();
+      if (phaseTickerRef.current) clearInterval(phaseTickerRef.current);
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Step 1: Upload handler ─────────────────────────────────────────────────
+
+  async function handleUpload(resumeRaw: string) {
+    // BUG-018: save BEFORE advancing
+    const newSession: SessionData = {
+      ...sessionRef.current,
+      resumeRaw,
+      currentStep: 2,
+      maxStep: Math.max(sessionRef.current.maxStep ?? 1, 2),
+    };
+    sessionRef.current = newSession;
+    setSession(newSession);
+    await saveSession(newSession);
+
+    // Advance to preferences immediately (parallel parse architecture)
+    setInnerStep(2);
+    setPrefSubStep(0);
+
+    // Kick off background parse
+    triggerParse(resumeRaw);
+  }
+
+  // ── Step 2: Substep complete (BUG-018: save before advancing) ─────────────
+
+  async function handleSubStepComplete(
+    subStep: Step3SubStep,
+    data: {
+      preferences: Partial<Preferences>;
+      context: Partial<Context>;
+      demographics: Partial<Demographics>;
+    },
+  ) {
+    // BUG-018: saveSession BEFORE substep index advances inside Step3Preferences
+    const newSession: SessionData = {
+      ...sessionRef.current,
+      preferences: {
+        ...(sessionRef.current.preferences ?? {}),
+        ...data.preferences,
+      } as Preferences,
+      context: {
+        ...(sessionRef.current.context ?? {}),
+        ...data.context,
+      } as Context,
+      demographics: {
+        ...(sessionRef.current.demographics ?? {}),
+        ...data.demographics,
+      } as Demographics,
+    };
+    sessionRef.current = newSession;
+    setSession(newSession);
+    await saveSession(newSession);
+
+    // Keep OnboardingProgress in sync (show next substep as active)
+    setPrefSubStep(SUBSTEP_INDEX[subStep] + 1);
+  }
+
+  // ── Step 2: Preferences complete ──────────────────────────────────────────
+
+  async function handlePreferencesComplete(data: {
+    preferences: Partial<Preferences>;
+    context: Partial<Context>;
+    demographics: Partial<Demographics>;
+  }) {
+    const newSession: SessionData = {
+      ...sessionRef.current,
+      preferences: {
+        ...(sessionRef.current.preferences ?? {}),
+        ...data.preferences,
+      } as Preferences,
+      context: {
+        ...(sessionRef.current.context ?? {}),
+        ...data.context,
+      } as Context,
+      demographics: {
+        ...(sessionRef.current.demographics ?? {}),
+        ...data.demographics,
+      } as Demographics,
+      currentStep: 3,
+      maxStep: Math.max(sessionRef.current.maxStep ?? 2, 3),
+    };
+    sessionRef.current = newSession;
+    setSession(newSession);
+    await saveSession(newSession);
+
+    setInnerStep(3);
+  }
+
+  // ── Step 3: Profile complete ──────────────────────────────────────────────
+
+  async function handleProfileComplete(data: {
+    profile: Profile;
+    personal: Personal;
+    education: EducationEntry[];
+    context: Partial<Context>;
+  }) {
+    const newSession: SessionData = {
+      ...sessionRef.current,
+      profile: data.profile,
+      personal: data.personal,
+      education: data.education,
+      context: {
+        ...(sessionRef.current.context ?? {}),
+        ...data.context,
+      } as Context,
+      currentStep: 4,
+      maxStep: Math.max(sessionRef.current.maxStep ?? 3, 4),
+    };
+    sessionRef.current = newSession;
+    setSession(newSession);
+    await saveSession(newSession);
+
+    setInnerStep("celebration");
+    // OnboardingCelebration.onContinue calls window.location.reload() —
+    // page.tsx reads currentStep from storage → routes to step 4 (AimPage).
+    // Auto-reload removed: user must click "Let's go →" to advance (GS-ONB-49).
+  }
+
+  // ── Retry / cancel parse ──────────────────────────────────────────────────
+
+  function handleRetryParse() {
+    const resumeRaw = sessionRef.current.resumeRaw;
+    if (resumeRaw) triggerParse(resumeRaw);
+  }
+
+  function handleCancelParse() {
+    parseAbortRef.current?.abort();
+    setParseStatus("cancelled");
+  }
+
+  // ── Upload different (from Step4Profile back to Step 1) ───────────────────
+
+  function handleUploadDifferent() {
+    parseAbortRef.current?.abort();
+    profileGenAbortRef.current?.abort();
+    if (phaseTickerRef.current) {
+      clearInterval(phaseTickerRef.current);
+      phaseTickerRef.current = null;
+    }
+
+    setParseStatus("idle");
+    setBgGenStatus("idle");
+    setBgProfile(null);
+    setBgGenError(null);
+    setBgGenPhase(0);
+    setResumeStructured(EMPTY_RESUME_STRUCTURED);
+    setInnerStep(1);
+
+    const newSession: SessionData = {
+      ...sessionRef.current,
+      currentStep: 1,
+      resumeRaw: undefined,
+      resumeStructured: undefined,
+      profile: undefined,
+    };
+    sessionRef.current = newSession;
+    setSession(newSession);
+    saveSession(newSession).catch(() => {});
+  }
+
+  // ── Loading screen ────────────────────────────────────────────────────────
+
+  if (!sessionLoaded) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100%",
+          background: "var(--bg)",
+        }}
+      >
+        <Spin size="lg" />
+      </div>
+    );
+  }
+
+  // ── Celebration ───────────────────────────────────────────────────────────
+
+  if (innerStep === "celebration") {
+    return (
+      <OnboardingCelebration
+        onContinue={() => {
+          reloadTimerRef.current = setTimeout(
+            () => window.location.reload(),
+            0,
+          );
+        }}
+      />
+    );
+  }
+
+  // ── Step 1: Resume upload ─────────────────────────────────────────────────
+
+  if (innerStep === 1) {
+    return (
+      <Step1Resume
+        onUpload={handleUpload}
+        parseStatus={parseStatus}
+        onRetryParse={handleRetryParse}
+        onCancelParse={handleCancelParse}
+        initialResumeRaw={session.resumeRaw}
+      />
+    );
+  }
+
+  // ── Step 2: Preferences ───────────────────────────────────────────────────
+
+  if (innerStep === 2) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          minHeight: "100%",
+          background: "var(--bg)",
+        }}
+      >
+        <OnboardingProgress subStep={prefSubStep} totalSubSteps={6} />
+        <Step3Preferences
+          initialPreferences={session.preferences}
+          initialContext={session.context}
+          initialDemographics={session.demographics}
+          parseStatus={parseStatus}
+          onRetryParse={handleRetryParse}
+          onSubStepComplete={handleSubStepComplete}
+          onComplete={handlePreferencesComplete}
+        />
+      </div>
+    );
+  }
+
+  // ── Step 3: Profile review ────────────────────────────────────────────────
+
+  const personal =
+    session.personal ?? resumeStructured.personal ?? EMPTY_PERSONAL;
+  const education = session.education ?? resumeStructured.education ?? [];
+
+  return (
+    <Step4Profile
+      resumeStructured={resumeStructured}
+      personal={personal}
+      education={education}
+      context={session.context ?? {}}
+      preferences={session.preferences ?? {}}
+      parseStatus={parseStatus}
+      existingProfile={session.profile}
+      backgroundProfile={bgProfile}
+      backgroundGenStatus={bgGenStatus}
+      backgroundGenPhase={bgGenPhase}
+      backgroundGenError={bgGenError}
+      onRetryParse={handleRetryParse}
+      onComplete={handleProfileComplete}
+      onUploadDifferent={handleUploadDifferent}
+    />
+  );
+}
+
+export default OnboardingPage;
+
+--- END built file ---
+
+--- BEGIN built file: src/components/OnboardingProgress.tsx ---
+"use client";
+import React from "react";
+
+export interface OnboardingProgressProps {
+  subStep: number; // current substep index (0-based)
+  totalSubSteps?: number;
+}
+
+const SUBSTEP_LABELS = [
+  "Direction",
+  "Work type",
+  "Compensation",
+  "Location",
+  "Quick check",
+  "Deal-breakers",
+];
+
+export function OnboardingProgress({
+  subStep,
+  totalSubSteps = 6,
+}: OnboardingProgressProps) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        justifyContent: "center",
+        padding: "6px 0",
+      }}
+      role="progressbar"
+      aria-valuenow={subStep + 1}
+      aria-valuemin={1}
+      aria-valuemax={totalSubSteps}
+      aria-label={`Preferences step ${subStep + 1} of ${totalSubSteps}: ${SUBSTEP_LABELS[subStep] ?? ""}`}
+    >
+      {Array.from({ length: totalSubSteps }, (_, i) => (
+        <div
+          key={i}
+          title={SUBSTEP_LABELS[i]}
+          style={{
+            width: i === subStep ? 20 : 6,
+            height: 6,
+            borderRadius: 3,
+            background:
+              i < subStep
+                ? "var(--success)"
+                : i === subStep
+                  ? "var(--primary)"
+                  : "var(--border)",
+            transition: "all 0.25s ease",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default OnboardingProgress;
+
+--- END built file ---
+
+--- BEGIN built file: src/components/OnboardingCelebration.tsx ---
+"use client";
+import React from "react";
+import { Btn } from "@/components/ui/Btn";
+
+export interface OnboardingCelebrationProps {
+  onContinue: () => void;
+}
+
+export function OnboardingCelebration({
+  onContinue,
+}: OnboardingCelebrationProps) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100%",
+        padding: "60px 24px",
+        background: "var(--bg)",
+        textAlign: "center",
+        gap: "28px",
+      }}
+    >
+      {/* Icon */}
+      <div
+        style={{
+          width: 72,
+          height: 72,
+          borderRadius: "50%",
+          background: "var(--success-light)",
+          border: "2px solid var(--success-border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "32px",
+          color: "var(--success)",
+        }}
+        aria-hidden="true"
+      >
+        ✓
+      </div>
+
+      {/* Text */}
+      <div style={{ maxWidth: 420 }}>
+        <h2
+          style={{
+            fontSize: "24px",
+            fontWeight: 700,
+            color: "var(--text)",
+            margin: "0 0 10px 0",
+            lineHeight: 1.2,
+          }}
+        >
+          Your arsenal is being built.
+        </h2>
+        <p
+          style={{
+            fontSize: "15px",
+            color: "var(--text-muted)",
+            margin: 0,
+            lineHeight: 1.5,
+          }}
+        >
+          Resume parsed. Profile generated. Preferences locked in.
+          <br />
+          Time to find your targets.
+        </p>
+      </div>
+
+      <Btn
+        variant="primary"
+        size="lg"
+        onClick={onContinue}
+        aria-label="Continue to market research"
+      >
+        Let&apos;s go →
+      </Btn>
+    </div>
+  );
+}
+
+export default OnboardingCelebration;
+
+--- END built file ---
+
+--- BEGIN built file: src/lib/upload.ts ---
+// src/lib/upload.ts — Client-side resume file extraction helpers
+// BUG-020 FIX: DOCX extraction uses JSZip for proper deflate decompression.
+
+export type ValidateResult = { valid: true } | { valid: false; error: string };
+
+// ── Constants (from VALIDATION_RULES.md) ─────────────────────────────────────
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_PDF_PAGES = 50;
+const MAX_EXTRACTED_TEXT = 500_000; // chars
+const PARSE_TIMEOUT_MS = 15_000;
+
+const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".txt", ".md"]);
+
+function getExtension(filename: string): string {
+  const lastDot = filename.lastIndexOf(".");
+  if (lastDot === -1) return "";
+  return filename.slice(lastDot).toLowerCase();
+}
+
+// ── validateFile (synchronous — used by page.tsx and components) ──────────────
+
+export function validateFile(file: File): ValidateResult {
+  if (file.size === 0) {
+    return { valid: false, error: "File is empty." };
+  }
+  const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+  if (file.size > MAX_FILE_SIZE) {
+    return {
+      valid: false,
+      error: `File too large (${sizeMb}MB). Maximum is 10MB.`,
+    };
+  }
+  const ext = getExtension(file.name);
+  if (!ALLOWED_EXTENSIONS.has(ext)) {
+    return {
+      valid: false,
+      error: "Unsupported file type. Accepted: PDF, DOCX, TXT, MD.",
+    };
+  }
+  return { valid: true };
+}
+
+// ── validateFileDeep (async — adds magic byte check) ─────────────────────────
+
+export async function validateFileDeep(file: File): Promise<ValidateResult> {
+  const basic = validateFile(file);
+  if (!basic.valid) return basic;
+
+  const ext = getExtension(file.name);
+
+  // Read first 8 bytes for magic byte header check
+  const slice = file.slice(0, 8);
+  const buffer = await slice.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+
+  if (ext === ".pdf") {
+    // %PDF = 0x25 0x50 0x44 0x46
+    if (
+      bytes[0] !== 0x25 ||
+      bytes[1] !== 0x50 ||
+      bytes[2] !== 0x44 ||
+      bytes[3] !== 0x46
+    ) {
+      return { valid: false, error: "File does not appear to be a valid PDF." };
+    }
+  } else if (ext === ".docx") {
+    // PK = 0x50 0x4B 0x03 0x04 (ZIP local file header)
+    if (
+      bytes[0] !== 0x50 ||
+      bytes[1] !== 0x4b ||
+      bytes[2] !== 0x03 ||
+      bytes[3] !== 0x04
+    ) {
+      return {
+        valid: false,
+        error: "File does not appear to be a valid DOCX.",
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+// ── extractText (deep-validate + parse, with timeout) ────────────────────────
+
+export async function extractText(file: File): Promise<string> {
+  const check = await validateFileDeep(file);
+  if (!check.valid) throw new Error(check.error);
+
+  const ext = getExtension(file.name);
+
+  let extractPromise: Promise<string>;
+  if (ext === ".pdf") {
+    extractPromise = extractPdfText(file);
+  } else if (ext === ".docx") {
+    extractPromise = extractDocxText(file);
+  } else {
+    extractPromise = extractPlainText(file);
+  }
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error("File parsing timed out (15s).")),
+      PARSE_TIMEOUT_MS,
+    ),
+  );
+
+  const text = await Promise.race([extractPromise, timeoutPromise]);
+
+  if (!text || text.trim().length === 0) {
+    throw new Error("No text could be extracted from the file.");
+  }
+
+  return text.length > MAX_EXTRACTED_TEXT
+    ? text.slice(0, MAX_EXTRACTED_TEXT)
+    : text;
+}
+
+// ── PDF extraction via pdfjs-dist ─────────────────────────────────────────────
+
+async function extractPdfText(file: File): Promise<string> {
+  // Dynamic import to keep pdfjs out of SSR / initial bundle
+  const pdfjsLib = await import("pdfjs-dist");
+
+  // Configure worker using CDN; safe to set multiple times (idempotent)
+  if (typeof window !== "undefined") {
+    const ver =
+      (pdfjsLib as unknown as { version?: string }).version ?? "5.6.205";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${ver}/build/pdf.worker.min.mjs`;
+  }
+
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+  const pageCount = Math.min(pdf.numPages, MAX_PDF_PAGES);
+  const pages: string[] = [];
+
+  for (let i = 1; i <= pageCount; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = (content.items as Array<{ str?: string }>)
+      .filter((item) => typeof item.str === "string" && item.str.trim() !== "")
+      .map((item) => item.str as string)
+      .join(" ");
+    if (pageText.trim()) pages.push(pageText);
+  }
+
+  return pages.join("\n\n");
+}
+
+// ── DOCX extraction via JSZip (BUG-020 fix: proper ZIP/deflate decompression) ─
+
+async function extractDocxText(file: File): Promise<string> {
+  // Dynamic import: JSZip handles ZIP/deflate natively in browser & Node
+  const JSZipModule = await import("jszip");
+  const JSZip =
+    (JSZipModule as unknown as { default?: typeof JSZipModule }).default ??
+    JSZipModule;
+
+  const buffer = await file.arrayBuffer();
+  // JSZip.loadAsync handles deflate decompression correctly (fixes BUG-020)
+  const zip = await (
+    JSZip as unknown as {
+      loadAsync: (
+        b: ArrayBuffer,
+      ) => Promise<{
+        file: (
+          name: string,
+        ) => { async: (type: string) => Promise<string> } | null;
+      }>;
+    }
+  ).loadAsync(buffer);
+
+  const docFile = zip.file("word/document.xml");
+  if (!docFile) {
+    throw new Error("Invalid DOCX: word/document.xml not found.");
+  }
+
+  const xml = await docFile.async("string");
+
+  // Extract readable text from WordprocessingML XML
+  const text = xml
+    .replace(/<w:p[ >\/]/g, "\n") // paragraph → newline
+    .replace(/<w:br[^>]*\/>/g, "\n") // line break → newline
+    .replace(/<w:tab\s*\/>/g, "\t") // tab character
+    .replace(/<[^>]+>/g, "") // strip remaining XML tags
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return text;
+}
+
+// ── Plain text extraction ─────────────────────────────────────────────────────
+
+function extractPlainText(file: File): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result;
+      resolve(typeof result === "string" ? result : "");
+    };
+    reader.onerror = () => reject(new Error("Failed to read file."));
+    reader.readAsText(file, "UTF-8");
+  });
+}
+
+--- END built file ---

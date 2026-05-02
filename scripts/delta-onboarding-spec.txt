@@ -1,0 +1,2736 @@
+feature: onboarding
+
+You are a Builder Agent in the multi-agent build system.
+
+## MANDATORY FIRST ACTION
+Before any git command, run: `pwd && git worktree list --porcelain | head`
+Your cwd MUST be inside a `.worktrees/wt-*` path. If it resolves to the main project root, halt immediately and return `{"status": "isolation-violation", "cwd": "<resolved-path>"}`. Do not commit, do not checkout, do not branch. This closes the Phase-1 isolation leak observed 2026-04-21 where a parallel builder leaked its work to the main repo HEAD.
+
+## Your Role
+You build ONE feature: onboarding.
+You are stateless. You receive context, produce code, and return. You know nothing about other features.
+
+## File Scope
+You may ONLY modify these files:
+- src/components/steps/Step1Resume.tsx
+- src/components/steps/Step3Preferences.tsx
+- src/components/steps/Step4Profile.tsx
+- src/components/pages/OnboardingPage.tsx
+- src/components/OnboardingProgress.tsx
+- src/components/OnboardingCelebration.tsx
+- src/lib/upload.ts
+
+All other files are read-only. If you need a change to a foundation file, write:
+FOUNDATION-UPDATE-REQUEST: <file> — <reason>
+
+## Environment
+You are running in an isolated worktree on branch agent/onboarding. Commit all work before returning.
+
+## Build Verification
+Use `node node_modules/typescript/bin/tsc --noEmit` (NOT `npx tsc`, NOT `npm run build`). Run after every major piece.
+
+## Known Bug Patterns — You will be scored more harshly if you repeat these
+
+**#1 MOST REPEATED BUG (recurrence 4):** validateOrigin() returns a boolean. Use `if (!validateOrigin(req))` — NEVER wrap it in try/catch. See HYGIENE Rule 27.
+
+**#2 REPEATED BUG (recurrence 4):** Components that read session data at mount time go stale when upstream saves. If your component consumes data written by another step, read fresh from `loadSession()` on every render or accept data via props — do NOT cache in state at mount and never update. See BUG-012.
+
+**#3 REPEATED BUG (recurrence 3):** Composite pages (OnboardingPage, AimPage, ReadyPage) MUST call `saveSession()` at every substep boundary BEFORE advancing the substep index. Crash between substeps = total data loss. See HYGIENE Rule 29.
+
+**#4 REPEATED BUG (recurrence 3):** Global components (toasts, badges, meters) must mount in `page.tsx` or use a portal — NEVER inside a conditional parent like HubScreen that unmounts on other screens. See HYGIENE Rule 47.
+
+**#5 BUG-030:** Every dispatchEvent MUST have a corresponding addEventListener in the parent tree — verify BOTH sides exist (Rule 33).
+
+**#6 BUG-037 (recurrence 2):** File picker opens twice — label + div onClick double-fire. Prevent click event bubbling from label to parent handlers with stopPropagation.
+
+**#7 BUG-034:** Stale closure in complete() — always read fresh session from `loadSession()` before spreading in callbacks with async background work (Rule 37).
+
+**#8 BUG-032/035 (recurrence 3):** mountedRef permanently false in React Strict Mode. Every ref modified in useEffect MUST be reset at top of effect body (Rule 35).
+
+**#9 BUG-018 (recurrence 3):** No auto-save between substeps. saveSession() BEFORE advancing substep index (Rule 29).
+
+**#10 BUG-046 (recurrence 2):** PARSE prompt without untrusted_user_data wrapping. Wrap all user-sourced data in <untrusted_user_data nonce=...> tags.
+
+## Security Checklist (Mandatory)
+Before marking complete, verify:
+1. Every POST/PUT/DELETE route calls `validateOrigin()` before processing (if-guard, never try/catch)
+2. Every route that accesses user data verifies JWT via `verifyToken()`
+3. Error responses never expose stack traces, file paths, or API keys
+4. User-generated content rendered with React built-in escaping — no `dangerouslySetInnerHTML`
+5. All external/user data in Claude prompts wrapped in `<untrusted_user_data nonce=...>` tags
+
+## Known Stubs (do NOT fail or recreate these — they are pre-existing)
+- extension/background.js
+- extension/content.js
+- extension/manifest.json
+- extension/popup.css
+- extension/popup.html
+- extension/popup.js
+- src/app/api/auth/login/route.ts
+- src/app/api/auth/logout/route.ts
+- src/app/api/auth/me/route.ts
+- src/app/api/auth/oauth/google/callback/route.ts
+- src/app/api/auth/oauth/google/route.ts
+- src/app/api/auth/oauth/linkedin/callback/route.ts
+- src/app/api/auth/oauth/linkedin/route.ts
+- src/app/api/auth/register/route.ts
+- src/app/api/auth/reset/route.ts
+- src/app/api/claude/route.ts
+- src/app/api/extension/route.ts
+- src/app/api/jobs/route.ts
+- src/app/api/rockets/debit/route.ts
+- src/app/api/rockets/grant/route.ts
+- src/app/api/rockets/route.ts
+- src/app/api/session/route.ts
+- src/app/api/stripe/checkout/route.ts
+- src/app/api/stripe/webhook/route.ts
+- src/components/AuthModal.tsx
+- src/components/CompetitivenessMeter.tsx
+- src/components/ConfettiBurst.tsx
+- src/components/DMBadge.tsx
+- src/components/DeusMechanicus.tsx
+- src/components/DummyProfileEditorModal.tsx
+- src/components/GlazeToast.tsx
+- src/components/HubScreen.tsx
+- src/components/IntroScreen.tsx
+- src/components/KeyboardNav.tsx
+- src/components/OnboardingCelebration.tsx
+- src/components/OnboardingProgress.tsx
+- src/components/PhaseBar.tsx
+- src/components/ProfileEditor.tsx
+- src/components/ProfilePage.tsx
+- src/components/ResumeDisplay.tsx
+- src/components/RocketBar.tsx
+- src/components/RocketStore.tsx
+- src/components/SidePanel.tsx
+- src/components/SoftGate.tsx
+- src/components/dm-modules/DataInspectorModule.tsx
+- src/components/dm-modules/DummyPlugModule.tsx
+- src/components/dm-modules/PipelineTracerModule.tsx
+- src/components/dm-modules/QAModule.tsx
+- src/components/dm-modules/RocketsModule.tsx
+- src/components/pages/AimPage.tsx
+- src/components/pages/OnboardingPage.tsx
+- src/components/pages/ReadyPage.tsx
+- src/components/steps/Step10Resumes.tsx
+- src/components/steps/Step11LinkedIn.tsx
+- src/components/steps/Step12Download.tsx
+- src/components/steps/Step13Apply.tsx
+- src/components/steps/Step1Resume.tsx
+- src/components/steps/Step3Preferences.tsx
+- src/components/steps/Step4Profile.tsx
+- src/components/steps/Step6Analysis.tsx
+- src/components/steps/Step8Skills.tsx
+- src/components/steps/StepCollect.tsx
+- src/lib/apply-template.ts
+- src/lib/auth-oauth.ts
+- src/lib/auth.ts
+- src/lib/competitiveness.ts
+- src/lib/csrf.ts
+- src/lib/deus-mechanicus-jobzooka.ts
+- src/lib/deus-mechanicus.ts
+- src/lib/docx-generator.ts
+- src/lib/download-helpers.ts
+- src/lib/dummy-data.ts
+- src/lib/pdf-generator.ts
+- src/lib/scraper-scripts.ts
+- src/lib/test-harness.ts
+- src/lib/upload.ts
+- src/lib/warp-profiles.ts
+
+---
+
+## HYGIENE Rules (cumulative — violations are hard fails)
+
+# HYGIENE — Run 008 (UX Respec)
+
+**Session:** 2026-04-09
+**Branch:** skeleton-test7
+
+---
+
+### Rule 59: Event contract renames must update both listener and dispatcher
+
+When renaming a custom event (e.g., `jz:soft-gate` → `jz:auth-gate`), grep for ALL references — both `addEventListener` and `dispatchEvent`. Missing either side creates a silent failure where the event fires into void or the listener never triggers.
+
+**Check:** `grep -rn "jz:event-name" src/` must return both a listener and at least one dispatcher.
+
+**Origin:** BUG-069 — AuthGate listener updated but no dispatcher added for `jz:auth-gate`.
+
+---
+
+### Rule 60: Validation constraints must be updated when the data model changes
+
+When changing step numbering, field ranges, or enum values, grep all validators (`validateSession`, `isIntegerInRange`, zod schemas, etc.) and update their constraints. Old range checks silently reject valid new data.
+
+**Check:** After any data model change, run `grep -rn "isIntegerInRange\|validateSession\|0.*10\|0.*100" src/lib/` and verify ranges match the new model.
+
+**Origin:** BUG-067 — validateSession step range 0-10 not updated for dashboard model.
+
+---
+
+### Rule 61: Hook schemas must match actual tool input shapes
+
+When writing PreToolUse hooks, read the actual tool's parameter schema (from ToolSearch or the system prompt). Don't assume the shape. Common trap: singular vs plural field names (question vs questions), nested objects vs flat strings.
+
+**Check:** Test hooks with a real tool invocation before committing.
+
+**Origin:** BUG-068 — beta-gate.js assumed `tool_input.question` (string) but actual schema is `tool_input.questions` (array of objects).
+
+
+---
+
+## Feature Spec: PRD
+
+--- BEGIN file: requirements/05-features/onboarding/PRD.md ---
+<!-- STALE: requirements/_standards/PRD_TEMPLATE.md changed at 2026-04-13T03:33:47 — review needed -->
+<!-- SPEC-AHEAD-OF-CODE: In the target state for the next skeleton build, the onboarding phase ENDS at market analysis / category lock. Deep-Dive Q&A moves OUT of onboarding to become a dashboard activity. Skills curation's placement is an open ambiguity — this PRD retains it as onboarding Step 7 as shipped. See the deep-dive-qa PRD and PRODUCT_MODEL.md for the target phase model. -->
+# PRD: Onboarding
+
+> **Agent Instructions**
+>
+> 1. Read this entire PRD before writing any code — Section 8 (Feature Description) is your primary implementation guide
+> 2. The acceptance criteria in linked stories are your contract — if it's not specified, don't build it
+> 3. Check Section 9 (Dependencies) — if a dependency isn't built yet, stop and report
+> 4. Your output will be evaluated against criteria you cannot see — build to the spec, not to assumed tests
+> 5. If something in this PRD is ambiguous or contradictory, escalate to the Boss — do not guess
+
+## 1. Title + Classification
+
+**Onboarding (Resume Upload, Preferences, Profile Generation)** — MVP
+
+## 2. Screen
+
+Onboarding, Steps 1–5 (target state — deep-dive removed). Skills curation (Step 7 as shipped) retains its shipped placement pending a follow-up decision; see ambiguity note at top of file. Composite component: `OnboardingPage.tsx`. No phase bar during onboarding.
+
+**Component mapping (target state):** Step 1 = `Step1Resume.tsx`, Step 2 = `Step3Preferences.tsx` with 6 internal substeps (direction, worktype, comp, location, quickcheck, dealbreakers), Step 3 = `Step4Profile.tsx`, Steps 4-5 = `AimPage.tsx` (search + market analysis). Deep-Dive Q&A (previously Step 6, `MiningAccordion`) is **relocated to the dashboard as an optional tier-jump activity**. Skills (currently Step 7 = `Step8Skills.tsx`) remains as shipped pending separate decision. All managed by `OnboardingPage.tsx` routing.
+
+## 3. Context
+
+Onboarding is the foundation of the entire pipeline. Every downstream feature — market research, resume generation, LinkedIn content, auto-apply — depends on the data collected here. A user who abandons onboarding produces zero value. The flow must feel fast, low-friction, and progressively rewarding: upload a resume, confirm details, set preferences, and receive an AI-generated professional profile — all in under 5 minutes.
+
+## 4. JTBD (Jobs To Be Done)
+
+> When I start using a job search tool, I want to quickly import my resume and set my preferences, so I can get personalized results without manually entering everything.
+
+> When I see my AI-generated profile, I want to verify it understands my strengths and career direction, so I can trust the system to represent me accurately downstream.
+
+> When I have a non-standard background (career gap, industry switch, freelance history), I want the tool to capture that context, so I can get advice that accounts for my real situation, not a generic template.
+
+## 5. Emotional Framing
+
+- **Entry**: Hopeful but skeptical — "Will this actually work for me?" The user has tried job tools before. They need to feel this one is different within 60 seconds of starting.
+- **During**: Progressive confidence — each completed sub-step builds trust. Resume parsing should feel like magic ("it got everything right"). Preferences should feel empowering ("I'm in control"). Profile generation should feel validating ("it really understands me").
+- **Exit**: Energized and ready — the celebration screen should feel like the starting gun. "My arsenal is being built. Let's go."
+
+## 6. Goals
+
+- User completes full onboarding (resume → preferences → profile) in under 5 minutes
+- Resume parsing succeeds on 95%+ of well-formatted resumes (PDF, DOCX, TXT)
+- Zero data loss — every field the user fills is persisted to encrypted session
+- Profile generation produces actionable output (discipline, seniority, skills, gaps) on first attempt for 90%+ of users
+- Preferences capture enough signal to generate relevant search queries downstream
+
+## 7. Assumptions
+
+- Users have a resume in a common format (PDF, DOCX, TXT, or plain text they can paste)
+- Claude PARSE prompt handles 95%+ of well-formatted resumes without hallucinating fields
+- 10MB file limit is sufficient for any reasonable resume (even image-heavy PDFs)
+- Employment status (employed/left/outdated) provides enough context for downstream prompts
+- Demographics are optional — the system works without them but produces better results with them
+- Bidirectional hourly ↔ salary conversion at 2080 hours/year is a reasonable standard assumption
+- **v3:** PARSE and PROFILE are anonymous endpoints (no user JWT required); Cloudflare Turnstile on first anonymous hit adds <100 ms transparent latency (invisible challenge). This upgrades SECURITY.md's v2 "accepted risk" to MVP hardening per research F10 / backend PRD §16 decision 17.
+- **v3:** Prompt Caching on PARSE and PROFILE (system prompt + canonical context cached) — mandatory per backend PRD §8.16.
+
+## 8. Feature Description
+
+Onboarding is a 3-step wizard that transforms a raw resume into a structured professional profile with search preferences.
+
+**Step 1: Resume Upload (IntroScreen)**
+
+The user provides their resume via the IntroScreen landing page: drag-and-drop file upload (PDF, DOCX, TXT, MD — 10MB limit) or by pasting raw text. Upon upload, the system immediately triggers resume parsing as a **background task** via Claude AI (PARSE prompt) and advances the user to Step 2 (Preferences). The user does NOT wait for parsing to complete.
+
+**v3 anonymous-endpoint hardening:** PARSE is called via `POST ${API_BASE_URL}/claude` without an auth cookie (anonymous path). On the first call from a fresh browser session, Cloudflare Turnstile issues an invisible challenge token that the frontend attaches as `CF-Turnstile-Response` header on subsequent calls. Backend validates via Siteverify API. Transparent to the user in the normal case; blocks programmatic scanners and low-effort botnets. Request per-ASN rate limit (Cloudflare) further dampens distributed abuse. Per backend PRD §8.2 layer 2 + §16 decision 17.
+
+A persistent parsing status banner is displayed throughout Step 2:
+
+- **During parsing**: "Parsing your resume in the background..." (yellow/olive)
+- **On success**: "Resume parsed ✓" (green) — data saved to session silently
+- **On failure**: "Resume parsing failed. Retry?" (red) — retry action available; does NOT block preference entry
+
+> **Parse-failed entry state:** If resume parsing fails (timeout, unsupported format), the user sees an error toast and can retry the upload. The system does NOT block advancement to Step 2 -- preferences can be entered manually without parsed data. Only Step 3 (profile generation) gates on parsed resume data.
+
+Session auto-saves at each sub-step boundary. If the user refreshes or returns, they resume where they left off within onboarding. If the user returns with `resumeRaw` in session but no `resumeStructured`, the system auto-triggers parsing without requiring re-upload.
+
+> **Parallel Parse Principle**: Resume parsing and preference collection run concurrently. The user never waits idle for parsing. Questions that don't need resume data (all of Step 2) are asked while the parse runs. Only Step 3 (profile generation) requires parsed data, creating a natural synchronization point.
+
+**Step 2: Preferences & Parameters**
+
+All 6 substeps are **resume-independent** — they collect user intent, not resume data. No substep reads from `resumeStructured`, `personal`, or `education`. Resume parsing may complete during any substep — the banner updates but the flow is uninterrupted.
+
+Step 2 is handled by `OnboardingPage.tsx` as 6 internal substeps: **direction** → **worktype** → **comp** → **location** → **quickcheck** → **dealbreakers**. Each substep auto-saves to session on completion.
+
+Direction: multiselect cards, 1+ required (same/similar role, higher-level, new career, leadership, startup, something else). Default: "Same or similar role". Selecting "new career" or "something else" reveals a free-text detail field.
+
+Work type: 3 single-select pill buttons (Full-time, Part-time, Contract). Default: Full-time. Start date: pill buttons (Immediately, 2 weeks notice, 1 month notice, 2 months notice). Default: Immediately.
+
+Compensation: structure dropdown (default "Open to discussion"). Hourly floor and salary floor text inputs with bidirectional sync (hourly × 2080 = annual).
+
+Location: single-select pill toggle (Remote, Hybrid, On-site). Default: Remote. Non-remote reveals city autocomplete.
+
+Quick check: 7 tappable card-style rows (full-width boxes with checkbox indicator: filled ✓ when active, empty border when inactive). Smart defaults: US citizen ✓, authorized to work ✓, no visa sponsorship ✓, driver's license ✓, veteran ✗, disability ✗, security clearance ✗. User taps any card to toggle. **NOT toggle switches** — use card boxes matching the direction/worktype button pattern.
+
+Deal-breakers: 5 tappable card-style rows (full-width boxes with ✕ indicator when active, empty border when inactive). ALL pre-selected by default (unpaid work/spec work, no benefits offered, return-to-office mandate, requires relocation, travel required). "Return-to-office mandate" hidden if user selected On-site. User taps to deselect. The ✕ indicator (not ✓) reinforces that these are things being rejected/skipped. **NOT toggle switches** — use card boxes matching the quick check pattern.
+
+**Step 3: Profile Generation & Resume Verification**
+
+**Background Profile Generation**: Profile generation (PROFILE Claude call) is triggered immediately after resume parsing completes, rather than waiting for the user to reach Step 3. OnboardingPage orchestrates this: as soon as `triggerBackgroundParse()` succeeds, `triggerBackgroundProfileGen()` fires using whatever context and preferences exist at that moment (defaults for any fields the user hasn't filled yet). A phase ticker runs in OnboardingPage (4 phases x 5 seconds), and status is passed down to Step4Profile via `backgroundProfile`, `backgroundGenStatus`, and `backgroundGenPhase` props.
+
+This means the profile may already be complete by the time the user finishes preferences and arrives at Step 3. The parallel architecture — resume parse, profile generation, and preference collection all overlapping — minimizes idle wait time.
+
+- If profile generation completed during Step 2: the user sees their profile immediately on arrival
+- If profile is still generating: the progress bar picks up from the current phase (no restart)
+- If parse is still running: show "Waiting for resume parsing to complete..." with progress
+- If parse failed: show retry option before profile can generate
+- "Regenerate" button re-runs profile generation with the user's final (possibly updated) preferences
+
+A confirmation screen presents personal info and education extracted from the resume — the user reviews and corrects parsed data here (name, email, phone, location, education entries). Required fields: name, email, phone, location. Optional: LinkedIn URL, portfolio URL (validated for HTTP/HTTPS). Education entries are editable inline (add/remove/modify). There is no standalone resume review step — verification happens alongside profile review.
+
+**Late-arriving parse data**: Step4Profile has sync effects that update local `personal` and `education` state when props change (parse results arriving after component mount). This fixes a race condition where rushing through preferences could leave the confirm screen with empty personal fields — the data fills in as soon as parsing completes, even if the component is already mounted.
+
+~~"Edit resume text" was removed in Run 007~~ — users can "Upload different" to start with a new file if needed. The confirm screen focuses on correcting parsed data, not re-editing raw text.
+
+Claude AI (PROFILE prompt) analyzes the resume, context, and preferences to generate a structured professional profile: discipline, seniority level, hard skills list, differentiators, achievements, target direction, gaps to strengthen, avoid terms, and professional domains.
+
+Profile fields stream in progressively as Claude generates them, reducing perceived wait time. A progress indicator shows 4 phases: reading resume, identifying strengths, mapping experience, building profile.
+
+The user can edit discipline and seniority via dropdowns. Target direction is editable inline. A "Regenerate" button re-runs the full profile generation. "Looks good" confirms and advances.
+
+**Post-Onboarding Celebration**
+
+After completing all onboarding steps (target state: resume → preferences → profile → search → analysis; deep dive removed), a celebration screen plays before advancing to the dashboard. This marks the transition from setup to active job hunting. Deep-Dive Q&A is then available as an optional tier-jump activity from the dashboard. The auth gate appears at dashboard entry for unauthenticated users.
+
+## 9. Dependencies / Blockers
+
+- Claude API (`POST ${API_BASE_URL}/claude` on the backend; legacy `/api/claude` on Vercel during 7-day rollback window) must be operational for resume parsing and user data extraction prompts. v3: Cloudflare Turnstile challenge on anonymous endpoints (PARSE/PROFILE) and Prompt Caching mandatory.
+- File upload handling (`src/lib/upload.ts`) for PDF/DOCX text extraction
+- Encrypted storage (`src/lib/storage.ts`) for session persistence
+
+## 10. Rocket Cost
+
+n/a — Onboarding is free. PARSE and PROFILE prompts do not consume rockets.
+
+## 11. Competitiveness Impact
+
+n/a — Onboarding does not directly affect the 0-100 competitiveness score. It is a prerequisite for all scoring features.
+
+## 12. UI Reference
+
+```
+┌─────────────────────────────────────────────┐
+│  IntroScreen (Landing Page)                 │
+│  ┌─────────────────────────────────────┐    │
+│  │  JOBZOOKA                           │    │
+│  │  KILL YOUR JOB SEARCH.              │    │
+│  │                                     │    │
+│  │  [Upload file]  |  [Paste text]     │    │
+│  │   Drop your resume or click to      │    │
+│  │   browse. PDF, DOCX, TXT, MD        │    │
+│  └─────────────────────────────────────┘    │
+│         ↓ upload triggers background parse  │
+├─────────────────────────────────────────────┤
+│  Step 2: Preferences                        │
+│  ┌─────────────────────────────────────┐    │
+│  │ ⚡ Parsing your resume in the       │    │
+│  │    background...          [yellow]  │    │
+│  └─────────────────────────────────────┘    │
+│  Direction: [Same role] [Leadership] [...]  │
+│  Work type: [FT] [PT] [Contract]            │
+│  Comp:      Hourly [$75/hr] ↔ [$156K/yr]   │  ← resume-independent
+│  Location:  [Remote] [Hybrid] [On-site]     │
+│  Quick check: [7 boolean toggles]           │
+│  Breaks:    [RTO mandate ×] [No remote ×]   │
+├─────────────────────────────────────────────┤
+│  Step 3: Profile + Resume Verification      │
+│  [gate: parse done + prefs done]            │
+│                                             │
+│  ── Verify parsed data ──                   │
+│  Name: [John Doe        ]  ← editable      │
+│  Email: [john@email.com ]                   │
+│  Education: [BS CS, MIT, 2018] [×]          │
+│                                             │
+│  ── AI Profile ──                           │
+│  Discipline: [Product Management ▾]         │
+│  Seniority:  [Senior ▾]                     │
+│  Skills: [Strategy] [SQL] [Agile] [...]     │
+│  Differentiators: • Built 0→1 products...   │
+│  Target: Senior PM at growth-stage startup  │
+│  Gaps: • Cloud architecture exposure        │
+│                                             │
+│  [↻ Regenerate]  [Looks good →]             │
+└─────────────────────────────────────────────┘
+```
+
+## 13. Implementation Map
+
+| File                                        | Changes                                                                   | Reuses                           |
+| ------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------- |
+| `src/components/pages/OnboardingPage.tsx`   | Sub-step auto-save to encrypted storage; wire "Upload different" flow     | Existing sub-step routing        |
+| `src/components/steps/Step1Resume.tsx`      | Upload + parse flow; "Upload different" button on confirm screen          | Existing upload/parse/confirm UI |
+| `src/components/steps/Step3Preferences.tsx` | No changes needed                                                         | All existing preference UI       |
+| `src/components/steps/Step4Profile.tsx`     | Add streaming profile display (show fields as they arrive)                | Existing profile UI + regenerate |
+| `src/lib/storage.ts`                        | No changes — already supports incremental saves                           | `saveSession()`                  |
+| `src/lib/prompts.ts`                        | No changes — PARSE and PROFILE prompts are stable                         | PARSE, PROFILE prompts           |
+| `src/lib/api.ts`                            | No changes                                                                | `callClaude()`                   |
+| `src/lib/upload.ts`                         | No changes                                                                | Resume file upload handling      |
+
+## 14. Test Plan
+
+1. Upload a PDF resume → verify parsing extracts name, email, phone, education, skills
+2. Paste plain text resume → verify same structured output
+3. Upload a 15MB file → verify rejection with error message
+4. Edit a parsed field (name) → advance → verify edited value persists in session
+5. Click "Upload different" after parse → verify return to upload screen → upload new file → verify re-parse
+6. Set preferences (Remote + Contract + $100/hr) → verify salary auto-calculates to $208,000
+7. Select direction preset "Career change" → verify required text field appears
+8. Toggle deal-breaker "RTO mandate" with On-site selected → verify it's hidden/disabled
+9. Generate profile → verify discipline, seniority, skills populated
+10. Click Regenerate → verify fresh profile generated
+11. Refresh browser mid-step-2 → verify session resumes at step 2 (auto-save)
+12. Complete all onboarding steps (target state: through market analysis / category lock) → verify celebration screen appears → advance to dashboard. Verify Deep-Dive Q&A is NOT forced mid-onboarding and is instead reachable from the dashboard as an optional activity.
+
+## 15. Out of Scope
+
+- Resume version history (only latest parse is stored)
+- Multi-resume upload (only one resume at a time)
+- LinkedIn profile import as alternative to resume upload
+- Salary negotiation guidance during preferences
+- Profile sharing or export
+
+## 16. Decisions
+
+1. **Resume re-upload**: "Upload different" button on confirm screen. ~~"Edit resume text" removed in Run 007~~ — re-editing raw text added complexity without proportional value. Users who need changes should upload a new file.
+2. **Profile streaming**: Chunked JSON for MVP (parse partial responses client-side). Upgrade to SSE post-MVP.
+3. **Demographics skip**: Soft nudge ("Completing demographics improves your results") but allow skip. Downstream features work without demographics but produce better results with them.
+4. **Background parse architecture**: Resume parsing runs in background during preference collection. Profile generation also runs in background, triggered immediately after parse completes — it does not wait for the user to reach Step 3. This eliminates 10-30s idle wait and reduces abandonment. Trade-off: resume verification is deferred to the profile review screen (Step 3) rather than being a standalone step between upload and preferences. The background profile uses default preferences for any fields not yet filled; "Regenerate" re-runs with final values.
+ 
+ 
+ 
+
+--- END file ---
+
+---
+
+## Feature Spec: STORIES
+
+--- BEGIN file: requirements/05-features/onboarding/STORIES.md ---
+# Granular Stories: Onboarding
+
+> **Agent Instructions**
+>
+> 1. Each story = one code path you implement as a unit — do not combine stories
+> 2. Check `Depends on:` before starting — if a dependency story isn't built, stop and report
+> 3. The `Data:` field tells you exactly which TypeScript interfaces and fields to read/write
+> 4. Your output will be evaluated against criteria you cannot see — build to the spec, not to assumed tests
+> 5. If a story's acceptance criteria conflict with another story, escalate — do not guess
+
+---
+
+## Parent: HL-ONB-01 — Resume Import and Parsing (MVP)
+
+<!-- parallel-safe: GS-ONB-01, GS-ONB-02 can be implemented independently -->
+
+### GS-ONB-01: File Upload Acceptance
+
+> As a User, I want to provide my resume as a PDF, DOCX, TXT, or MD file, so that the system can extract my professional data from my existing document.
+
+**Depends on:** none
+**Data:** `SessionData.resumeRaw` → `src/lib/types.ts`
+**Entry state:** Fresh — first arrival at Step 1, no resume uploaded yet
+**Verifiable by:** Upload a `.pdf` → file accepted and `resumeRaw` populated; upload a `.exe` → error message displayed naming accepted formats.
+**Inherits:** CS-003
+
+**Acceptance Criteria:**
+
+- Files with extensions `.pdf`, `.docx`, `.txt`, and `.md` are accepted
+- Files with any other extension are rejected with an error message naming the accepted formats
+- The system cannot silently ignore an unsupported file type
+
+---
+
+### GS-ONB-02: File Size Validation
+
+> As a System, I want to reject resume files exceeding 10MB, so that parsing resources are not consumed by unreasonably large uploads.
+
+**Depends on:** none
+**Data:** none (validation occurs before data enters the model)
+**Entry state:** Any — applies to all entry conditions (validation fires on every upload attempt)
+**Verifiable by:** Upload a 15MB file → error message shows file size and 10MB limit; no network request is made.
+**Inherits:** CS-003
+
+**Acceptance Criteria:**
+
+- Files over 10MB are rejected before upload begins
+- An error message states the file size and the 10MB limit
+- No partial upload or parsing occurs for oversized files
+
+---
+
+### GS-ONB-03: Resume Parsing Success
+
+> As a User, I want my uploaded resume parsed into structured fields automatically, so that I see my extracted data without manual entry.
+
+**Depends on:** GS-ONB-01, GS-ONB-06
+**Data:** `SessionData.resumeRaw` (read) → `SessionData.personal`, `SessionData.education`, `SessionData.resumeStructured` (write) → `src/lib/types.ts`; PARSE prompt → `src/lib/prompts.ts`
+**Entry state:** Fresh — resumeRaw exists from upload, resumeStructured not yet populated; parsing runs as background task
+**Verifiable by:** After upload, `SessionData.personal.name` is non-empty; `SessionData.education` is an array; resume parsing was triggered as a background task.
+
+**Acceptance Criteria:**
+
+- Parsed output includes at minimum: name, email, phone, location, education entries, and skills
+- Fields not found in the resume are returned as empty rather than hallucinated
+- Parsing completes within 30 seconds for files under 10MB
+- complete() MUST include ALL produced fields: resumeRaw, personal, education, resumeStructured, context, demographics (HYGIENE Rule 10)
+- Note: context and demographics fields are populated with defaults during parsing (empStatus='employed', others=''). Actual user values come from Step 2 preferences (GS-ONB-16, GS-ONB-23).
+- PARSE prompt returns explicit values for all Context fields. Missing fields default to: empStatus='employed', careerDirection='', whyLeft='', latestRoleText=''. These defaults are set by the PARSE prompt template, not by TypeScript types.
+- Parsing runs as a background task — it does NOT block the user from advancing to preferences
+- On completion, results are saved to session silently (no page reload required during preferences)
+
+---
+
+### GS-ONB-03a: Resume Auto-Parse on Return
+
+> As a User, I want my resume to be auto-parsed when I return to the app if parsing was interrupted, so that I don't have to re-upload my file to continue.
+
+**Depends on:** GS-ONB-03
+**Data:** `SessionData.resumeRaw` (read) → `SessionData.resumeStructured` (write) → `src/lib/types.ts`
+**Entry state:** Returning — user has resumeRaw from a previous session but resumeStructured is missing (parse was interrupted)
+**Verifiable by:** Mount Step1Resume with session containing `resumeRaw` but no `resumeStructured` → parsing starts automatically without requiring re-upload.
+
+**Acceptance Criteria:**
+
+- Given the user uploaded a resume previously (resumeRaw exists in session) but resumeStructured is missing, when Step1Resume mounts, then the system auto-triggers parsing without requiring re-upload
+- Auto-parse uses the same pipeline and prompt as the initial parse
+- If resumeStructured already exists, no auto-parse is triggered
+
+---
+
+### GS-ONB-04: Parsing Progress Indication
+
+> As a User, I want to see progress phases while my resume is being parsed, so that I know the system is working and not stalled.
+
+**Depends on:** GS-ONB-03
+**Data:** none (UI-only, no data model changes)
+**Entry state:** Any — progress indicator displays whenever parsing is active, regardless of entry condition
+**Verifiable by:** During parsing, progress element is visible with at least 3 phase labels; after parsing completes, progress element is removed.
+**Inherits:** CS-002
+
+**Acceptance Criteria:**
+
+- A multi-phase indicator shows at least 3 stages (e.g., reading document, extracting structure, building profile)
+- Each phase transitions in sequence without skipping
+- The indicator is removed on completion — both success (replaced by success banner) and error (replaced by error state)
+- The indicator must not remain visible after parsing ends, regardless of outcome
+
+---
+
+### GS-ONB-05: Parsing Cancellation
+
+> As a User, I want to cancel resume parsing while it is in progress, so that I can start over with a different file or approach without waiting.
+
+**Depends on:** GS-ONB-03
+**Data:** `SessionData.personal`, `SessionData.education` (must not be written on cancel)
+**Entry state:** Any — cancellation is available whenever parsing is in progress
+**Verifiable by:** Trigger parse → cancel → `SessionData.personal` is unchanged from before parse; user is returned to upload view.
+
+**Acceptance Criteria:**
+
+- A cancel action is available during parsing
+- Cancelling returns the user to the upload state with no partial data persisted
+- The system does not continue processing after cancellation
+
+---
+
+## Parent: HL-ONB-01 — Resume Import and Parsing (MVP) (continued)
+
+### GS-ONB-06: Text Paste Acceptance
+
+> As a User, I want to paste plain text resume content directly, so that I can proceed without having a file available.
+
+**Depends on:** none
+**Data:** `SessionData.resumeRaw` → `src/lib/types.ts`
+**Entry state:** Fresh — first arrival at Step 1, no resume uploaded yet (alternative to file upload)
+**Verifiable by:** Paste text → `resumeRaw` populated; paste whitespace-only → error message displayed.
+**Inherits:** CS-003
+
+**Acceptance Criteria:**
+
+- A text input area accepts pasted or typed resume content
+- The system accepts any reasonable length of text input without truncation
+- Empty or whitespace-only submissions are rejected with an error message
+- The system must not silently truncate pasted text — all content the user provides is preserved
+
+---
+
+### GS-ONB-07: Text Paste Produces Identical Structured Output
+
+> As a System, I want pasted text to be processed through the same parsing pipeline as uploaded files, so that the structured output is equivalent regardless of input method.
+
+**Depends on:** GS-ONB-06, GS-ONB-03
+**Data:** `SessionData.resumeRaw` (read) → `SessionData.personal`, `SessionData.education` (write)
+**Entry state:** Any — applies to all entry conditions (pipeline equivalence regardless of input method)
+**Verifiable by:** Paste the same content as a test PDF → compare `SessionData.personal` and `SessionData.education` → fields match.
+
+**Acceptance Criteria:**
+
+- The same fields are extracted from pasted text as from an equivalent file upload
+- The parsing prompt and extraction logic are identical for both input methods
+- No fields are missing or added based on input method alone
+- The system does not apply different validation or size limits to pasted text vs uploaded files
+
+---
+
+## Parent: HL-ONB-02 — Resume Verification and Context Capture (MVP)
+
+<!-- parallel-safe: GS-ONB-08, GS-ONB-09 can be implemented independently -->
+
+### GS-ONB-08: Personal Info Field Editing
+
+> As a User, I want to edit my extracted personal information (name, email, phone, location), so that AI mistakes are corrected before this data flows downstream.
+
+**Depends on:** GS-ONB-03
+**Data:** `SessionData.personal` → `Personal { name, email, phone, location, portfolio? }` → `src/lib/types.ts`
+**Entry state:** Async-complete — resume parsing has finished, resumeStructured and personal data are populated for review
+**Verifiable by:** Edit `personal.name` → session value matches edited text; clear `personal.name` → submit blocked.
+**Inherits:** CS-004, CS-005
+
+**Acceptance Criteria:**
+
+- Name, email, phone, and location fields are editable after parsing
+- Edited values replace the parsed values in the session
+- Required fields (name, email, phone, location) cannot be submitted empty
+
+---
+
+### GS-ONB-09: Education Entry Management
+
+> As a User, I want to add, remove, and modify education entries, so that my education history is accurate regardless of parsing quality.
+
+**Depends on:** GS-ONB-03
+**Data:** `SessionData.education` → `EducationEntry[] { degree, field, school, graduation_date, gpa, honors, notable }` → `src/lib/types.ts`
+**Entry state:** Async-complete — resume parsing has finished, education entries are populated for review
+**Verifiable by:** Add an entry → `education` array length increases by 1; remove an entry → array length decreases; edit a field → array entry reflects edit.
+
+**Acceptance Criteria:**
+
+- Existing education entries are editable inline
+- New education entries can be added
+- Education entries can be removed individually
+- The system does not require at least one education entry (users without formal education can proceed)
+
+---
+
+### GS-ONB-10: Verified Data Persistence
+
+> As a System, I want all verified and edited resume data to be persisted to encrypted session storage, so that no user input is lost between steps.
+
+**Depends on:** GS-ONB-08, GS-ONB-09
+**Data:** `SessionData.personal`, `SessionData.education`, `SessionData.context`, `SessionData.demographics` (all written)
+**Entry state:** Any — persistence fires on confirmation regardless of how the user arrived at this point
+**Verifiable by:** Confirm step 1 → decrypt localStorage → all fields present with correct values.
+**Inherits:** CS-001
+
+**Acceptance Criteria:**
+
+- All fields (personal info, education, employment status, context, demographics) are saved to encrypted session on confirmation
+- Data persists across step transitions within the same session
+- The system does not allow advancement to the next step if session persistence fails
+- Resume verification (personal info + education review) is deferred to the profile review screen (Step 3), not a standalone step between upload and preferences — the confirm screen shows parsed data alongside AI-generated profile fields
+
+---
+
+## Parent: HL-ONB-04 — Preferences and Search Parameters (MVP)
+
+<!-- parallel-safe: GS-ONB-11, GS-ONB-12, GS-ONB-13, GS-ONB-15, GS-ONB-17 can be implemented independently (GS-ONB-14 merged into GS-ONB-13) -->
+
+### GS-ONB-11: Direction Preset Selection
+
+> As a User, I want to select a career direction preset, so that the system understands what kind of opportunities to target.
+
+**Depends on:** GS-ONB-10
+**Data:** `SessionData.context.directionPresets` → `string[]`, `SessionData.context.careerDirectionText` → `string` → `src/lib/types.ts`
+**Entry state:** Fresh — first arrival at Step 2 direction substep; or Returning — user has partial preferences from a previous session
+**Verifiable by:** Select "New career" + "Join a startup" → `directionPresets` contains `["pivot", "startup"]`; select "Something else" → detail field appears; default selection is "Same or similar role".
+**Inherits:** CS-004
+
+**Acceptance Criteria:**
+
+- One or more direction presets can be selected (multiselect cards, 1+ required)
+- 6 presets: Same or similar role (default), Higher-level role, New career, Move into leadership, Join a startup, Something else
+- Selecting a "needs detail" preset (New career, Something else) shows a detail field
+- The default selection is "Same or similar role" (`id: "same"`) — pre-selected on first visit
+- The user cannot proceed without at least one direction preset selected
+
+---
+
+### GS-ONB-12: Location Type Selection
+
+> As a User, I want to specify my preferred location type (Remote, Hybrid, On-site), so that job searches are filtered to where I am willing to work.
+
+**Depends on:** GS-ONB-10
+**Data:** `SessionData.preferences.locationTypes` → `string[]`, `SessionData.preferences.preferredLocation` → `string` → `src/lib/types.ts`
+**Entry state:** Fresh — first arrival at Step 2 location substep; or Returning — user has partial preferences from a previous session
+**Verifiable by:** Select Remote + Hybrid → city picker appears; deselect Hybrid → city picker hidden if only Remote remains; default is Remote.
+**Inherits:** CS-004
+
+**Acceptance Criteria:**
+
+- One or more location types can be selected (multiselect pills, 1+ required)
+- 3 options: Remote (default), Hybrid, On-site
+- Selecting Hybrid or On-site (either or both) reveals a city picker
+- The city picker is hidden when only Remote is selected; `preferredLocation` is cleared
+- Fallback objects must set locationTypes: ['Remote'] (not empty array). Empty string is not equivalent to undefined for ?? operator (HYGIENE Rule 11)
+- At least one location type must be selected to proceed
+
+---
+
+### GS-ONB-13: Work Type and Start Date Selection
+
+> As a User, I want to choose my work type and availability, so that job searches match my situation.
+
+**Depends on:** GS-ONB-10
+**Data:** `SessionData.preferences.employmentTypes` → `string[]`, `SessionData.preferences.startDate` → `string` → `src/lib/types.ts`
+**Entry state:** Fresh — first arrival at Step 2 worktype substep; or Returning — user has partial preferences from a previous session
+**Verifiable by:** Select Full-time + Contract → `employmentTypes` equals `["Full-time", "Contract"]`; select "2 weeks notice" → `startDate` equals "2 weeks notice"; default work type is "Full-time", default start is "Immediately".
+**Inherits:** CS-004
+
+**Acceptance Criteria:**
+
+- Work type is multiselect from 3 pill buttons (1+ required): Full-time (default), Part-time, Contract
+- Start date is single-select from 4 pills: Immediately (default), 2 weeks notice, 1 month notice, 2 months notice
+- Both selections appear on the same sub-step screen
+- No custom type or custom date options
+- Fallback must set employmentTypes: ['Full-time'], startDate: 'Immediately' — not empty arrays/strings
+
+---
+
+### GS-ONB-14: Start Date Selection (Merged into GS-ONB-13)
+
+**ARCHIVED — Merged into GS-ONB-13**
+
+> As a User, I want to indicate when I can start a new role on the same screen as work type selection, so that the system filters for realistic opportunities.
+
+**Depends on:** GS-ONB-13
+**Data:** `SessionData.preferences.startDate` → `string` → `src/lib/types.ts`
+**Entry state:** Fresh — first arrival at Step 2 worktype substep; or Returning — user has partial preferences from a previous session (merged into GS-ONB-13)
+**Verifiable by:** On work type sub-step → start date pills visible below work type pills; select "2 weeks notice" → `startDate` equals "2 weeks notice"; default is "Immediately".
+
+**Acceptance Criteria:**
+
+- Start date is part of the work type sub-step (not a separate screen)
+- 4 pill options: Immediately (default), 2 weeks notice, 1 month notice, 2 months notice
+- No custom date picker (removed)
+- Exactly one start date option is selected at a time
+- The system must not allow both start date and work type to be unselected — defaults are always active
+
+---
+
+### GS-ONB-15: Compensation Input with Bidirectional Sync
+
+> As a User, I want to set my minimum compensation and see hourly and annual rates sync automatically, so that I don't have to calculate conversions myself.
+
+**Depends on:** GS-ONB-13 (employment types determine which comp fields are shown)
+**Data:** `SessionData.preferences.hourlyFloor` → `string`, `SessionData.preferences.salaryFloor` → `string` → `src/lib/types.ts`
+**Entry state:** Fresh — first arrival at Step 2 comp substep; or Returning — user has partial preferences from a previous session
+**Verifiable by:** Enter hourly $100 → `salaryFloor` equals "208000"; enter salary $156000 → `hourlyFloor` equals "75"; enter 0 → error shown.
+
+**Acceptance Criteria:**
+
+- Changing the hourly floor updates the annual floor using the formula hourly × 2080
+- Changing the annual floor updates the hourly floor using the inverse formula
+- Sync is bidirectional and immediate — editing either field updates the other
+- The system does not allow a compensation floor of zero or negative values
+
+---
+
+### GS-ONB-16: Compensation Adapter for Employment Types
+
+> As a System, I want the compensation input to adapt based on selected employment types, so that the user sees the most relevant rate format for their situation.
+
+**Depends on:** GS-ONB-13, GS-ONB-15
+**Data:** `SessionData.preferences.employmentTypes` (read), `SessionData.preferences.compStructure` (write) → `src/lib/types.ts`
+**Entry state:** Any — adapter reconfigures whenever employment type changes, regardless of entry condition
+**Verifiable by:** Select Contract only → hourly input is primary; select Full-time only → salary input is primary; switch from Contract to Full-time → previously entered hourly value is preserved.
+
+**Acceptance Criteria:**
+
+- When only Contract or Part-time types are selected, the hourly input is primary
+- When only Full-time is selected, the salary input is primary
+- When mixed types are selected, both hourly and salary inputs are shown equally
+- Changing employment types reconfigures the compensation display without losing entered values
+- The system does not hide a compensation input that contains a user-entered value
+
+---
+
+### GS-ONB-17: Deal-Breaker Configuration
+
+> As a User, I want to confirm or toggle deal-breakers that should disqualify job matches, so that the system never surfaces opportunities I would reject.
+
+**Depends on:** GS-ONB-12 (location type affects contextual filtering)
+**Data:** `SessionData.preferences.dealBreakers` → `string[]` → `src/lib/types.ts`
+**Entry state:** Fresh — first arrival at Step 2 dealbreakers substep; or Returning — user has partial preferences from a previous session
+**Verifiable by:** Select On-site location → "Return-to-office mandate" toggle hidden; with Remote → toggle visible; all 5 are pre-selected by default.
+
+**Acceptance Criteria:**
+
+- 5 predefined deal-breakers shown as full-width toggle rows, all pre-selected by default
+- Deal-breakers: Unpaid work, No benefits offered, Return-to-office mandate, Requires relocation, Travel required
+- "Return-to-office mandate" is hidden when location type is On-site
+- No custom deal-breaker text field (removed)
+- No "Clear all" action — user toggles individual items off
+- Fallback must set dealBreakers: [...DEFAULT_DEAL_BREAKERS] — not empty array []
+
+---
+
+## Parent: HL-ONB-05 — AI Profile Generation (MVP)
+
+### GS-ONB-18: Profile Generation from Resume and Preferences
+
+> As a User, I want the system to generate my professional profile from my resume and preferences, so that I can see how the AI interprets my career strengths.
+
+**Depends on:** GS-ONB-03
+**Data:** `SessionData.personal`, `SessionData.context`, `SessionData.preferences` (read) → `SessionData.profile` (write) → `Profile { discipline, seniority, domains, hardSkills, differentiators, achievements, targetDirection, gaps, avoidTerms }` → `src/lib/types.ts`; PROFILE prompt → `src/lib/prompts.ts`
+**Entry state:** Fresh — parse done, generation triggers immediately in background (does not wait for preferences to complete)
+**Verifiable by:** Resume parse completes → profile generation fires automatically in background; `SessionData.profile.discipline` is non-empty string; completes within 30s.
+**Inherits:** CS-002
+
+**Acceptance Criteria:**
+
+- Profile includes: discipline, seniority, hard skills, differentiators, achievements, target direction, gaps, avoid terms, and domains
+- Generation uses resume data and whatever context/preferences are available at trigger time (defaults for unfilled fields)
+- Profile generation triggers immediately after resume parsing completes — it does NOT wait for the user to reach Step 3 or finish all preferences
+- OnboardingPage orchestrates the background generation and passes status to Step4Profile via props (`backgroundProfile`, `backgroundGenStatus`, `backgroundGenPhase`)
+- A phase ticker runs in OnboardingPage (4 phases x 5 seconds) to track progress
+- Generation completes within 30 seconds
+- Profile generation does not proceed if resume data is missing (parse must succeed first)
+
+---
+
+<!-- parallel-safe: GS-ONB-19, GS-ONB-20 can be implemented independently (both read/write profile) -->
+
+### GS-ONB-19: Discipline and Seniority Editing
+
+<!-- platform-ok -->
+> As a User, I want to override the AI-assigned discipline and seniority level, so that my profile reflects my self-assessment when the AI gets it wrong.
+
+**Depends on:** GS-ONB-18
+**Data:** `SessionData.profile.discipline` → `string`, `SessionData.profile.seniority` → `string` → `src/lib/types.ts`
+**Entry state:** Async-complete — profile generation has finished, profile fields are populated for review
+**Verifiable by:** Change discipline via text input → `profile.discipline` matches new value; change seniority via dropdown → value matches PROFILE prompt enum; profile is not re-generated (no API call).
+**Inherits:** CS-005
+
+**Acceptance Criteria:**
+
+- Discipline is editable via a free-text input field
+- Seniority is editable via a dropdown of predefined levels
+- Edited values replace the AI-generated values in the session
+- Editing discipline or seniority does not trigger a full profile regeneration
+- Discipline MUST be a free-text input (<Inp>), NOT a dropdown (<Sel>). This matches production behavior.
+- Seniority MUST use Claude's exact PROFILE prompt enum: 'Internship|Entry level|Associate|Mid-Senior level|Director|Executive'. Dropdown values must match these strings exactly. Values MUST match PROFILE_SYSTEM prompt in src/lib/prompts.ts
+
+---
+
+### GS-ONB-20: Profile Regeneration
+
+> As a User, I want to regenerate my entire profile from scratch, so that I can get a fresh analysis if the first result is unsatisfactory.
+
+**Depends on:** GS-ONB-18
+**Data:** `SessionData.profile` (overwritten) → `src/lib/types.ts`
+**Entry state:** Async-complete — profile generation has finished but user is unsatisfied with the result
+**Verifiable by:** Trigger regeneration → profile generation is re-invoked; `SessionData.profile` differs from previous; no rocket debit occurs.
+**Inherits:** CS-002
+
+**Acceptance Criteria:**
+
+- Regeneration re-runs the full profile generation using current resume and the user's final (possibly updated) preferences — this is important because the initial background generation may have used default preferences for fields the user hadn't filled yet
+- The previous profile is replaced entirely by the new output
+- Regeneration does not consume rockets (onboarding is free)
+- The user cannot trigger regeneration while a generation is already in progress
+
+---
+
+### GS-ONB-21: Profile Confirmation and Advancement
+
+> As a User, I want to confirm my profile and advance to the next phase, so that the system proceeds with my validated data.
+
+**Depends on:** GS-ONB-18
+**Data:** `SessionData.profile` (read, persisted), `SessionData.currentStep` (incremented) → `src/lib/types.ts`
+**Entry state:** Async-complete — profile generation has finished, user has reviewed and is ready to confirm
+**Verifiable by:** Confirm → `SessionData.profile` persisted; `currentStep` advances to 4; phase bar element is visible; without profile in session → confirm action is disabled.
+**Inherits:** CS-001, CS-004
+
+**Acceptance Criteria:**
+
+- Confirming the profile persists all profile fields to the session
+- A celebration screen is shown after completing all 7 onboarding steps, marking the transition to the dashboard
+- The user cannot advance without a generated profile in the session
+- After confirmation, the next onboarding steps continue before the dashboard. Target state: steps 4-5 (search, analysis) + skills (Step 7, shipped placement retained). Deep-Dive Q&A is NO LONGER part of onboarding in the target state — it is a dashboard activity. (Spec-ahead-of-code: shipped code still includes deep-dive as onboarding Step 6.)
+
+---
+
+## Parent: HL-ONB-02 — Resume Verification (MVP) (continued)
+
+### GS-ONB-22: Portfolio URL on Confirm Screen
+
+> As a User, I want to add or edit my portfolio URL during resume confirmation, so that the system can reference my work samples.
+
+**Depends on:** GS-ONB-03
+**Data:** `SessionData.personal.portfolio` → `string` → `src/lib/types.ts`
+**Entry state:** Async-complete — resume parsing has finished, confirm screen is displayed with personal info fields
+**Verifiable by:** Enter "ftp://bad" → validation error; enter "https://good.com" → accepted; leave empty → advancement allowed.
+**Inherits:** CS-003
+
+**Acceptance Criteria:**
+
+- Portfolio URL field is shown on the resume confirm screen alongside personal info
+- Validates for HTTP/HTTPS format when provided
+- Field is optional — leaving it empty does not block advancement
+- The system must not accept non-HTTP/HTTPS URLs (e.g., ftp://, javascript:, data:)
+
+---
+
+### GS-ONB-23: Quick Check Demographics (Preferences Sub-Step)
+
+> As a User, I want to confirm or adjust demographic toggles during preferences, so that application forms are auto-filled accurately without manual entry.
+
+**Depends on:** GS-ONB-10
+**Data:** `SessionData.demographics` → `Demographics { isUSCitizen, authorizedToWork, noSponsorshipNeeded, hasDriversLicense, isVeteran, hasDisability, hasSecurityClearance, ... }` → `src/lib/types.ts`
+**Entry state:** Fresh — first arrival at Step 2 quickcheck substep; or Returning — user has partial preferences from a previous session
+**Verifiable by:** On Quick Check sub-step → toggle "I'm a protected veteran" on → `demographics.isVeteran` is true; defaults match `DEFAULT_DEMOGRAPHICS` from constants.ts.
+
+**Acceptance Criteria:**
+
+- 7 boolean toggles with smart defaults (US citizen, authorized, no sponsorship, driver's license default true; veteran, disability, security clearance default false)
+- All toggles are optional — user can proceed with defaults or toggle any combination
+- No skip action needed — defaults are pre-applied
+- Demographics are persisted to the session for downstream form auto-fill
+- Quick Check is a preferences sub-step (Step 2), not on the resume confirm screen
+- The system must not require the user to change any toggle before advancing — defaults alone are sufficient
+
+---
+
+### GS-ONB-24: Simplified Confirm Screen (Context Defaults)
+
+> As a System, I want the resume confirm screen to show only personal info and education, so that the user is not overwhelmed with fields that have been moved to preferences.
+
+**Depends on:** GS-ONB-03
+**Data:** `SessionData.context.empStatus`, `SessionData.context.notOnResume`, `SessionData.context.titleNotCapture` → `src/lib/types.ts`
+**Entry state:** Async-complete — resume parsing has finished, confirm screen renders with simplified layout
+**Verifiable by:** On confirm screen → only Personal and Education sections visible; no employment status selector; `context.empStatus` defaults to "employed" on submission.
+
+**Acceptance Criteria:**
+
+- Resume confirm screen shows only Personal info + Education sections
+- No employment status selector, departure reason, side work, or title gap fields are visible
+- Context fields (empStatus, notOnResume, titleNotCapture) are submitted with defaults when user confirms
+- The system does not block advancement due to missing context fields
+
+---
+
+## Parent: HL-ONB-06 — Session Persistence During Onboarding (Post-MVP)
+
+### GS-ONB-25: Auto-Save at Sub-Step Boundary
+
+> As a System, I want to persist session state each time the user completes a sub-step, so that progress is preserved without requiring explicit user action.
+
+**Depends on:** GS-ONB-10 (uses same persistence mechanism)
+**Data:** `SessionData` (full object persisted) → `src/lib/types.ts`; `saveSession()` → `src/lib/storage.ts`
+**Entry state:** Any — auto-save fires at every sub-step boundary regardless of entry condition
+**Verifiable by:** Complete sub-step → decrypt localStorage → data from that sub-step is present; complete next sub-step → data from both sub-steps is present (no overwrite).
+**Inherits:** CS-001
+
+**Acceptance Criteria:**
+
+- Session data is saved to encrypted storage when the user advances from one sub-step to the next
+- The save operation completes before the next sub-step renders
+- Auto-save does not overwrite data from a later sub-step with data from an earlier one
+
+---
+
+### GS-ONB-26: Resume from Last Sub-Step on Return
+
+> As a User, I want to resume onboarding at my last completed sub-step when I return to the app, so that I don't have to repeat earlier work.
+
+**Depends on:** GS-ONB-25
+**Data:** `SessionData.currentStep`, `SessionData.maxStep` (read) → `src/lib/types.ts`
+**Entry state:** Returning — user has partial onboarding progress from a previous session
+**Verifiable by:** Complete sub-step 3 → refresh page → app renders at sub-step 3 with data intact; clear localStorage → app starts at sub-step 1.
+
+**Acceptance Criteria:**
+
+- On page load, the system detects saved onboarding progress and restores the user to the correct sub-step
+- All previously entered data is restored from the saved session
+- If no saved progress exists, onboarding starts from the beginning
+- The system does not resume at a sub-step whose prerequisite data is missing or corrupted
+
+---
+
+## ~~Parent: HL-ONB-03 — Resume Re-Edit After Parsing~~ (REMOVED in Run 007)
+
+> **REMOVED:** "Edit resume text" button and re-edit flow removed in Run 007. Users who need to change their resume use "Upload different" instead. Re-editing raw text added complexity without proportional value — most users who notice parse errors correct them in the personal info fields directly.
+
+---
+
+## Parent: HL-ONB-07 — Streamed Profile Output (Post-MVP)
+
+### GS-ONB-29: Incremental Field Rendering
+
+> As a User, I want profile fields to appear one at a time as the AI generates them, so that I can begin reading immediately instead of waiting for the full response.
+
+**Depends on:** GS-ONB-18
+**Data:** `SessionData.profile` (written incrementally) → `src/lib/types.ts`
+**Entry state:** Fresh — profile generation just started, fields stream in incrementally
+**Verifiable by:** Trigger generation → first field (e.g., `discipline`) renders before last field (e.g., `avoidTerms`); each field does not re-render once displayed.
+
+**Acceptance Criteria:**
+
+- Fields render in the order they are received from the generation stream
+- Each field is stable once rendered — it does not rewrite or shift as later fields arrive
+- The profile is not considered complete until all fields have rendered
+- Fields must not re-render or shift position once they have been displayed
+
+---
+
+### GS-ONB-30: Interaction During Streaming
+
+> As a User, I want to read and scroll through already-rendered profile fields while generation continues, so that the wait is productive rather than idle.
+
+**Depends on:** GS-ONB-29
+**Data:** `SessionData.profile` (read during stream)
+**Entry state:** Any — applies while profile generation streaming is active
+**Verifiable by:** During streaming, scroll to first field → scroll position maintained when next field renders; confirm action has `disabled` attribute; trigger regenerate → current stream cancelled (no more fields render from old stream).
+**Inherits:** CS-004
+
+**Acceptance Criteria:**
+
+- Already-rendered fields are fully visible and scrollable during generation
+- The confirm action is disabled until generation completes
+- The regenerate action cancels the current stream and starts fresh
+- The user's scroll position is not forcibly reset when new fields render
+
+---
+
+## Parent: HL-ONB-09 — Background Parse Orchestration (MVP)
+
+<!-- parallel-safe: GS-ONB-31, GS-ONB-32 can be implemented independently -->
+
+### GS-ONB-31: Background Parse Trigger
+
+> As a System, I want to trigger resume parsing as a background task upon upload, so that parsing runs concurrently with user interaction.
+
+**Depends on:** GS-ONB-01
+**Data:** `SessionData.resumeRaw` (write on upload), `SessionData.resumeStructured` (write on parse complete) → `src/lib/types.ts`
+**Entry state:** Fresh — user just uploaded a resume file, parsing should fire in background
+**Verifiable by:** Upload file → user immediately sees Step 2 (not a parsing spinner); `resumeStructured` is eventually populated; no blocking await between upload and preference entry.
+**Inherits:** CS-002
+
+**Acceptance Criteria:**
+
+- Upload saves `resumeRaw` to session and triggers parse API call
+- Parse runs as an async background task — the UI does not await its completion
+- User advances to Step 2 immediately after upload
+- On parse success: `resumeStructured`, `personal`, `education` saved to session
+- On parse failure: error state captured; user can retry from any substep
+- The system must not block preference entry while parsing is in progress — the two flows are independent
+
+---
+
+### GS-ONB-32: Parsing Status Banner
+
+> As a User, I want to see a persistent banner showing resume parsing status while I fill preferences, so that I know the system is working without being blocked.
+
+**Depends on:** GS-ONB-31
+**Data:** none (UI-only, reads parse state)
+**Entry state:** Fresh — resumeRaw exists, parse in progress; or Async-complete — parse finished; or Error-recovery — parse failed
+**Verifiable by:** During parsing → yellow banner "Parsing your resume in the background..." visible; after success → green banner "Resume parsed ✓"; after failure → red banner with retry action.
+
+**Acceptance Criteria:**
+
+- Banner is visible across all Step 2 substeps while parsing is in progress
+- Banner shows "Parsing your resume in the background..." during active parsing
+- Banner changes to "Resume parsed ✓" on success (persists briefly, then fades or remains)
+- Banner shows error state with retry action on failure
+- Banner does not interfere with preference input (positioned at top, not as a blocking overlay)
+
+---
+
+### GS-ONB-33: Background Profile Status on Step 3 Entry
+
+> As a System, I want Step 3 to display the background-generated profile if available, or show progress if still generating, so that the user experiences minimal wait time.
+
+**Depends on:** GS-ONB-31, GS-ONB-18
+**Data:** `SessionData.resumeStructured` (read), `SessionData.profile` (read — may already exist from background gen) → `src/lib/types.ts`
+**Entry state:** Fresh — background profile already done, show immediately; or Fresh — background profile still generating, progress bar picks up from current phase; or Fresh — parse still running, waiting state shown; or Error-recovery — parse or generation failed, retry prompt shown
+**Verifiable by:** Arrive at Step 3 with background profile complete → profile shown immediately (no generation delay); arrive with generation in progress → progress bar shows current phase; arrive with parse failed → retry prompt shown.
+
+**Acceptance Criteria:**
+
+- Profile generation triggers in the background immediately after resume parsing completes — it does NOT wait for Step 3 entry or preference completion
+- If background profile is already done when user arrives at Step 3: profile is shown immediately
+- If background generation is still in progress: progress bar picks up from the current phase (no restart from phase 1)
+- If parse is still running: a waiting state is shown with parsing progress
+- If parse failed: a retry option is shown; user can also re-upload
+- Step4Profile receives `backgroundProfile`, `backgroundGenStatus`, `backgroundGenPhase` props from OnboardingPage
+- Preference data is never blocked or lost due to parse state
+
+---
+
+### GS-ONB-34: Personal/Education Sync on Late Parse Arrival
+
+> As a System, I want Step4Profile to sync local personal and education state when parse results arrive after component mount, so that rushing through preferences does not leave the confirm screen with empty fields.
+
+**Depends on:** GS-ONB-03, GS-ONB-08, GS-ONB-09
+**Data:** `SessionData.personal` (read via props), `SessionData.education` (read via props) → local component state in Step4Profile
+**Entry state:** Any — Step4Profile may mount before parse results are available (user moved through preferences quickly)
+**Verifiable by:** Mount Step4Profile with empty personal/education props → parse completes → props update → personal info fields populate without user action; edit a field after sync → edited value is preserved (no re-sync overwrite).
+
+**Acceptance Criteria:**
+
+- Step4Profile has sync effects (useEffect) that update local `personal` and `education` state when props change
+- If parse results arrive after Step4Profile mounts, fields populate automatically
+- If parse results were already available at mount, initial state is set from props (no double-render)
+- User edits to personal/education fields are NOT overwritten by a subsequent prop sync — once the user touches a field, their value takes precedence
+- This fixes the race condition where fast preference completion led to empty personal fields on the confirm screen
+
+---
+
+### GS-ONB-35: Background Profile Generation Trigger
+
+> As a System, I want OnboardingPage to trigger profile generation immediately after resume parsing completes, so that profile results are available before the user reaches Step 3.
+
+**Depends on:** GS-ONB-31, GS-ONB-18
+**Data:** `SessionData.resumeStructured`, `SessionData.personal`, `SessionData.context`, `SessionData.preferences` (read) → `SessionData.profile` (write) → `src/lib/types.ts`
+**Entry state:** Fresh — resume parsing just completed successfully while user is still in Step 2 preferences
+**Verifiable by:** Upload resume → parse completes during preference sub-step → profile generation API call fires without user navigating to Step 3; `backgroundGenStatus` transitions from 'idle' to 'generating' to 'done'.
+
+**Acceptance Criteria:**
+
+- `triggerBackgroundProfileGen()` fires immediately after `triggerBackgroundParse()` succeeds
+- Uses whatever context/preferences exist at the moment of trigger (defaults for unfilled fields)
+- OnboardingPage tracks background generation state: `backgroundProfile`, `backgroundGenStatus` ('idle' | 'generating' | 'done' | 'error'), `backgroundGenPhase`
+- Phase ticker runs in OnboardingPage (4 phases x 5 seconds)
+- Background profile result is passed to Step4Profile as props
+- If background generation fails, Step4Profile can still trigger a fresh generation on entry
+
+---
+
+## Parent: HL-ONB-10 — Confirm Screen Parse-State UX (Retro-Spec)
+
+<!-- Added 2026-04-21 — retroactive spec for shipped component -->
+### GS-ONB-36: Parse-In-Progress Waiting State on Confirm Screen
+
+> As a User, I want a clear waiting state on the confirm screen when resume parsing is still in progress, so that I understand profile generation has not stalled and will start automatically.
+
+**Depends on:** GS-ONB-03, GS-ONB-31
+**Data:** `parseStatus` prop (read, value `"parsing"`) → Step4Profile props
+**Entry state:** Async-in-progress — user advanced to the confirm screen before the background parse finished
+**Verifiable by:** Render Step4Profile with `parseStatus="parsing"` → confirm form is not shown; a waiting panel is visible with a progress indicator and copy that references parsing completion; when `parseStatus` flips to `"done"`, the confirm form renders.
+
+**Acceptance Criteria:**
+
+- When `parseStatus === "parsing"`, Step4Profile renders only a waiting panel and no personal/education/profile form
+- The waiting panel includes a multi-phase progress indicator with at least three phase labels
+- The panel explicitly tells the user that profile generation will start as soon as parsing completes
+- When `parseStatus` transitions to `"done"`, the waiting panel is replaced by the full confirm form
+
+<!-- Added 2026-04-21 — retroactive spec for shipped component -->
+### GS-ONB-37: Parse-Error Recovery Actions on Confirm Screen
+
+> As a User, I want retry and "upload different" actions on the confirm screen when resume parsing has failed, so that I can recover without losing my place in the flow.
+
+**Depends on:** GS-ONB-03, GS-ONB-31
+**Data:** `parseStatus` prop (read, value `"error"`), `onRetryParse` and `onUploadDifferent` callback props → Step4Profile props
+**Entry state:** Error-recovery — background parse failed; user arrived at (or is on) the confirm screen
+**Verifiable by:** Render Step4Profile with `parseStatus="error"` and both callbacks provided → error panel shows with "Retry" and "Upload different" buttons; clicking Retry invokes `onRetryParse`; clicking Upload different invokes `onUploadDifferent`; if a callback is not provided, its button is omitted.
+
+**Acceptance Criteria:**
+
+- When `parseStatus === "error"`, Step4Profile replaces the form with an error panel
+- The panel shows a "Retry" action when `onRetryParse` is provided, and an "Upload different" action when `onUploadDifferent` is provided
+- Each button invokes the corresponding callback exactly once per click
+- If neither callback is provided, the panel still renders the error message without any action buttons (no crash)
+
+<!-- Added 2026-04-21 — retroactive spec for shipped component -->
+### GS-ONB-38: Profile Generation Error Retry UI
+
+> As a User, I want to see a clear error message and a retry action when profile generation fails, so that I can recover without leaving the confirm screen.
+
+**Depends on:** GS-ONB-18
+**Data:** local `genStatus` state (read, value `"error"`), local `genError` message (read) → Step4Profile
+**Entry state:** Error-recovery — parse succeeded but profile generation (background or in-component) threw; user is on the confirm screen
+**Verifiable by:** Force generation to throw → "Who you are" section shows an error box containing the error message and a "Retry generation" button; the "Looks good" primary button is disabled while no profile exists; clicking "Retry generation" re-invokes generation and clears the error state on success.
+
+**Acceptance Criteria:**
+
+- When profile generation fails, the profile section renders an error box with the failure message (or a generic fallback if none was provided)
+- A "Retry generation" button is shown and re-invokes the generation call when clicked
+- The "Looks good" primary button is disabled whenever `genStatus !== "done"` or no profile is present
+- On successful retry, the error box is removed and the generated profile fields render
+
+<!-- Added 2026-04-21 — retroactive spec for shipped component -->
+### GS-ONB-39: Portfolio URL Validation Message
+
+> As a User, I want a specific inline error when my portfolio URL is malformed or uses a non-HTTP(S) scheme, so that I can correct the value without guessing why submission was blocked.
+
+**Depends on:** GS-ONB-22
+**Data:** `SessionData.personal.portfolio` (read) → local `portfolioError` state → Step4Profile
+**Entry state:** Async-complete — user is on the confirm screen and has entered a non-empty portfolio URL
+**Verifiable by:** Enter `ftp://example.com` → on confirm, field shows "Portfolio link must be an HTTP or HTTPS URL" and advancement is blocked; enter `not a url` → field shows "Portfolio link must be a valid URL (e.g. https://yoursite.com)" and advancement is blocked; leave empty → no error, advancement allowed.
+
+**Acceptance Criteria:**
+
+- A portfolio URL with a non-HTTP and non-HTTPS protocol produces the error "Portfolio link must be an HTTP or HTTPS URL"
+- A portfolio URL that fails URL parsing produces the error "Portfolio link must be a valid URL (e.g. https://yoursite.com)"
+- The error is cleared as soon as the user edits the portfolio field
+- An empty portfolio URL produces no error and does not block advancement
+
+---
+
+## Parent: HL-ONB-10 — Invisible Bot-Protection on First AI Call (v3, MVP)
+
+<!-- Added 2026-04-23 — absorbs backend PRD v3 Turnstile + per-ASN rate-limit contract -->
+
+### GS-ONB-40: Turnstile Widget Mount on IntroScreen
+
+> As a System, I want the Cloudflare Turnstile widget mounted on the IntroScreen before the first PARSE call, so that a challenge token is available to attach to anonymous Claude calls.
+
+**Depends on:** none
+**Data:** Turnstile site key from `NEXT_PUBLIC_CF_TURNSTILE_SITE_KEY` (env); token stored in component state (not in `SessionData`)
+**Entry state:** Fresh — user lands on IntroScreen for the first time in a browser session; no Turnstile token yet
+**Verifiable by:** Mount IntroScreen → Turnstile widget is initialized with site key; on successful invisible challenge, a token is available in component state; widget is not visible to the user in the normal (invisible) path (backend PRD §8.2 layer 2, decision 17).
+**Inherits:** CS-003
+
+**Acceptance Criteria:**
+
+- The Turnstile script loads on IntroScreen mount
+- The widget is rendered in invisible mode — no visible UI in the normal path
+- On successful challenge, a token is captured in component state and passed through to the API helper
+- If the widget fails to load (e.g., blocked by ad blocker), the user is shown a recoverable error and not a crash
+- The system does not attempt to send the first anonymous `POST /claude` call until a Turnstile token is available
+
+---
+
+### GS-ONB-41: PARSE Request Attaches Turnstile Token Header
+
+> As a System, I want the first anonymous PARSE request to include the `CF-Turnstile-Response` header, so that the backend can validate it via Siteverify and allow the request.
+
+**Depends on:** GS-ONB-40, GS-ONB-31
+**Data:** none (header only — Turnstile token is never persisted to `SessionData`)
+**Entry state:** Fresh — user uploads resume on IntroScreen for the first time in a browser session; Turnstile token is available in component state
+**Verifiable by:** First `POST ${API_BASE_URL}/claude?promptKey=PARSE` from a browser session → request headers include `CF-Turnstile-Response: <token>`; without token → backend returns 403; with valid token → backend returns 200 (backend PRD §14 test 49).
+**Inherits:** CS-003
+
+**Acceptance Criteria:**
+
+- The API helper (`callClaude()` in `src/lib/api.ts`) attaches `CF-Turnstile-Response` on the first anonymous PARSE call per browser session
+- Subsequent PARSE calls in the same session attach the cached token if still valid, or re-challenge if the token is expired
+- A PARSE request without a Turnstile token results in a 403 from the backend and a recoverable error in the UI
+- The Turnstile token is not persisted to `SessionData` or written to encrypted localStorage
+- Added latency in the normal invisible-challenge path is <100ms on a typical connection
+
+---
+
+### GS-ONB-42: PROFILE Request Attaches Turnstile Token Header
+
+> As a System, I want the first anonymous PROFILE generation request to include the `CF-Turnstile-Response` header, so that background profile generation is also gated at the Cloudflare edge.
+
+**Depends on:** GS-ONB-40, GS-ONB-35
+**Data:** none (header only)
+**Entry state:** Fresh — resume parse has completed and OnboardingPage is about to fire `triggerBackgroundProfileGen()`; user is still anonymous
+**Verifiable by:** First `POST ${API_BASE_URL}/claude?promptKey=PROFILE` from a browser session → request headers include `CF-Turnstile-Response: <token>`; without valid token → 403 (backend PRD §8.2 layer 2, §14 test 49).
+
+**Acceptance Criteria:**
+
+- The API helper attaches `CF-Turnstile-Response` on the first anonymous PROFILE call per browser session
+- If the token from the PARSE call is still valid, it is reused (no second challenge)
+- A PROFILE request without a valid Turnstile token is rejected at the edge with 403 and surfaced to the user as a recoverable error
+- Profile generation retries after a recoverable challenge failure do not consume additional retries or rockets (onboarding remains free)
+
+---
+
+### GS-ONB-43: Turnstile Failure Recoverable UI
+
+> As a User, I want a clear recoverable message if the invisible browser verification fails, so that I can retry without losing my resume upload or preference data.
+
+**Depends on:** GS-ONB-40, GS-ONB-41
+**Data:** none (UI-only; `SessionData` is preserved across retry)
+**Entry state:** Error-recovery — Turnstile challenge did not resolve (e.g., script blocked, network error, or server-side Siteverify failed)
+**Verifiable by:** Force Turnstile token to be missing or invalid → PARSE call returns 403 → UI shows the challenge-failure copy with a retry action; on retry, a fresh challenge is issued and the request succeeds; `SessionData.resumeRaw` and any in-progress preference data are preserved across the failure.
+
+**Acceptance Criteria:**
+
+- On Turnstile failure (403 at edge or client-side widget error), the UI shows a recoverable message ("Please complete the challenge to continue") with a "Try again" action
+- The retry action re-invokes the widget to issue a fresh challenge and re-sends the pending request
+- No user data is lost — `SessionData` is preserved across the failure and retry
+- The UI does not show a raw HTTP error code or a generic "failed" message in the Turnstile-failure path
+- The user is never presented with a visible CAPTCHA puzzle by the app — only the invisible challenge is used
+
+---
+
+### GS-ONB-44: Per-ASN Rate Limit at Cloudflare Edge
+
+> As a System, I want distributed abuse to be dampened at the Cloudflare edge by per-ASN rate limits, so that a single botnet spread across many IPs cannot exhaust the service.
+
+**Depends on:** none (edge-level behavior, no app code)
+**Data:** none (observable via CF edge response — frontend only needs to surface errors cleanly)
+**Entry state:** Any — applies whenever anonymous traffic arrives from a single ASN above the configured threshold
+**Verifiable by:** Load-test from a single ASN above the configured threshold → Cloudflare returns 429 after threshold; requests from satellite / mobile ISPs (e.g., Starlink AS14593) continue to pass through (backend PRD §8.2 layer 2, §15 decision 17).
+
+**Acceptance Criteria:**
+
+- Cloudflare enforces a per-ASN rate limit on anonymous `/claude` traffic
+- The limit is set so that legitimate users on Starlink and major residential ISPs are not rate-limited by typical onboarding volume
+- A rate-limited user sees a clean, recoverable error from the app (not a raw Cloudflare error page)
+- The frontend does not attempt to retry aggressively on 429 — it backs off and surfaces the error to the user
+
+---
+
+### GS-ONB-45: Prompt Caching Active on PARSE Call
+
+> As a System, I want the PARSE prompt to use Anthropic Prompt Caching, so that recurring context (system prompt + PROMPT_RULES + canonical context) is billed at cached rates and latency is reduced.
+
+**Depends on:** GS-ONB-03
+**Data:** none (backend-managed; frontend does not construct the `cache_control` block)
+**Entry state:** Any — applies to every PARSE call once the first warm request has populated the cache
+**Verifiable by:** Trigger two PARSE calls in quick succession → backend logs show `cache_control: {type: "ephemeral"}` on the second call; `/admin/status` cache_hit_rate reflects the hit (backend PRD §8.16, decision 25, §14 test 69).
+
+**Acceptance Criteria:**
+
+- The backend wraps the cached region of the PARSE prompt in `cache_control: {type: "ephemeral"}` per `services/backend/src/prompt-caching.ts`
+- The cached region includes: system prompt + PROMPT_RULES + canonical context
+- Cache hits do not change the structured output returned to the user
+- Cache misses do not change user-facing behavior — only latency/cost are affected
+- The feature is transparent to the frontend; `callClaude(promptKey="PARSE")` is unchanged at the client boundary
+
+---
+
+### GS-ONB-46: Prompt Caching Active on PROFILE Call
+
+> As a System, I want the PROFILE prompt to use Anthropic Prompt Caching, so that background profile generation benefits from the same ~90% input-token cost reduction on cached tokens.
+
+**Depends on:** GS-ONB-18, GS-ONB-35
+**Data:** none (backend-managed)
+**Entry state:** Any — applies to every PROFILE call once the first warm request has populated the cache
+**Verifiable by:** Trigger two PROFILE calls → second call shows cache hit in backend logs; `/admin/status` cache_hit_rate increments; output quality is unchanged (backend PRD §8.16, decision 25, §14 test 69).
+
+**Acceptance Criteria:**
+
+- The backend wraps the cached region of the PROFILE prompt in `cache_control: {type: "ephemeral"}`
+- The cached region includes: system prompt + PROMPT_RULES + canonical context
+- Cache hits do not change the generated profile output for the user
+- The feature is transparent to the frontend — no change to `callClaude(promptKey="PROFILE")` at the client boundary
+- If `ANTHROPIC_PROMPT_CACHE_ENABLED` is false (rollback), the call still succeeds with uncached pricing
+
+---
+
+### GS-ONB-47: API_BASE_URL Prefix on All Anonymous Calls
+
+> As a System, I want all anonymous `/claude` calls to go through `${API_BASE_URL}` via the central `callClaude()` helper, so that the frontend can be pointed at the dedicated backend or fall back to legacy Vercel routes during the rollback window.
+
+**Depends on:** GS-ONB-03, GS-ONB-18
+**Data:** `NEXT_PUBLIC_API_BASE_URL` env var → consumed by `src/lib/api.ts`
+**Entry state:** Any — applies to every PARSE and PROFILE call
+**Verifiable by:** With `NEXT_PUBLIC_API_BASE_URL=https://api.jobzooka.app` → network tab shows requests going to `https://api.jobzooka.app/claude`; with `NEXT_PUBLIC_API_BASE_URL=""` and `LEGACY_ROUTES_ENABLED=true` → requests go to `/api/claude` on the same origin (backend PRD §3, §14 test 53).
+
+**Acceptance Criteria:**
+
+- `callClaude()` in `src/lib/api.ts` prefixes every request with `${API_BASE_URL}` from `process.env.NEXT_PUBLIC_API_BASE_URL`
+- No feature component hardcodes `/api/claude` — all calls go through the helper
+- If `NEXT_PUBLIC_API_BASE_URL` is empty, requests fall back to same-origin `/api/claude` (legacy rollback window, 7 days)
+- Switching `NEXT_PUBLIC_API_BASE_URL` does not require code changes in onboarding components
+- The prefix is applied consistently to both PARSE and PROFILE calls
+
+---
+
+### GS-ONB-48: Server-Bound Session Nonce at Auth Wall
+
+> As a System, I want the post-auth session identifier to be bound to a server-side record, so that an attacker cannot forge or replay a session nonce that only passed a format check (v2 behavior).
+
+**Depends on:** none (spec-ahead; auth wall lives at dashboard entry, not inside onboarding)
+**Data:** server-side session record keyed by a randomly generated nonce; `SessionData` on client is unchanged during onboarding (still anonymous)
+**Entry state:** Transition — user completes onboarding and arrives at the auth wall at dashboard entry
+**Verifiable by:** Complete onboarding → at auth wall, sign in → backend creates a server-side session record and issues a cookie whose nonce is recognized on subsequent calls; replay a nonce that matches the format but has no server-side record → 401 (backend PRD §8.3, decision 17).
+
+**Acceptance Criteria:**
+
+- Onboarding itself remains pre-auth — no cookie is issued and no server-side session is created during Steps 1–3
+- At the auth wall (post-onboarding, dashboard entry), signing in creates a server-side session record bound to the issued nonce
+- The nonce is not accepted by the backend on subsequent calls unless a corresponding server-side record exists (v2's format-only check is superseded)
+- Onboarding session data (encrypted localStorage) is carried forward into the authenticated session at this moment
+
+---
+
+### GS-ONB-49: Auth-Wall Cookie is Apex-Scoped with `__Host-` Prefix
+
+> As a System, I want the authenticated session cookie issued at the auth wall to be scoped to the apex domain with a `__Host-` prefix where viable, so that the cookie is same-origin, HTTPS-only, and not shareable with arbitrary subdomains.
+
+**Depends on:** GS-ONB-48
+**Data:** cookie name uses `__Host-` prefix (e.g., `__Host-session`) where subdomain sharing is not required; cookie is set with `Secure; HttpOnly; Path=/; SameSite=Lax` and no `Domain` attribute
+**Entry state:** Transition — user signs in at the auth wall after completing onboarding
+**Verifiable by:** Sign in → response sets `__Host-session=<value>; Secure; HttpOnly; Path=/; SameSite=Lax` (no `Domain=`); cookie is not visible to unrelated subdomains (backend PRD §8.4, decision 4, RT-002).
+
+**Acceptance Criteria:**
+
+- The session cookie issued at the auth wall uses the `__Host-` prefix where subdomain sharing is not required
+- Where subdomain sharing is required (e.g., to share with the extension), the cookie is scoped to the apex (`.jobzooka.app`) without `__Host-` prefix, and this exception is documented in a subdomain audit
+- Onboarding itself does not issue any cookies (remains pre-auth)
+- The cookie is `Secure`, `HttpOnly`, `Path=/`, and `SameSite=Lax` at minimum
+
+--- END file ---
+
+---
+
+## Feature Spec: COPY
+
+--- BEGIN file: requirements/05-features/onboarding/COPY.md ---
+# Onboarding — COPY
+
+All user-facing copy for Steps 1-3 (Resume Upload, Preferences, Profile Verify). Sources: `OnboardingPage.tsx`, `Step1Resume.tsx`, `Step3Preferences.tsx`, `Step4Profile.tsx`.
+
+---
+
+## IntroScreen (Landing Page)
+
+| Surface | Text                                                                                      | Context                    |
+| ------- | ----------------------------------------------------------------------------------------- | -------------------------- |
+| Label   | JOBZOOKA                                                                                  | Brand label above headline |
+| h1      | KILL YOUR JOB SEARCH.                                                                     | Hero headline              |
+| Body    | Drop your resume. Get market intelligence, targeted resumes, and auto-apply — in minutes. | Hero description           |
+| Link    | Already have an account? **Sign in**                                                      | Auth link below hero       |
+| Trust   | Free to start · No credit card · Data stays in your browser                               | Trust footer               |
+| Helper  | Drop your resume or click to browse                                                       | File drop zone             |
+| Helper  | PDF, DOCX, TXT, or MD                                                                     | Accepted formats           |
+
+## Onboarding Header Bar
+
+| Surface  | Text     | Context            |
+| -------- | -------- | ------------------ |
+| Nav      | Jobzooka | Brand (left)       |
+| Nav link | Resume   | Resume upload link |
+| Nav link | Sign in  | Auth modal trigger |
+| Nav link | Privacy  | Privacy info       |
+| Nav link | Reset    | Clear session      |
+
+## Parsing Status Banner
+
+| Surface         | Text                                     | Context                          |
+| --------------- | ---------------------------------------- | -------------------------------- |
+| Banner (active) | Parsing your resume in the background... | Yellow/olive, shown during parse |
+| Banner (done)   | Resume parsed ✓                          | Green, shown on parse success    |
+| Banner (error)  | Resume parsing failed. Retry?            | Red, shown on parse failure      |
+| Banner action   | Retry                                    | Parse error retry button         |
+
+## Headings
+
+| Surface | Text                     | Context                       |
+| ------- | ------------------------ | ----------------------------- |
+| h2      | Upload your resume       | Resume upload screen          |
+| h2      | Confirm your info        | Resume review screen          |
+| Section | Personal                 | Resume review — personal info |
+| Section | Education                | Resume review — education     |
+| Section | Who you are              | Profile — identity            |
+| Section | Your skills              | Profile — skills              |
+| Section | What makes you stand out | Profile — differentiators     |
+| Section | Key achievements         | Profile — achievements        |
+| Section | Where you're headed      | Profile — direction           |
+| Section | Areas to strengthen      | Profile — gaps                |
+| Section | Direction                | Preferences — direction       |
+| Section | Work setup               | Preferences — work setup      |
+| Section | Compensation             | Preferences — comp            |
+| Section | Deal-breakers            | Preferences — deal-breakers   |
+
+## Onboarding Sub-Step Headings (Streamlined)
+
+| Surface | Text                                     | Context                |
+| ------- | ---------------------------------------- | ---------------------- |
+| h2      | What are you looking for?                | Direction sub-step     |
+| h2      | What type of work?                       | Work type sub-step     |
+| h2      | What are your compensation expectations? | Comp sub-step          |
+| h2      | Where do you want to work?               | Location sub-step      |
+| h2      | Quick check                              | Quick check sub-step   |
+| h2      | We'll skip these.                        | Deal-breakers sub-step |
+
+## Subtitles / Helper Text
+
+| Surface  | Text                                                                   | Context                              |
+| -------- | ---------------------------------------------------------------------- | ------------------------------------ |
+| Subtitle | We'll extract your info and get everything set up fast.                | Upload screen                        |
+| Subtitle | We extracted this from your resume. Edit anything that looks off.      | Review screen                        |
+| Subtitle | Pick the direction that fits best.                                     | Direction sub-step                   |
+| Subtitle | We'll tailor everything to match.                                      | Work type sub-step                   |
+| Subtitle | This shapes which jobs we find.                                        | Location sub-step                    |
+| Subtitle | Smart defaults based on your profile. Toggle off any that don't apply. | Deal-breakers sub-step               |
+| Subtitle | These help us auto-fill application forms. Change anything that's off. | Quick check sub-step                 |
+| Subtitle | Your professional identity.                                            | Profile — identity section           |
+| Subtitle | We'll use these to match you with jobs.                                | Profile — skills section             |
+| Subtitle | Your competitive edge.                                                 | Profile — differentiators section    |
+| Subtitle | The wins we'll highlight in your resumes.                              | Profile — achievements section       |
+| Subtitle | This guides which jobs we target.                                      | Profile — direction section          |
+| Subtitle | We'll address these as we build your materials.                        | Profile — gaps section               |
+| Helper   | Tell us more about your direction                                      | Direction detail label (needsDetail) |
+| Helper   | When can you start?                                                    | Start date label within work type    |
+
+## Friendly Intro
+
+| Surface | Text                                                                               | Context                |
+| ------- | ---------------------------------------------------------------------------------- | ---------------------- |
+| Intro   | Thanks{, name}. Fix anything that's off — this powers everything we build for you. | Profile review (Step4) |
+
+## Buttons
+
+| Surface   | Text                 | Context                                 |
+| --------- | -------------------- | --------------------------------------- |
+| Primary   | Next →               | All forward navigation (pref sub-steps) |
+| Primary   | Parse resume →       | Paste-text mode submit                  |
+| Primary   | Looks good →         | Resume confirm                          |
+| Primary   | Looks good           | Deal-breakers confirm                   |
+| Primary   | Looks good, let's go | Quick check confirm                     |
+| Secondary | ← Back               | All backward navigation                 |
+| ~~Secondary~~ | ~~Edit resume text~~ | ~~REMOVED in Run 007~~                  |
+| Secondary | Upload different     | Resume review → re-upload               |
+| Secondary | Cancel               | During resume parsing                   |
+| Secondary | Re-parse →           | Re-parse after raw text edit            |
+| Link      | + Add education      | Education section                       |
+
+## Loading States
+
+| Surface  | Text                   | Context                   |
+| -------- | ---------------------- | ------------------------- |
+| Progress | Reading document…      | Resume parse step 1       |
+| Progress | Extracting structure…  | Resume parse step 2       |
+| Progress | Building profile…      | Resume parse step 3       |
+| Progress | Reading your resume…   | Profile generation step 1 |
+| Progress | Identifying strengths… | Profile generation step 2 |
+| Progress | Mapping experience…    | Profile generation step 3 |
+| Progress | Building your profile… | Profile generation step 4 |
+
+## Error Messages
+
+| Surface | Text                                                           | Context           |
+| ------- | -------------------------------------------------------------- | ----------------- |
+| Error   | File too large ({size}MB). Maximum is 10MB.                    | File upload       |
+| Error   | Cancelled. You can try again.                                  | Parse cancelled   |
+| Error   | Resume parsing failed. Please try again.                       | Parse failure     |
+| Error   | Name is required                                               | Validation        |
+| Error   | Email is required                                              | Validation        |
+| Error   | Phone is required                                              | Validation        |
+| Error   | Location is required                                           | Validation        |
+| Error   | Portfolio link must be an HTTP or HTTPS URL                    | URL validation    |
+| Error   | Portfolio link must be a valid URL (e.g. https://yoursite.com) | URL parse failure |
+
+## Labels
+
+| Surface | Text                              | Context                            |
+| ------- | --------------------------------- | ---------------------------------- |
+| Label   | Name                              | Personal info (resume confirm)     |
+| Label   | Email                             | Personal info (resume confirm)     |
+| Label   | Phone                             | Personal info (resume confirm)     |
+| Label   | Location                          | Personal info (resume confirm)     |
+| Label   | LinkedIn URL                      | Personal info (resume confirm)     |
+| Label   | Portfolio URL (optional)          | Personal info (resume confirm)     |
+| Label   | Discipline                        | Profile                            |
+| Label   | Seniority                         | Profile                            |
+| Label   | Compensation structure            | Comp sub-step (select)             |
+| Label   | Hourly floor                      | Comp sub-step (hourly input)       |
+| Label   | Annual equivalent                 | Comp sub-step (auto-calc)          |
+| Label   | Annual salary floor               | Comp sub-step (salary input)       |
+| Label   | Hourly equivalent                 | Comp sub-step (auto-calc)          |
+| Label   | Preferred city                    | Location sub-step (Hybrid/On-site) |
+| Label   | When can you start?               | Work type sub-step                 |
+| Label   | Tell us more about your direction | Direction detail (needsDetail)     |
+
+## Placeholders
+
+| Surface     | Text                                                              | Context                   |
+| ----------- | ----------------------------------------------------------------- | ------------------------- |
+| Placeholder | Paste your resume text here…                                      | Text paste mode           |
+| Placeholder | Describe your target direction, industry switch, or career goals… | Direction detail textarea |
+| Placeholder | https://linkedin.com/in/yourname                                  | LinkedIn URL              |
+| Placeholder | https://yoursite.com                                              | Portfolio URL             |
+| Placeholder | e.g. 75                                                           | Hourly floor input        |
+| Placeholder | e.g. $120,000                                                     | Salary floor input        |
+| Placeholder | City, State                                                       | Location combo            |
+
+## Options
+
+| Surface | Text                                                                                                                                        | Context                                 |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Option  | Same or similar role / Higher-level role / New career / Move into leadership / Join a startup / Something else                              | Direction presets (multiselect cards, 1+ required) |
+| Option  | Full-time / Part-time / Contract                                                                                                            | Work type (single-select pills)         |
+| Option  | Immediately / 2 weeks notice / 1 month notice / 2 months notice                                                                             | Start date (single-select pills)        |
+| Option  | Remote / Hybrid / On-site                                                                                                                   | Location type (single-select pills)     |
+| Option  | Base salary only / Base + bonus / Base + commission / Base + equity / Base + bonus + equity / Hourly / Commission only / Open to discussion | Comp structure (select dropdown)        |
+| Option  | Unpaid work / No benefits offered / Return-to-office mandate / Requires relocation / Travel required                                        | Deal-breakers (pre-selected toggles)    |
+
+## Trust Signals
+
+| Surface | Text                                                                                | Context               |
+| ------- | ----------------------------------------------------------------------------------- | --------------------- |
+| Info    | Your resume will be sent to Claude for processing. Claude does not store your data. | Pre-upload disclosure |
+| Trust   | Processed locally first                                                             | Upload trust badge    |
+| Trust   | Encrypted in your browser                                                           | Upload trust badge    |
+| Trust   | No data stored by AI                                                                | Upload trust badge    |
+
+## Tabs
+
+| Surface | Text        | Context           |
+| ------- | ----------- | ----------------- |
+| Tab     | Upload file | Resume input mode |
+| Tab     | Paste text  | Resume input mode |
+
+## File Upload
+
+| Surface | Text                           | Context                |
+| ------- | ------------------------------ | ---------------------- |
+| Helper  | Drag & drop your resume here   | File drop zone heading |
+| Helper  | or click to browse             | File drop zone sub     |
+| Helper  | PDF, DOCX, TXT, MD — 10 MB max | Accepted formats       |
+
+## Quick Check Toggles
+
+| Surface | Text                              | Key                  | Default |
+| ------- | --------------------------------- | -------------------- | ------- |
+| Toggle  | I'm a US citizen                  | isUSCitizen          | true    |
+| Toggle  | I'm authorized to work in the US  | authorizedToWork     | true    |
+| Toggle  | I don't need visa sponsorship     | noSponsorshipNeeded  | true    |
+| Toggle  | I have a current driver's license | hasDriversLicense    | true    |
+| Toggle  | I'm a protected veteran           | isVeteran            | false   |
+| Toggle  | I have a disability               | hasDisability        | false   |
+| Toggle  | I have security clearance         | hasSecurityClearance | false   |
+
+## Conversion Helpers
+
+| Surface | Text                                                          | Context          |
+| ------- | ------------------------------------------------------------- | ---------------- |
+| Info    | {hourly} per hour ↔ {salary} per year (based on 2,080 hrs/yr) | Comp sync banner |
+
+## Summary Text (Profile)
+
+| Surface | Text                                                                                                                         | Context         |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Summary | Extracted {skills} skills and {differentiators} differentiators from your resume. You'll curate these after the market scan. | Profile summary |
+
+## Profile Review — Empty States
+
+| Surface | Text                                                   | Context              |
+| ------- | ------------------------------------------------------ | -------------------- |
+| Prompt  | No education found on your resume. Want to add one?    | Empty education      |
+
+## Browser Verification (Turnstile, v3)
+
+| Surface      | Text                                                      | Context                                             |
+| ------------ | --------------------------------------------------------- | --------------------------------------------------- |
+| Status       | Verifying your browser…                                   | Shown only if invisible challenge stalls >1s        |
+| Error        | Please complete the challenge to continue                 | Shown when Turnstile fails (403 at edge or timeout) |
+| Error action | Try again                                                 | Retry the invisible challenge                       |
+| Error (rate) | We're seeing heavy traffic from your network. Try again shortly. | Shown on per-ASN 429 from Cloudflare         |
+| Helper       | Your resume and preferences are saved locally.            | Reassurance under a verification failure            |
+
+--- END file ---
+
+---
+
+## Feature Spec: INPUTS
+
+--- BEGIN file: requirements/05-features/onboarding/INPUTS.md ---
+# Onboarding Input Fields — Requirements
+
+Working requirements doc for all user input fields across the onboarding screens.
+
+**Global notes:**
+- All screens auto-save to encrypted session on exit (survives refresh).
+- Back/Next navigation available on all screens (except no Back on Resume).
+- Screen names are internal — users see a continuous flow, not labeled steps.
+
+**Control types:**
+- **Cards** — for choices that deserve attention (full phrases, consequential). Slows the user down intentionally.
+- **Pills** — for simple attributes/tags. Quick to scan, low friction, keeps the user moving.
+- **Dropdown** — for long option lists that don't need to be visible all at once.
+
+**Data contracts:** Each screen has a "Downstream data contracts" table showing which features consume its fields. See [DATA-CONTRACTS.md](../04-architecture/DATA-CONTRACTS.md) for the rules on wiring, ownership, and verification.
+
+---
+
+## Resume
+
+> **Depends on:** None (entry point to the app)
+
+### Control 1: File Upload
+
+Drag-and-drop zone. Selecting or dropping a file begins processing immediately.
+
+- **Label:** "Drag & drop your resume here"
+- **Secondary label:** "or click to browse"
+- **Accepted formats:** PDF, DOCX, TXT, MD
+- **Max file size:** 10 MB
+- **After selection:** Shows selected filename. Brief success animation (e.g., checkmark + "Got it") plays before advancing — minimum ~1s visible even if processing is instant, so the transition doesn't feel jarring.
+
+### Control 2: Paste Text (alternate tab)
+
+Textarea for pasting resume content directly.
+
+- **Label:** Tab labeled "Paste Text"
+- **Placeholder:** "Paste your resume text here..."
+- **Min length:** 50 characters
+- **Submit button:** "Parse resume →"
+
+### Returning user (resumeRaw already exists)
+
+- "Continue with existing resume" (primary action)
+- "Upload different" (secondary — clears and shows upload mode)
+- ~~"Edit resume text"~~ (REMOVED in Run 007 — users use "Upload different" instead)
+
+### Trust & disclosure
+
+- **Trust signals:** "Processed locally first", "Encrypted in your browser", "No data stored by AI"
+- **Disclosure:** "Your resume will be sent to Claude for processing. Claude does not store your data."
+
+### Hidden control: Cloudflare Turnstile (v3)
+
+Invisible browser-verification widget. Not a visible form field — no label, no placeholder, no user interaction in the normal path.
+
+- **Mount:** IntroScreen (first arrival per browser session)
+- **Site key:** `NEXT_PUBLIC_CF_TURNSTILE_SITE_KEY` (public)
+- **Mode:** Invisible (managed challenge). No checkbox or image grid shown.
+- **Token destination:** `CF-Turnstile-Response` request header on the first anonymous `POST ${API_BASE_URL}/claude` call (PARSE) and on the first PROFILE call. Token is cached in component state for the session; never persisted to `SessionData` or localStorage.
+- **Failure path:** If widget script fails to load or backend returns 403 on Siteverify, surface recoverable UI ("Please complete the challenge to continue" → "Try again"). Do not show raw 403.
+- **Rate-limit path:** On 429 from Cloudflare per-ASN rate limit, surface "We're seeing heavy traffic from your network. Try again shortly." Do not auto-retry aggressively.
+
+### Exit gate
+
+Valid file uploaded or pasted text meets min length. After success animation completes, advances to Direction.
+
+---
+
+## Direction
+
+> **Depends on:** None (displayed while resume parsing is in progress)
+
+### Options
+
+Multiselect selectable cards, 1+ required
+
+| Option | Mutually exclusive with |
+|---|---|
+| Same or similar role | N/A |
+| Higher-level role | N/A |
+| New career | N/A |
+| Move into leadership | N/A |
+| Join a startup | N/A |
+| Something else | N/A |
+
+**Default:** Same or similar role (pre-selected)
+
+### Conditional field
+
+- **Trigger:** 'New career' OR 'Something else' is selected (either or both)
+- **Control:** Single shared textarea (one field, not two)
+- **Label:** "Tell us more about your direction"
+- **Placeholder:** "Describe your target direction, industry switch, or career goals..."
+- **Required:** Yes — cannot advance while trigger option is selected and field is empty
+- **Min length:** 10 characters
+- **Max length:** 500 characters
+- **Deselect behavior:** Field hides but value is retained in component state. Re-selecting either trigger restores the previous value.
+
+### Downstream data contracts
+
+| Field(s) | Consumed by |
+|---|---|
+| Direction presets (selected cards) | Profile generation prompt, job search query framing, resume objective tone |
+| Career direction text (conditional textarea) | Profile generation prompt (target direction input), market analysis prompts |
+
+### Exit gate
+
+At least one direction selected. Default is pre-applied; user may accept or change. If 'New career' or 'Something else' is selected, the detail field must have content before advancing.
+
+---
+
+## Work Type
+
+> **Depends on:** None
+
+### Control 1: Employment Type
+
+Multiselect pills, 1+ required
+
+| Option | Mutually exclusive with |
+|---|---|
+| Full-time | N/A |
+| Part-time | N/A |
+| Contract | N/A |
+
+**Default:** Full-time (pre-selected)
+
+### Control 2: Start Date
+
+Single-select pills, 1 required
+
+| Option | Mutually exclusive with |
+|---|---|
+| Immediately | N/A |
+| 2 weeks notice | N/A |
+| 1 month notice | N/A |
+| 2 months notice | N/A |
+
+**Default:** Immediately (pre-selected)
+
+### Downstream data contracts
+
+| Field(s) | Consumed by |
+|---|---|
+| Employment type(s) | Job search queries (BD API `job_type` param), Compensation screen UI (determines hourly vs salary primary), auto-apply form fill, resume framing |
+| Start date | Auto-apply form fill ("When can you start?") |
+
+### Exit gate
+
+At least one employment type selected. Defaults are pre-applied; user may accept or change. Exactly one start date selected.
+
+---
+
+## Compensation
+
+> **Depends on:** Work Type employment type selection (determines which inputs are primary)
+
+### Control 1: Compensation Structure
+
+Single-select dropdown, 1 required
+
+Options: Base salary only | Base + bonus | Base + commission | Base + equity | Base + bonus + equity | Hourly | Commission only | Open to discussion
+
+**Default:** Open to discussion (pre-selected)
+
+### Control 2 & 3: Compensation Floor (adaptive)
+
+**If employment type includes Full-time only:**
+- **Primary:** "Annual salary floor" text input (placeholder: "e.g. $120,000")
+- **Secondary:** "Hourly equivalent" text input (placeholder: "e.g. 75")
+- Bidirectional sync: annual / 2,080 = hourly; hourly x 2,080 = annual
+
+**If employment type includes Contract or Part-time only:**
+- **Primary:** "Hourly floor" text input (placeholder: "e.g. 75")
+- **Secondary:** Annual equivalent shown as helper text (read-only)
+
+**If employment type includes both Full-time and Contract/Part-time:**
+- Both hourly and annual inputs shown equally, bidirectional sync active
+
+### Validation
+
+- Zero or negative values rejected
+- Non-numeric input rejected
+- Both fields optional (user may skip compensation floor entirely)
+
+### Downstream data contracts
+
+| Field(s) | Consumed by |
+|---|---|
+| Compensation structure | Auto-apply form fill ("Expected compensation"), resume generation (if comp is mentioned) |
+| Hourly floor | Job filtering (exclude below floor), market analysis (comp benchmarking), auto-apply form fill |
+| Salary floor | Job filtering (exclude below floor), market analysis (comp benchmarking), auto-apply form fill |
+
+### Exit gate
+
+Exactly one compensation structure selected. If comp floor values entered, they must be valid positive numbers.
+
+---
+
+## Location
+
+> **Depends on:** None
+
+### Control 1: Location Type
+
+Multiselect pills, 1+ required
+
+| Option | Mutually exclusive with |
+|---|---|
+| Remote | N/A |
+| Hybrid | N/A |
+| On-site | N/A |
+
+**Default:** Remote (pre-selected)
+
+### Conditional field
+
+- **Trigger:** 'Hybrid' OR 'On-site' is selected (either or both)
+- **Label:** "Preferred city"
+- **Placeholder:** "Search US cities..."
+- **Required:** Yes — cannot advance while trigger option is selected and field is empty
+- **Deselect behavior:** Field hides but value is retained in component state. Re-selecting either trigger restores the previous value.
+
+### City selector interaction
+
+- **Data source:** Bundled US city list (~30k cities, all incorporated places). Format: "City, State" (e.g., "Austin, TX"). Zero API dependency.
+- **Desktop:** Combobox — user types to filter, dropdown appears after 2+ characters. Arrow keys to navigate, Enter to select, Escape to dismiss. Max 8 results shown at a time.
+- **Mobile:** Full-screen search sheet — slides up from bottom, full-width input pinned to top, scrollable results below. Results large enough for comfortable targets (min 44px height). X or swipe-down to dismiss.
+- **Breakpoint:** Switch from inline dropdown to full-screen sheet at viewport width <= 640px.
+- **Filtering:** Case-insensitive, matches anywhere in string (e.g., "aus" matches "Austin, TX" and "Thousand Oaks, CA"). Ranked by population so larger cities appear first.
+- **Selection:** Single city. Selecting a result populates the input with the full "City, State" string and closes the dropdown/sheet.
+- **No match:** Show "No cities found" message when filter returns 0 results.
+
+### Fallback
+
+If no match found, show a "Can't find your city? Enter it manually" link below the results area. Clicking it converts the input to a free-text field (placeholder: "City, State"). User types their city and proceeds.
+
+### Downstream data contracts
+
+| Field(s) | Consumed by |
+|---|---|
+| Location type(s) | Job search queries (BD API `remote` param), Dealbreakers screen (RTO visibility), auto-apply form fill |
+| Preferred city | Job search queries (BD API location param), auto-apply form fill ("Preferred location") |
+
+### Exit gate
+
+Location type selected (default: Remote). If non-Remote selected, preferred location must be provided via city selector or manual fallback.
+
+---
+
+## Quick Check
+
+> **Depends on:** None
+
+### Options
+
+7 independent selectable cards. Selecting a card toggles it on/off.
+
+| Label | Default |
+|---|---|
+| I'm a US citizen | Selected |
+| I'm authorized to work in the US | Selected |
+| I don't need visa sponsorship | Selected |
+| I have a current driver's license | Selected |
+| I'm a protected veteran | Unselected |
+| I have a disability | Unselected |
+| I have security clearance | Unselected |
+
+**Required:** No — all cards are optional, defaults are pre-applied
+
+### Downstream data contracts
+
+| Field(s) | Consumed by |
+|---|---|
+| US citizen | Auto-apply form fill ("Are you a US citizen?") |
+| Authorized to work | Auto-apply form fill ("Are you authorized to work in the US?") |
+| No sponsorship needed | Auto-apply form fill ("Will you now or in the future require sponsorship?"), job filtering |
+| Driver's license | Auto-apply form fill ("Do you have a valid driver's license?") |
+| Protected veteran | Auto-apply form fill (EEO/voluntary self-identification) |
+| Disability | Auto-apply form fill (EEO/voluntary self-identification) |
+| Security clearance | Auto-apply form fill, job matching (clearance-required roles) |
+
+### Exit gate
+
+None — user can proceed with all defaults.
+
+---
+
+## Dealbreakers
+
+> **Depends on:** Location type selection (determines visibility of one card)
+
+### Options
+
+5 independent selectable cards. Selected = excluded from job search. Selected cards use a reddish/warning visual treatment to reinforce exclusion.
+
+| Deal-breaker | Default | Visibility |
+|---|---|---|
+| Unpaid work / spec work | Selected | Always |
+| No benefits offered | Selected | Always |
+| Return-to-office mandate | Selected | Hidden if location type is "On-site" only |
+| Requires relocation | Selected | Always |
+| Travel required | Selected | Always |
+
+**Required:** No — all cards are optional, defaults are pre-applied
+
+### Downstream data contracts
+
+| Field(s) | Consumed by |
+|---|---|
+| All selected deal-breakers | Auto-apply triage engine (skip-if signals), job filtering (exclude matching listings) |
+| "Return-to-office mandate" specifically | Only active when location type is not On-site only — triage engine must check this conditional |
+
+### Exit gate
+
+No validation required — all options are pre-selected as defaults. User may deselect any. Empty selection (all deselected) is valid.
+
+---
+
+## Profile Review
+
+> **Depends on:** Resume parsing complete. Profile generation triggers in the background immediately after parse completes (does not wait for preferences). By the time the user finishes preferences and reaches this screen, the profile may already be ready. Personal/education fields sync reactively — if parse results arrive after this component mounts (user rushed through preferences), the fields populate automatically.
+
+**Interaction philosophy:** AI fills, user curates. Subtractive where possible (chips), assisted where correcting (dropdowns), free text only where truly open-ended.
+
+### Loading states
+
+The screen has multiple states before the review is shown. Because profile generation runs in the background immediately after parse completes, the user may arrive at any point in this sequence:
+
+- **Waiting** — resume parsing still in progress. Show spinner.
+- **Parse error** — parsing failed. Offer retry.
+- **Generating** — background profile generation in progress. Progress bar picks up from current phase (does not restart from phase 1). Step4Profile receives `backgroundGenPhase` prop.
+- **Generation error** — generation failed. Offer regenerate.
+- **Review** — background profile already complete. Show editable profile immediately (no generation delay).
+
+### Section 1: Personal Info
+
+All fields pre-filled from resume parsing. User corrects as needed.
+
+| Field | Control | Required |
+|---|---|---|
+| Name | Text input | Yes |
+| Email | Text input | Yes |
+| Phone | Text input | Yes |
+| Location | Text input | Yes |
+| LinkedIn URL | Text input | No |
+| Portfolio URL | Text input (validated for HTTP/HTTPS) | No |
+
+### Section 2: Education
+
+Entries pre-filled from resume parsing. User can edit, add, or remove entries.
+
+The education section itself is optional — zero entries is valid (not everyone has formal education). But if an entry exists, fields marked "Required if entry exists" must be filled before saving that entry.
+
+| Field | Control | Required if entry exists | Notes |
+|---|---|---|---|
+| Degree | Dropdown (Associate's, Bachelor's, Master's, MBA, PhD, JD, MD, Other) | Yes | Pre-selected from parsed value |
+| Field of study | Combobox with common majors (~200), free-text fallback | Yes | Type to filter, select or enter custom |
+| School | Text input | Yes | Free text — too many to enumerate |
+| Graduation | Year picker dropdown (1970–2030) | No | Pre-selected from parsed value |
+| GPA | Numeric input with scale hint (e.g., "/ 4.0") | No | Most users skip this |
+| Honors | Dropdown (Summa Cum Laude, Magna Cum Laude, Cum Laude, Dean's List, N/A) | No | Pre-selected from parsed value or N/A |
+| Notable | Text input | No | e.g., published research, thesis |
+
+**Actions:**
+- Edit an existing entry (inline form, fields pre-filled from parsed values)
+- Remove an existing entry
+- "+ Add education" button to append a new blank entry
+
+**Add education flow:**
+- Opens an inline form with all fields empty (no pre-filled values)
+- Degree dropdown defaults to no selection (placeholder: "Select degree")
+- Field of study combobox empty (placeholder: "Search or type your field...")
+- Graduation year defaults to no selection (placeholder: "Year")
+- Honors defaults to N/A
+- Save/Cancel actions — Save validates required fields, Cancel discards the entry entirely
+- If the education section was empty (no parsed entries), show a friendly prompt like "No education found on your resume. Want to add one?" with the "+ Add education" button
+
+### Section 3: AI-Generated Profile
+
+Generated from resume + preferences via Claude. All fields pre-filled by AI.
+
+#### Editable fields
+
+| Field | Control | Notes |
+|---|---|---|
+| Discipline | Text input | e.g., "Product Manager". Free text, user may rephrase |
+| Seniority | Dropdown (Internship, Entry level, Associate, Mid-Senior level, Director, Executive) | Pre-selected from AI assessment |
+| Target direction | Textarea | AI's suggestion pre-filled, user edits to reflect actual intent |
+
+#### De-selectable chip fields
+
+These are AI-extracted. User curates by de-selecting irrelevant items. No "add new" — if it's not on the resume, it shouldn't be here.
+
+| Field | Chip style | Notes |
+|---|---|---|
+| Domains | Primary chips | e.g., SaaS, B2B, e-commerce. De-select to remove |
+| Hard skills | Primary chips | Technical skills from resume |
+| Soft skills | Secondary/muted chips | Interpersonal skills from resume |
+
+**De-select behavior:** De-selected chips visually gray out or fade. De-selected items are excluded from downstream prompts but retained in state so they can be re-selected.
+
+#### Read-only display fields
+
+These are AI-generated insights shown for review. Not directly editable.
+
+| Field | Display |
+|---|---|
+| Differentiators | Bulleted list — competitive edges |
+| Achievements | Bulleted list — key wins |
+| Gaps | Bulleted list — areas to strengthen |
+
+### Downstream data contracts
+
+| Field(s) | Consumed by |
+|---|---|
+| Name, Email, Phone, Location | Resume generation, auto-apply form fill, LinkedIn content |
+| LinkedIn URL, Portfolio URL | Resume generation (contact section), auto-apply form fill |
+| Education entries | Resume generation (education section) |
+| Discipline | Job search queries, resume headline, LinkedIn content, all Claude prompts |
+| Seniority | Job search queries, resume framing, competitiveness scoring |
+| Target direction | Resume objective/summary, LinkedIn content, market analysis prompts |
+| Domains (active chips) | Job search query refinement, resume keyword targeting |
+| Hard skills (active chips) | Resume skills section, job matching, skills curation (Step 7) |
+| Soft skills (active chips) | Resume content, LinkedIn content |
+| De-selected chips | Excluded from all downstream prompt payloads |
+| Differentiators | Resume bullet framing, LinkedIn content |
+| Achievements | Resume bullet content, LinkedIn content |
+| Gaps | Deep-dive Q&A prompts (Deep-Dive Q&A dashboard activity — target state; shipped as onboarding Step 6) |
+
+### Exit gate
+
+All required personal fields filled. Education: zero entries is valid, but any existing entry must have its required fields filled. Profile generated (discipline, seniority, and target direction must have values). Validates portfolio URL format if provided.
+
+--- END file ---
+
+---
+
+## Integration Map (data contracts)
+
+--- BEGIN file: .claude/agents/02-oneshot/.system/integration-map.md ---
+<!-- STALE: src/lib/types.ts changed at 2026-04-09T22:08:14 — review needed -->
+<!-- STALE: src/lib/rockets.ts changed at 2026-04-09T20:02:01 — review needed -->
+# Integration Map
+
+Every data dependency between features is documented here. Features communicate through `SessionData` fields, NOT through each other's code. Producer defines the shape. Consumer adapts. Never the reverse.
+
+---
+
+## SessionData Flow — What Each Step Writes and Reads
+
+### Step 1: Resume Parse
+
+**Writes:**
+
+- `resumeRaw: string`
+- `resumeStructured: ResumeStructured`
+- `personal: Personal`
+- `education: EducationEntry[]`
+- `context: Context`
+- `demographics: Demographics`
+
+**Reads:** Previous session (if resuming)
+
+**AI call:** `callClaude("PARSE", resumeRaw)` → cost: 0
+
+---
+
+### Step 2: Preferences
+
+**Writes:**
+
+- `preferences: Preferences`
+- `demographics: Demographics` (completes from step 1)
+
+**Reads:** `personal`, `education`
+
+**AI call:** None (manual form)
+
+---
+
+### Step 3: Profile Analysis
+
+**Writes:**
+
+- `profile: Profile` (discipline, seniority, domains, hardSkills, softSkills, differentiators, achievements, gaps, avoidTerms, irrelevantSkills)
+
+**Reads:** `resumeStructured`, `context`, `preferences`, `education`
+
+**AI call:** `callClaude("PROFILE", { resume, context, preferences, education })` → cost: 0
+
+---
+
+### Step 4: Query Generation + BD Trigger
+
+**Writes:**
+
+- `generatedQueries: string[]`
+- `marketSource: "api" | "manual"`
+- `marketRaw: string`
+- `queryStats: Array<{ query: string; resultCount: number }>`
+
+**Reads:** `profile`, `preferences`, `context`, `resumeStructured`
+
+**AI call:** `callClaude("QUERY_GEN", { profile, preferences, context })` → cost: 0
+**API call:** `fetchJobs(queries, location, employmentTypes)` → BD scraper
+
+---
+
+### Step 5: Market Analysis (Two-Phase)
+
+**Writes:**
+
+- `marketPrepReport?: string` (phase 1 output, only if API source)
+- `marketAnalysis: MarketAnalysis`
+- `miningQuestions: Array<{ id, question, why? }>`
+- `jobTypes: JobType[]`
+- `rankedCategories: JobType[]` (selected categories, written at lock)
+
+**Reads:** `marketRaw`, `queryStats`, `profile`, `preferences`, `resumeStructured`, `marketPrepReport`
+
+**AI calls:**
+
+- Phase 1: `callClaude("MARKET_PREP", buildMarketPrepPayload(...))` → cost: 0 (first run), 50 (rerun)
+- Phase 2: `callClaude("MARKET", { marketPrepReport, marketRaw, profile, ... })` → cost: 0
+
+---
+
+### Step 6: Deep-Dive QA
+
+**Writes:**
+
+- `miningResults: Record<string, MiningResult>`
+- `miningChatMsgs: Array<{ role, content }>`
+
+**Reads:** `miningQuestions`
+
+**AI call:** None (user-driven Q&A)
+
+---
+
+### Step 7: Skill Curation
+
+**Writes:**
+
+- `exclusions: Exclusions` (skills with include/exclude state + custom exclusions text)
+
+**Reads:** `profile.hardSkills`, `marketAnalysis.keywords`, `resumeStructured.skills_section`, `profile.irrelevantSkills`
+
+**AI call:** None (manual toggles)
+
+---
+
+### Step 8: Resume Generation
+
+**Writes:**
+
+- `masterResume: ResumeOutput`
+- `generalResume: ResumeOutput`
+- `targetedResumes: Record<string, ResumeOutput & { _diff? }>`
+
+**Reads:** `resumeStructured`, `profile`, `context`, `education`, `miningResults`, `exclusions`, `rankedCategories`, `marketAnalysis.keywords`
+
+**AI calls:**
+
+- `callClaude("RESUME_GEN", { ... })` → master + general, cost: 0
+- `callClaude("TARGETED", { ... })` × N categories → cost: 50/35/25 per category (bulk tiers)
+
+---
+
+### Step 9: LinkedIn + Form Answers
+
+**Writes:**
+
+- `linkedin: LinkedInData`
+- `formAnswers: FormAnswer[]`
+
+**Reads:** `profile`, `resumeStructured`, `masterResume`, `rankedCategories`, `exclusions`, `preferences`, `personal`, `education`, `context`, `miningResults`, `demographics`
+
+**AI call:** `callClaude("LINKEDIN", { ... })` → cost: 75
+
+---
+
+### Step 10: Auto-Apply Setup
+
+**Writes:**
+
+- `applyData: ApplyData`
+- `uploadedResumes: UploadedResumes`
+
+**Reads:** `profile`, `masterResume`, `targetedResumes`, `rankedCategories`, `exclusions`, `preferences`, `demographics`, `miningResults`, `formAnswers`
+
+**AI call:** `callClaude("APPLY", { ... })` → cost: 0
+**Hand-off:** Extension takes over. Orchestrator cannot observe or control.
+
+---
+
+## Producer/Consumer Contracts
+
+| #   | Producer          | Consumer             | Contract Field     | Type                            |
+| --- | ----------------- | -------------------- | ------------------ | ------------------------------- |
+| 1   | Step 1 (Parse)    | Steps 2-10           | `resumeStructured` | `ResumeStructured`              |
+| 2   | Step 1 (Parse)    | Steps 2, 3, 9, 10    | `personal`         | `Personal`                      |
+| 3   | Step 1 (Parse)    | Steps 2, 3, 8, 9     | `education`        | `EducationEntry[]`              |
+| 4   | Step 1 (Parse)    | Steps 3, 4, 8, 9     | `context`          | `Context`                       |
+| 5   | Step 2 (Prefs)    | Steps 4, 5, 8, 9, 10 | `preferences`      | `Preferences`                   |
+| 6   | Step 2 (Prefs)    | Steps 9, 10          | `demographics`     | `Demographics`                  |
+| 7   | Step 3 (Profile)  | Steps 4-10           | `profile`          | `Profile`                       |
+| 8   | Step 4 (Queries)  | Step 5               | `marketRaw`        | `string` (JSON)                 |
+| 9   | Step 4 (Queries)  | Step 5               | `queryStats`       | `Array<{ query, resultCount }>` |
+| 10  | Step 5 (Market)   | Steps 6, 7, 8        | `marketAnalysis`   | `MarketAnalysis`                |
+| 11  | Step 5 (Market)   | Step 6               | `miningQuestions`  | `Array<{ id, question, why? }>` |
+| 12  | Step 5 (Market)   | Step 6               | `jobTypes`         | `JobType[]`                     |
+| 13  | Step 6 (QA)       | Steps 8, 9, 10       | `miningResults`    | `Record<string, MiningResult>`  |
+| 14  | Step 5 (Lock)     | Steps 8, 9, 10       | `rankedCategories` | `JobType[]`                     |
+| 15  | Step 7 (Skills)   | Steps 8, 9, 10       | `exclusions`       | `Exclusions`                    |
+| 16  | Step 8 (Resumes)  | Steps 9, 10          | `masterResume`     | `ResumeOutput`                  |
+| 17  | Step 8 (Resumes)  | Step 10              | `targetedResumes`  | `Record<string, ResumeOutput>`  |
+| 18  | Step 9 (LinkedIn) | Step 10              | `formAnswers`      | `FormAnswer[]`                  |
+
+**CRITICAL (HYGIENE Rule 10):** Every `complete(step, data)` call must include ALL fields listed in the WRITES column for that step. Omitting a field (even one not displayed on screen) breaks downstream steps. This was the root cause of QA-017 (P0).
+
+---
+
+## Cross-Cutting Integration
+
+### Auth → All API Routes
+
+```
+Contract: requireAuth() middleware, verifyJWT(), getSession()
+Producer: auth feature
+Consumer: every API route that accesses user data
+Rule: All billable API routes MUST call requireAuth(). Auth exports, others import.
+```
+
+### Rockets → Claude API Route
+
+```
+Contract: debitRockets(userId, operation) called before billable Claude calls
+Producer: rockets feature (src/lib/rockets.ts)
+Consumer: /api/claude/route.ts
+Rule: API route checks balance, debits, then calls Claude. Returns 402 if insufficient.
+```
+
+### Competitiveness → All Step UIs
+
+```
+Contract: calculateCompetitiveness(sessionData) → 0-100 score
+Producer: competitiveness feature
+Consumer: Step10Resumes (step 8), Step6Analysis (step 5), CompetitivenessMeter
+Rule: Read-only consumption. Step UIs display the score, never modify scoring logic.
+```
+
+### Competitiveness Weighted Factors
+
+| Factor            | Weight         | Source Feature    |
+| ----------------- | -------------- | ----------------- |
+| Deep-Dive QA      | 15%            | deep-dive-qa      |
+| Target categories | 5%             | market-research   |
+| Skill curation    | 5%             | skills-curation   |
+| Master resume     | 10%            | resume-generation |
+| General resume    | 5%             | resume-generation |
+| Targeted resumes  | 25% (uncapped) | resume-generation |
+| LinkedIn          | 15%            | linkedin          |
+| Auto-apply        | 10%            | auto-apply        |
+| Form answers      | 10%            | linkedin          |
+
+### Foundation Utilities Used By Multiple Features
+
+**Wire format (HYGIENE Rule 7):** The server `/api/claude` returns `NextResponse.json({ text: "..." })`. The client `callClaude()` in `api.ts` already handles extraction: `const data = await res.json(); return data.text ?? ""`. Builders MUST use `callClaude()` — do NOT call the API route directly or parse the response yourself.
+
+| Utility                    | File          | Used by                                                              |
+| -------------------------- | ------------- | -------------------------------------------------------------------- |
+| `callClaude()`             | `api.ts`      | onboarding, market-research, resume-generation, linkedin, auto-apply |
+| `fetchJobs()`              | `api.ts`      | market-research                                                      |
+| `mergeSkillSources()`      | `utils.ts`    | skills-curation                                                      |
+| `preprocessMarketData()`   | `utils.ts`    | market-research                                                      |
+| `buildMarketSummary()`     | `utils.ts`    | market-research                                                      |
+| `buildMarketPrepPayload()` | `utils.ts`    | market-research                                                      |
+| `extractHourlyRates()`     | `utils.ts`    | market-research                                                      |
+| `applyDiff()`              | `utils.ts`    | resume-generation                                                    |
+| `tracePipeline()`          | `pipeline.ts` | market-research, resume-generation                                   |
+| `debitRockets()`           | `rockets.ts`  | rockets, /api/claude                                                 |
+| `calculateBulkCost()`      | `rockets.ts`  | resume-generation                                                    |
+
+---
+
+## Rocket Cost Summary
+
+| Operation                  | Prompt Key  | Cost    | Feature           |
+| -------------------------- | ----------- | ------- | ----------------- |
+| Resume parse               | PARSE       | 0       | onboarding        |
+| Profile analysis           | PROFILE     | 0       | onboarding        |
+| Query generation           | QUERY_GEN   | 0       | market-research   |
+| Market prep (first)        | MARKET_PREP | 0       | market-research   |
+| Market prep (rerun)        | MARKET_PREP | 50      | market-research   |
+| Market analysis            | MARKET      | 0       | market-research   |
+| Master + general resume    | RESUME_GEN  | 0       | resume-generation |
+| Targeted resume (1-3 cats) | TARGETED    | 50/each | resume-generation |
+| Targeted resume (4-6 cats) | TARGETED    | 35/each | resume-generation |
+| Targeted resume (7+ cats)  | TARGETED    | 25/each | resume-generation |
+| LinkedIn + forms           | LINKEDIN    | 75      | linkedin          |
+| Auto-apply setup           | APPLY       | 0       | auto-apply        |
+
+Free tier: 150 rockets per new user.
+
+--- END file ---
+
+---
+
+## TypeScript Interfaces (src/lib/types.ts)
+
+--- BEGIN file: src/lib/types.ts ---
+import type { ExclusionState } from "./constants";
+
+// ── Rockets & Monetization ──────────────────────────────────────────────
+
+export interface RocketPack {
+  id: string;
+  name: string;
+  rockets: number;
+  price: number; // dollars
+  badge?: string; // e.g. "Best Value"
+}
+
+export interface UsageStats {
+  marketAnalyses: number;
+  resumeGenerations: number; // master + general runs
+  targetedResumes: number; // individual targeted resumes generated
+  linkedinRewrites: number;
+  autoApplySessions: number;
+  totalRocketsUsed: number;
+  // Legacy fields (backward compat with existing Redis data)
+  totalCreditsUsed?: number;
+  generalResumes?: number;
+  formAnswers?: number;
+}
+
+export interface UserAccount {
+  id: string;
+  email: string;
+  rockets: number;
+  tier: "free" | "scout" | "strike" | "arsenal";
+  usage: UsageStats;
+  createdAt: string;
+}
+
+export interface Personal {
+  name: string;
+  email: string;
+  phone: string;
+  linkedin: string;
+  location: string;
+  portfolio?: string;
+}
+
+export interface EducationEntry {
+  degree: string;
+  field: string;
+  school: string;
+  graduation_date: string;
+  gpa: string;
+  honors: string;
+  notable: string;
+}
+
+export interface ResumeRole {
+  title: string;
+  company: string;
+  dates: string;
+  description: string;
+  bullets?: string[];
+  subsections?: { label: string | null; bullets: string[] }[];
+}
+
+export interface ResumeStructured {
+  personal?: Personal;
+  roles: ResumeRole[];
+  education: EducationEntry[];
+  skills_section?: string;
+  certifications?: string[];
+  summary?: string;
+  coreCompetencies?: string;
+}
+
+export interface ResumeOutput {
+  summary?: string;
+  coreCompetencies?: string;
+  skills?: string;
+  roles?: ResumeRole[];
+  education?: {
+    degree: string;
+    field: string;
+    school: string;
+    date: string;
+    honors?: string | null;
+    gpa?: string | null;
+    notable?: string | null;
+  }[];
+}
+
+export interface Context {
+  directionPresets: string[];
+  careerDirectionText: string;
+  careerDirection: string;
+  empStatus: string;
+  whyLeft: string;
+  latestRoleText: string;
+  notOnResume: string;
+  titleNotCapture: string;
+}
+
+export interface Preferences {
+  compStructure: string;
+  compContext: string;
+  hourlyFloor: string;
+  salaryFloor: string;
+  locationTypes: string[];
+  preferredLocation: string;
+  employmentTypes: string[];
+  dealBreakers: string[];
+  customDealBreaker: string;
+  customEmploymentType?: string;
+  startDate?: string;
+}
+
+export interface Demographics {
+  workAuth: string;
+  highestEducation: string;
+  languages: string;
+  isUSCitizen?: boolean;
+  authorizedToWork?: boolean;
+  noSponsorshipNeeded?: boolean;
+  hasDriversLicense?: boolean;
+  isVeteran?: boolean;
+  hasDisability?: boolean;
+  hasSecurityClearance?: boolean;
+}
+
+export interface Profile {
+  discipline: string;
+  seniority: string;
+  domains: string[];
+  hardSkills: string[];
+  softSkills: string[];
+  differentiators: string[];
+  achievements: string[];
+  targetDirection: string;
+  gaps: Array<{ gap: string; question: string } | string>;
+  avoidTerms?: Array<{ term: string; reason: string } | string>;
+  irrelevantSkills?: string[];
+  irrelevantDomains?: string[];
+}
+
+export interface Keyword {
+  term: string;
+  frequency: string;
+  priority: number;
+  explanation: string;
+  enabled: boolean;
+  onResume: boolean;
+}
+
+export interface MarketAnalysis {
+  keywords: Keyword[];
+  compRanges: { low: string; median: string; high: string } | null;
+  discoveryRecs: Array<{
+    id: string;
+    name: string;
+    rationale: string;
+    compRange?: string;
+    volume?: string;
+  }>;
+  exclusionTags: string[];
+  educationVisibility: string;
+}
+
+export interface JobType {
+  name: string;
+  description: string;
+  why: string;
+  compRange: string | null;
+  volume: string | null;
+  matchStrength: "high" | "mid" | "low";
+  selected: boolean;
+  searchTerms?: string[];
+  fromRec?: boolean;
+  id?: string;
+}
+
+export interface MiningResult {
+  status: "answered" | "unanswered" | "skipped";
+  text: string;
+}
+
+export interface SkillEntry {
+  name: string;
+  category: string;
+  state: ExclusionState;
+  sources: string[];
+  frequency?: string;
+  userHas: boolean;
+  irrelevant?: boolean;
+  priority?: number;
+}
+
+export interface Exclusions {
+  skills: SkillEntry[];
+  customExclusions: string;
+}
+
+export interface LinkedInData {
+  headline: string;
+  headlineVariants?: string[];
+  selectedHeadline?: string;
+  about: string;
+  experience: Array<{
+    title: string;
+    company: string;
+    dates: string;
+    description: string;
+  }>;
+  education: Array<{
+    school: string;
+    degree: string;
+    field: string;
+    dates: string;
+    description: string;
+  }>;
+  skills: string[];
+}
+
+export interface FormAnswer {
+  field: string;
+  value: string;
+  confidence: "high" | "medium" | "low";
+  source: string;
+  category?: string;
+}
+
+export interface ApplyHeuristics {
+  applyIf: string[];
+  skipIf: string[];
+  unknownFieldFramework: string;
+  coverLetterGuidance?: string;
+}
+
+export interface ManualGuide {
+  searchTerms?: Array<{ term: string; priority: number; volume: string }>;
+  applyIf?: string[];
+  skipIf?: string[];
+  unknownFieldFramework?: string;
+}
+
+export interface UploadedResumes {
+  general: boolean; // always true
+  targeted: string[]; // category names (uncapped, max 10 categories)
+}
+
+export interface ApplyData {
+  chromePrompt: string;
+  heuristics: ApplyHeuristics;
+  manualGuide: ManualGuide;
+}
+
+export interface FireLogEntry {
+  timestamp: string;
+  jobTitle: string;
+  company: string;
+  status: "applied" | "skipped" | "failed";
+  reason?: string;
+}
+
+export interface CompetitivenessResult {
+  score: number;
+  breakdown: Record<string, number>;
+  label: string;
+  color: string;
+  potential: number;
+  nextUnlock?: string;
+}
+// Stable step IDs — source of truth is docs/00-canonical/STEPS.json.
+// New code should prefer `Step.XYZ` + STEP_TO_INT[Step.XYZ] over hardcoded
+// integers. SessionData.currentStep stays `number` for now; a future
+// skeleton build will port runtime to the enum (see STEP_MIGRATION_V2
+// flag in storage.ts).
+export enum Step {
+  UPLOAD = "UPLOAD",
+  PREFERENCES = "PREFERENCES",
+  PROFILE = "PROFILE",
+  SEARCH = "SEARCH",
+  MARKET_ANALYSIS = "MARKET_ANALYSIS",
+  DEEP_DIVE = "DEEP_DIVE",
+  SKILLS = "SKILLS",
+  RESUMES = "RESUMES",
+  LINKEDIN = "LINKEDIN",
+  AUTO_APPLY = "AUTO_APPLY",
+}
+
+export const STEP_TO_INT: Record<Step, number> = {
+  [Step.UPLOAD]: 1,
+  [Step.PREFERENCES]: 2,
+  [Step.PROFILE]: 3,
+  [Step.SEARCH]: 4,
+  [Step.MARKET_ANALYSIS]: 5,
+  [Step.DEEP_DIVE]: 6,
+  [Step.SKILLS]: 7,
+  [Step.RESUMES]: 10,
+  [Step.LINKEDIN]: 11,
+  [Step.AUTO_APPLY]: 13,
+};
+
+export const INT_TO_STEP: Record<number, Step | undefined> = Object.fromEntries(
+  Object.entries(STEP_TO_INT).map(([s, n]) => [n, s as Step]),
+);
+
+export const ONBOARDING_PHASE_STEPS: readonly Step[] = [
+  Step.UPLOAD,
+  Step.PREFERENCES,
+  Step.PROFILE,
+  Step.SEARCH,
+  Step.MARKET_ANALYSIS,
+];
+
+export const DASHBOARD_PHASE_STEPS: readonly Step[] = [
+  Step.DEEP_DIVE,
+  Step.SKILLS,
+  Step.RESUMES,
+  Step.LINKEDIN,
+  Step.AUTO_APPLY,
+];
+
+export interface SessionData {
+  schemaVersion?: number;
+  extensionId?: string; // GS-EXT-30 — chrome extension instance linked to this session
+  currentStep?: number;
+  maxStep?: number;
+  dashboardSection?: string;
+  resumeRaw?: string;
+  resumeStructured?: ResumeStructured;
+  personal?: Personal;
+  education?: EducationEntry[];
+  context?: Context;
+  preferences?: Preferences;
+  demographics?: Demographics;
+  profile?: Profile;
+  generatedQueries?: string[];
+  marketSource?: "api" | "manual";
+  marketRaw?: string;
+  queryStats?: Array<{ query: string; resultCount: number }>;
+  marketPrepReport?: string; // Structured market intelligence from MARKET_PREP
+  marketPrepAttempted?: boolean; // Sentinel: true after a failed MARKET_PREP (prevents auto-rerun loop)
+  marketAnalysis?: MarketAnalysis;
+  miningQuestions?: Array<{ id: string; question: string; why?: string }>;
+  jobTypes?: JobType[];
+  miningResults?: Record<string, MiningResult>;
+  miningChatMsgs?: Array<{ role: "user" | "assistant"; content: string }>;
+  exclusions?: Exclusions;
+  rankedCategories?: JobType[];
+  masterResume?: ResumeOutput;
+  generalResume?: ResumeOutput;
+  targetedResumes?: Record<string, ResumeOutput & { _diff?: unknown }>;
+  linkedin?: LinkedInData;
+  formAnswers?: FormAnswer[];
+  applyData?: ApplyData;
+  applyFireLog?: FireLogEntry[];
+  uploadedResumes?: UploadedResumes;
+  competitiveness?: CompetitivenessResult;
+  lastUpdated?: number; // Server-injected timestamp from Redis session save
+}
+
+--- END file ---
+
+---
+
+## Output
+When done, commit all work and return a JSON envelope as your final output:
+
+```json
+{
+  "feature": "onboarding",
+  "status": "built",
+  "branch": "agent/onboarding",
+  "commit": "<sha>",
+  "filesModified": ["<list>"],
+  "typecheckClean": true,
+  "foundationUpdateRequests": [],
+  "notes": "<any notes>"
+}
+```

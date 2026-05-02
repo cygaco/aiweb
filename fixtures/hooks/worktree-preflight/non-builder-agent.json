@@ -1,0 +1,1 @@
+{"tool_name":"Agent","cwd":".","tool_input":{"subagent_type":"qa","prompt":"QA smoke fixture with scopeContract: {\"allowedFiles\":[\"src/lib/types.ts\"],\"forbiddenFiles\":[]}"}}

@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/change-plan/v1",
+  "title": "ChangePlan",
+  "description": "Pre-build object Gamma writes before dispatching a builder. Phase 3J artifact. The shape gives Reviewer + req-reviewer + Compliance an explicit contract: what was promised, what was touched, what crosses a boundary.",
+  "type": "object",
+  "required": [
+    "version",
+    "feature",
+    "goal",
+    "expectedFiles",
+    "expectedRequirements",
+    "possibleDownstreamFeatures",
+    "sharedContractsTouched",
+    "humanDecisionNeeded"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "feature": {
+      "type": "string",
+      "description": "Feature slug under requirements/05-features/<slug>/"
+    },
+    "goal": {
+      "type": "string",
+      "description": "One-sentence description of the change in plain English."
+    },
+    "expectedFiles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Repo-relative paths the builder is expected to add or modify."
+    },
+    "expectedRequirements": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(GS|HL)-[A-Z][A-Z0-9]{1,12}-\\d{2,3}$"
+      },
+      "description": "Story IDs (GS-/HL-) the change should satisfy or update."
+    },
+    "possibleDownstreamFeatures": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Other feature slugs that might be affected. Drawn from requirements.graph.json features[<slug>].usedBy."
+    },
+    "sharedContractsTouched": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "SESSION",
+          "USER",
+          "WORKSPACE",
+          "PAYMENT",
+          "ROUTING",
+          "PERMISSIONS"
+        ]
+      },
+      "description": "Contracts from requirements/04-architecture/contracts/ that this change MAY modify or depend on."
+    },
+    "humanDecisionNeeded": {
+      "type": "boolean",
+      "description": "Whether a Class C-level decision is anticipated. Triggers a Beta consult before Gamma dispatches the builder."
+    },
+    "riskClassAtPlanTime": {
+      "type": "string",
+      "enum": ["A", "B", "C"],
+      "description": "Best-guess risk class at planning time. Final classification is computed by classify-drift.js after the build."
+    },
+    "rejectionPolicy": {
+      "type": "string",
+      "enum": ["halt_on_first_red", "collect_and_report", "auto_fix_class_a"],
+      "default": "halt_on_first_red"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-form context for reviewers. Not consumed by automation."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,2847 @@
+You are the Security Red Team Agent in the multi-agent build system.
+
+Feature: market-research
+Scan for security vulnerabilities. Do NOT write code.
+
+## Checks:
+1. Injection — SQL/NoSQL/command injection in API routes
+2. Broken auth — JWT validation missing or incorrect
+3. Sensitive data exposure — API keys in client bundle, env vars in client components
+4. XSS — unsanitized input rendered (dangerouslySetInnerHTML)
+5. Broken access control — missing auth on protected routes
+6. Security misconfiguration — permissive CORS, missing security headers
+7. Insecure deserialization — JSON.parse on untrusted input without validation
+8. Prompt injection — external/user data NOT wrapped in <untrusted_user_data nonce=...> tags in Claude prompts
+9. Rate limiting — public API routes must have per-IP + global limits
+10. CSRF — mutating routes must call validateOrigin() as if-guard (NEVER try/catch on a boolean)
+11. Client-controlled billing — cost must come from server-side lookup, never from request body
+
+## Output (LAST fenced block — pass false if ANY critical or high severity):
+```json
+{"scanDate":"2026-04-26T07:23:57.868Z","pass":true,"vulnerabilities":[]}
+```
+
+---
+## Built Files
+--- BEGIN built file: src/components/steps/StepCollect.tsx ---
+"use client";
+// StepCollect.tsx — Step 4: Search Query Generation & Job Scraping
+// Feature: market-research | GS-MKT-01 through GS-MKT-10, GS-MKT-21, GS-MKT-27
+// GS-MKT-29 through GS-MKT-39: v3 async ticket model (pollTicket / launchScrape)
+// HYGIENE Rule 29: saveSession before substep advance
+// BUG-012: fresh loadSession() each handler
+
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { Btn } from "@/components/ui/Btn";
+import { Inp } from "@/components/ui/Inp";
+import { callClaude, cleanJson } from "@/lib/api";
+import type { SessionData } from "@/lib/types";
+
+export interface StepCollectProps {
+  session: SessionData;
+  substep: number;
+  analysisStatus?: "idle" | "running" | "done" | "error";
+  analysisError?: string;
+  jobCount?: number;
+  queryCount?: number;
+  onScrapeComplete: (data: {
+    marketRaw: string;
+    queryStats: Array<{ query: string; resultCount: number }>;
+    marketSource: "api";
+  }) => void;
+  onViewTargets: () => void;
+  onSessionUpdate: (data: Partial<SessionData>) => void;
+}
+
+// ── Progress phases displayed during scraping ─────────────────────────────────
+
+const SCRAPE_PHASES = [
+  "Connecting to LinkedIn job network...",
+  "Dispatching search agents...",
+  "Collecting job postings...",
+  "Processing results...",
+  "Deduplicating and normalizing...",
+];
+
+const ANALYSIS_PHASES = [
+  "Scanning for keywords...",
+  "Mapping comp ranges...",
+  "Identifying target categories...",
+  "Building targeting dossier...",
+];
+
+// ── v3 ticket stage display map ───────────────────────────────────────────────
+
+const STAGE_DISPLAY: Record<string, string> = {
+  BD_TRIGGER: "Connecting to LinkedIn job network...",
+  BD_POLL: "Dispatching search agents...",
+  BD_RESULTS: "Collecting job postings...",
+  MARKET_PREP_INPUT: "Processing results...",
+  MARKET_PREP_OUTPUT: "Deduplicating and normalizing...",
+  MARKET_INPUT: "Scanning for keywords...",
+  MARKET_OUTPUT: "Building targeting dossier...",
+  queued: "Queued for processing...",
+  done: "Complete",
+  failed: "Processing failed",
+};
+
+// ── API base URL ──────────────────────────────────────────────────────────────
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+
+// ── LinkedIn URL validation ───────────────────────────────────────────────────
+
+function isLinkedInJobUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.hostname.includes("linkedin.com") &&
+      parsed.pathname.includes("/jobs/view/")
+    );
+  } catch {
+    return false;
+  }
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function StepCollect({
+  session,
+  substep,
+  analysisStatus = "idle",
+  analysisError,
+  jobCount,
+  onScrapeComplete,
+  onViewTargets,
+  onSessionUpdate,
+}: StepCollectProps) {
+  const [queries, setQueries] = useState<string[]>(
+    session.generatedQueries ?? [],
+  );
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [newQuery, setNewQuery] = useState("");
+  const [avoidTerms, setAvoidTerms] = useState<
+    Array<{ term: string; reason: string } | string>
+  >(session.profile?.avoidTerms ?? []);
+
+  const [generatingQueries, setGeneratingQueries] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  const [scraping, setScraping] = useState(false);
+  const [scrapeError, setScrapeError] = useState<string | null>(null);
+  const [scrapePhaseIdx, setScrapePhaseIdx] = useState(0);
+  const [scrapePending, setScrapePending] = useState(0);
+  const [scrapeTotal, setScrapeTotal] = useState(0);
+  const [progressStage, setProgressStage] = useState<string>("queued");
+  const [queueCooldownUntil, setQueueCooldownUntil] = useState<number | null>(
+    null,
+  );
+
+  const [queryStats, setQueryStats] = useState<
+    Array<{ query: string; resultCount: number }>
+  >(session.queryStats ?? []);
+
+  // Manual URL input (GS-MKT-21 — Post-MVP, wired but lightweight)
+  const [manualUrl, setManualUrl] = useState("");
+  const [manualUrlError, setManualUrlError] = useState<string | null>(null);
+
+  const scrapePhaseTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeTicketRef = useRef<string | null>(null);
+
+  // ── Auto-generate queries on first entry ──────────────────────────────────
+
+  useEffect(() => {
+    if (queries.length === 0 && !generatingQueries && session.profile) {
+      void generateQueries();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Cleanup timers on unmount ─────────────────────────────────────────────
+
+  useEffect(() => {
+    return () => {
+      if (scrapePhaseTimerRef.current) {
+        clearInterval(scrapePhaseTimerRef.current);
+      }
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+      }
+    };
+  }, []);
+
+  // ── Mount-recovery: resume polling if a ticket was in-flight ─────────────
+
+  useEffect(() => {
+    const savedTicketId = localStorage.getItem("mkt_activeTicketId");
+    if (savedTicketId && !scraping) {
+      setScraping(true);
+      setScrapeError(null);
+      activeTicketRef.current = savedTicketId;
+      void pollTicket(savedTicketId);
+    }
+    return () => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Ticket polling (v3 async model) ──────────────────────────────────────
+
+  const pollTicket = useCallback(
+    async (ticketId: string) => {
+      const POLL_INTERVAL = Math.floor(Math.random() * 2000) + 3000; // 3–5s jitter per GS-MKT-30
+
+      try {
+        const res = await fetch(`${API_BASE}/tickets/${ticketId}`);
+        if (!res.ok) {
+          if (res.status === 404) {
+            setScrapeError("Scrape ticket not found. Please try again.");
+            setScraping(false);
+            activeTicketRef.current = null;
+            localStorage.removeItem("mkt_activeTicketId");
+            return;
+          }
+          // Non-terminal error — keep polling
+          pollTimerRef.current = setTimeout(
+            () => void pollTicket(ticketId),
+            POLL_INTERVAL,
+          );
+          return;
+        }
+
+        const data = (await res.json()) as {
+          status: "pending" | "running" | "done" | "failed";
+          progressStage?: string;
+          results?: {
+            jobs: Array<Record<string, unknown>>;
+            queryStats: Array<{ query: string; resultCount: number }>;
+          };
+          error?: string;
+        };
+
+        if (data.progressStage) {
+          setProgressStage(data.progressStage);
+        }
+
+        if (data.status === "done" && data.results) {
+          // Terminal: success
+          activeTicketRef.current = null;
+          localStorage.removeItem("mkt_activeTicketId");
+          if (scrapePhaseTimerRef.current) {
+            clearInterval(scrapePhaseTimerRef.current);
+            scrapePhaseTimerRef.current = null;
+          }
+          setScraping(false);
+          const jobs = data.results.jobs ?? [];
+          const stats = data.results.queryStats ?? [];
+          setQueryStats(stats);
+          const marketRaw = JSON.stringify(jobs);
+          onScrapeComplete({
+            marketRaw,
+            queryStats: stats,
+            marketSource: "api",
+          });
+        } else if (data.status === "failed") {
+          // Terminal: failure
+          activeTicketRef.current = null;
+          localStorage.removeItem("mkt_activeTicketId");
+          if (scrapePhaseTimerRef.current) {
+            clearInterval(scrapePhaseTimerRef.current);
+            scrapePhaseTimerRef.current = null;
+          }
+          setScraping(false);
+          setScrapeError(data.error ?? "Scrape failed. Please try again.");
+        } else {
+          // Still running — poll again
+          pollTimerRef.current = setTimeout(
+            () => void pollTicket(ticketId),
+            POLL_INTERVAL,
+          );
+        }
+      } catch {
+        // Network error — keep polling
+        pollTimerRef.current = setTimeout(
+          () => void pollTicket(ticketId),
+          POLL_INTERVAL,
+        );
+      }
+    },
+    [onScrapeComplete],
+  );
+
+  // ── Query generation ──────────────────────────────────────────────────────
+
+  const generateQueries = useCallback(async () => {
+    if (!session.profile || !session.preferences || !session.context) {
+      setGenError(
+        "Profile, preferences, and context are required to generate queries.",
+      );
+      return;
+    }
+
+    setGeneratingQueries(true);
+    setGenError(null);
+
+    try {
+      const avoidList = (session.profile.avoidTerms ?? [])
+        .map((t) => (typeof t === "string" ? t : t.term))
+        .filter(Boolean);
+
+      const message = JSON.stringify({
+        discipline: session.profile.discipline,
+        seniority: session.profile.seniority,
+        domains: session.profile.domains,
+        hardSkills: session.profile.hardSkills?.slice(0, 15),
+        targetDirection: session.profile.targetDirection,
+        employmentTypes: session.preferences.employmentTypes,
+        avoidTerms: avoidList,
+        context: {
+          careerDirection: session.context.careerDirection,
+          careerDirectionText: session.context.careerDirectionText,
+        },
+      });
+
+      const raw = await callClaude("QUERY_GEN", message, 512);
+      const parsed = JSON.parse(cleanJson(raw)) as string[];
+
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw new Error("No queries generated");
+      }
+
+      const generated = parsed
+        .filter((q) => typeof q === "string" && q.trim().length > 0)
+        .slice(0, 6);
+
+      setQueries(generated);
+      onSessionUpdate({ generatedQueries: generated });
+    } catch (e) {
+      setGenError(
+        e instanceof Error ? e.message : "Failed to generate queries",
+      );
+    } finally {
+      setGeneratingQueries(false);
+    }
+  }, [session, onSessionUpdate]);
+
+  // ── Query editing ──────────────────────────────────────────────────────────
+
+  function startEdit(idx: number) {
+    setEditingIdx(idx);
+    setEditValue(queries[idx]);
+  }
+
+  function commitEdit(idx: number) {
+    const trimmed = editValue.trim();
+    if (!trimmed) {
+      // Reject empty — restore original (GS-MKT-03)
+      setEditingIdx(null);
+      setEditValue("");
+      return;
+    }
+    const updated = [...queries];
+    updated[idx] = trimmed;
+    setQueries(updated);
+    onSessionUpdate({ generatedQueries: updated });
+    setEditingIdx(null);
+    setEditValue("");
+  }
+
+  function cancelEdit() {
+    setEditingIdx(null);
+    setEditValue("");
+  }
+
+  function removeQuery(idx: number) {
+    // Must keep at least 1 query (GS-MKT-05)
+    if (queries.length <= 1) return;
+    const updated = queries.filter((_, i) => i !== idx);
+    setQueries(updated);
+    onSessionUpdate({ generatedQueries: updated });
+  }
+
+  function addQuery() {
+    const trimmed = newQuery.trim();
+    if (!trimmed) return;
+    const updated = [...queries, trimmed];
+    setQueries(updated);
+    onSessionUpdate({ generatedQueries: updated });
+    setNewQuery("");
+  }
+
+  // ── Avoid terms ───────────────────────────────────────────────────────────
+
+  function removeAvoidTerm(idx: number) {
+    const updated = avoidTerms.filter((_, i) => i !== idx);
+    setAvoidTerms(updated);
+    onSessionUpdate({
+      profile: { ...session.profile!, avoidTerms: updated },
+    });
+  }
+
+  // ── Manual URL (GS-MKT-21) ────────────────────────────────────────────────
+
+  function handleAddManualUrl() {
+    const trimmed = manualUrl.trim();
+    if (!trimmed) return;
+    if (!isLinkedInJobUrl(trimmed)) {
+      setManualUrlError(
+        "Please enter a valid LinkedIn job URL (linkedin.com/jobs/view/...)",
+      );
+      return;
+    }
+    setManualUrlError(null);
+    setManualUrl("");
+    // Append as a placeholder entry to marketRaw — would normally scrape the URL
+    // Post-MVP: actual scraping. For now, acknowledge the intent.
+    // This satisfies GS-MKT-21 acceptance criteria (input + validation)
+  }
+
+  // ── Scrape launch (GS-MKT-06, GS-MKT-29–39: v3 ticket model) ────────────
+
+  async function launchScrape() {
+    if (
+      scraping ||
+      queries.length === 0 ||
+      (queueCooldownUntil !== null && Date.now() < queueCooldownUntil)
+    )
+      return;
+
+    setScraping(true);
+    setScrapeError(null);
+    setScrapePhaseIdx(0);
+    setProgressStage("queued");
+
+    // Animate scrape phases
+    let phaseIdx = 0;
+    scrapePhaseTimerRef.current = setInterval(() => {
+      phaseIdx = Math.min(phaseIdx + 1, SCRAPE_PHASES.length - 1);
+      setScrapePhaseIdx(phaseIdx);
+    }, 18000);
+
+    try {
+      const location =
+        session.preferences?.preferredLocation ||
+        session.preferences?.locationTypes?.join(", ") ||
+        "United States";
+      const employmentTypes = session.preferences?.employmentTypes ?? [
+        "Full-time",
+      ];
+      const idempotencyKey = `mkt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      const res = await fetch(`${API_BASE}/jobs/scrape`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({ queries, location, employmentTypes }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 503) {
+          const cooldownEnd = Date.now() + 30_000;
+          setQueueCooldownUntil(cooldownEnd);
+          setScrapeError(
+            "Market scraping temporarily unavailable — please try again in a minute.",
+          );
+          setScraping(false);
+          if (scrapePhaseTimerRef.current)
+            clearInterval(scrapePhaseTimerRef.current);
+          // Auto-clear cooldown after 30s
+          setTimeout(() => setQueueCooldownUntil(null), 30_000);
+          return;
+        }
+        const errText = await res.text().catch(() => "");
+        throw new Error(
+          `Scrape request failed (${res.status}): ${errText.slice(0, 200)}`,
+        );
+      }
+
+      const data = (await res.json()) as { ticketId?: string };
+      const ticketId = data.ticketId;
+
+      if (!ticketId) {
+        throw new Error("No ticket ID returned from scrape service.");
+      }
+
+      // Store for tab-close recovery
+      localStorage.setItem("mkt_activeTicketId", ticketId);
+      activeTicketRef.current = ticketId;
+
+      // Begin polling
+      void pollTicket(ticketId);
+    } catch (e) {
+      if (scrapePhaseTimerRef.current) {
+        clearInterval(scrapePhaseTimerRef.current);
+        scrapePhaseTimerRef.current = null;
+      }
+      setScrapeError(
+        e instanceof Error ? e.message : "Job scrape failed. Please try again.",
+      );
+      setScraping(false);
+    }
+  }
+
+  // ── Thin data check (GS-MKT-25, GS-MKT-26) ───────────────────────────────
+
+  const jobCountForCheck =
+    jobCount ??
+    (() => {
+      if (!session.marketRaw) return null;
+      try {
+        const parsed = JSON.parse(session.marketRaw);
+        return Array.isArray(parsed) ? parsed.length : null;
+      } catch {
+        return null;
+      }
+    })();
+
+  const isThinData =
+    jobCountForCheck !== null && jobCountForCheck > 0 && jobCountForCheck < 15;
+  const isTooThinForAnalysis =
+    jobCountForCheck !== null && jobCountForCheck < 5;
+
+  // ── Scrape-complete / analysis-running display ────────────────────────────
+
+  const hasScrapeResult = !!session.marketRaw;
+  const isAnalyzing = analysisStatus === "running";
+  const analysisComplete = analysisStatus === "done";
+
+  // Determine which phase label to show during analysis
+  const [analysisPhaseLabelIdx, setAnalysisPhaseLabelIdx] = useState(0);
+  const analysisPhaseRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (isAnalyzing && !analysisPhaseRef.current) {
+      setAnalysisPhaseLabelIdx(0);
+      analysisPhaseRef.current = setInterval(() => {
+        setAnalysisPhaseLabelIdx((prev) =>
+          Math.min(prev + 1, ANALYSIS_PHASES.length - 1),
+        );
+      }, 12000);
+    }
+    if (!isAnalyzing && analysisPhaseRef.current) {
+      clearInterval(analysisPhaseRef.current);
+      analysisPhaseRef.current = null;
+    }
+    return () => {
+      if (analysisPhaseRef.current) {
+        clearInterval(analysisPhaseRef.current);
+        analysisPhaseRef.current = null;
+      }
+    };
+  }, [isAnalyzing]);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const containerStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "24px",
+    maxWidth: "640px",
+    margin: "0 auto",
+    padding: "24px 16px",
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+  };
+
+  const headingStyle: React.CSSProperties = {
+    fontSize: "20px",
+    fontWeight: 600,
+    color: "var(--text)",
+    margin: 0,
+  };
+
+  const subheadStyle: React.CSSProperties = {
+    fontSize: "13px",
+    color: "var(--text-muted)",
+    margin: 0,
+  };
+
+  const queryRowStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    background: "var(--surface-alt)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
+    padding: "8px 12px",
+  };
+
+  const queryTextStyle: React.CSSProperties = {
+    flex: 1,
+    fontSize: "14px",
+    color: "var(--text)",
+    fontFamily: "var(--font-body)",
+  };
+
+  const tagStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    background: "var(--surface-alt)",
+    border: "1px solid var(--border)",
+    borderRadius: "4px",
+    padding: "3px 8px",
+    fontSize: "13px",
+    color: "var(--text-muted)",
+  };
+
+  const progressBoxStyle: React.CSSProperties = {
+    background: "var(--surface-alt)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
+    padding: "24px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    alignItems: "center",
+    textAlign: "center",
+  };
+
+  const spinnerStyle: React.CSSProperties = {
+    width: "32px",
+    height: "32px",
+    border: "3px solid var(--border)",
+    borderTopColor: "var(--primary)",
+    borderRadius: "50%",
+    animation: "spin 0.8s linear infinite",
+  };
+
+  // Fix 7: replace rgba() with color-mix() equivalents
+  const advisoryStyle: React.CSSProperties = {
+    background: "color-mix(in srgb, var(--warning) 8%, transparent)",
+    border: "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
+    borderRadius: "var(--radius)",
+    padding: "12px 16px",
+    fontSize: "13px",
+    color: "var(--text)",
+  };
+
+  const statRowStyle: React.CSSProperties = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: "13px",
+    color: "var(--text-muted)",
+    padding: "4px 0",
+    borderBottom: "1px solid var(--border)",
+  };
+
+  // ── Scraping in progress ──────────────────────────────────────────────────
+
+  if (scraping && !hasScrapeResult) {
+    // Show v3 stage label when available, fall back to phase animation
+    const progressLabel =
+      STAGE_DISPLAY[progressStage] ?? SCRAPE_PHASES[scrapePhaseIdx];
+    return (
+      <div style={containerStyle}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={progressBoxStyle}>
+          <div style={spinnerStyle} aria-hidden="true" />
+          <div>
+            <p
+              style={{
+                fontSize: "16px",
+                fontWeight: 600,
+                color: "var(--text)",
+                margin: "0 0 8px",
+              }}
+            >
+              Scanning the market...
+            </p>
+            <p
+              style={{
+                fontSize: "13px",
+                color: "var(--text-muted)",
+                margin: 0,
+              }}
+            >
+              {progressLabel}
+            </p>
+            {scrapeTotal > 0 && (
+              <p
+                style={{
+                  fontSize: "12px",
+                  color: "var(--text-muted)",
+                  marginTop: "8px",
+                }}
+              >
+                {scrapeTotal - scrapePending} of {scrapeTotal} queries processed
+              </p>
+            )}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+              width: "100%",
+            }}
+          >
+            {SCRAPE_PHASES.map((phase, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  fontSize: "12px",
+                  color:
+                    i < scrapePhaseIdx
+                      ? "var(--success, #22c55e)"
+                      : i === scrapePhaseIdx
+                        ? "var(--text)"
+                        : "var(--text-muted)",
+                  opacity: i > scrapePhaseIdx ? 0.4 : 1,
+                }}
+              >
+                <span>
+                  {i < scrapePhaseIdx ? "+" : i === scrapePhaseIdx ? ">" : " "}
+                </span>
+                <span>{phase}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Analysis in progress (same screen, post-scrape) ───────────────────────
+
+  if (hasScrapeResult && (isAnalyzing || analysisComplete)) {
+    const currentAnalysisPhase = ANALYSIS_PHASES[analysisPhaseLabelIdx];
+    const jobsCount = jobCountForCheck ?? 0;
+
+    return (
+      <div style={containerStyle}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        {/* Query stats summary */}
+        {queryStats.length > 0 && (
+          <div style={sectionStyle}>
+            <p style={subheadStyle}>Query performance</p>
+            {queryStats.map((qs) => (
+              <div key={qs.query} style={statRowStyle}>
+                <span style={{ color: "var(--text)" }}>{qs.query}</span>
+                <span
+                  style={{
+                    fontWeight: 600,
+                    color:
+                      qs.resultCount === 0
+                        ? "var(--error)"
+                        : "var(--text-muted)",
+                  }}
+                >
+                  {qs.resultCount} results
+                </span>
+              </div>
+            ))}
+            <p
+              style={{
+                fontSize: "13px",
+                color: "var(--text-muted)",
+                margin: 0,
+              }}
+            >
+              {jobsCount} unique jobs found
+            </p>
+          </div>
+        )}
+
+        {/* Thin data advisory (GS-MKT-25) */}
+        {isThinData && !isTooThinForAnalysis && (
+          <div style={advisoryStyle}>
+            <strong>Thin data advisory:</strong> Only {jobsCount} jobs returned.
+            Analysis quality may be limited. Consider broadening your search
+            parameters (add employment types, expand location, relax avoid
+            terms).
+          </div>
+        )}
+
+        {/* Analysis progress or complete */}
+        <div style={progressBoxStyle}>
+          {isAnalyzing ? (
+            <>
+              <div style={spinnerStyle} aria-hidden="true" />
+              <div>
+                <p
+                  style={{
+                    fontSize: "16px",
+                    fontWeight: 600,
+                    color: "var(--text)",
+                    margin: "0 0 8px",
+                  }}
+                >
+                  Analyzing your market...
+                </p>
+                <p
+                  style={{
+                    fontSize: "13px",
+                    color: "var(--text-muted)",
+                    margin: 0,
+                  }}
+                >
+                  {currentAnalysisPhase}
+                </p>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  width: "100%",
+                }}
+              >
+                {ANALYSIS_PHASES.map((phase, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      fontSize: "12px",
+                      color:
+                        i < analysisPhaseLabelIdx
+                          ? "var(--success, #22c55e)"
+                          : i === analysisPhaseLabelIdx
+                            ? "var(--text)"
+                            : "var(--text-muted)",
+                      opacity: i > analysisPhaseLabelIdx ? 0.4 : 1,
+                    }}
+                  >
+                    <span>
+                      {i < analysisPhaseLabelIdx
+                        ? "+"
+                        : i === analysisPhaseLabelIdx
+                          ? ">"
+                          : " "}
+                    </span>
+                    <span>{phase}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            /* analysisComplete */
+            <>
+              <p
+                style={{
+                  fontSize: "20px",
+                  fontWeight: 700,
+                  color: "var(--text)",
+                  margin: 0,
+                }}
+              >
+                Analysis Complete
+              </p>
+              <p
+                style={{
+                  fontSize: "13px",
+                  color: "var(--text-muted)",
+                  margin: 0,
+                }}
+              >
+                {jobsCount} jobs analyzed
+              </p>
+              <Btn variant="primary" size="lg" onClick={onViewTargets}>
+                View Your Targets
+              </Btn>
+            </>
+          )}
+        </div>
+
+        {analysisError && (
+          <p style={{ fontSize: "13px", color: "var(--error)", margin: 0 }}>
+            {analysisError}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // ── Query editor (default view) ────────────────────────────────────────────
+
+  return (
+    <div style={containerStyle}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      <div style={sectionStyle}>
+        <h2 style={headingStyle}>Search Vectors</h2>
+        <p style={subheadStyle}>
+          These queries will be used to scan LinkedIn for jobs matching your
+          profile. Edit, add, or remove before launching.
+        </p>
+      </div>
+
+      {/* Generation error */}
+      {genError && (
+        <p style={{ fontSize: "13px", color: "var(--error)", margin: 0 }}>
+          {genError}
+        </p>
+      )}
+
+      {/* Loading state */}
+      {generatingQueries && (
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div
+            style={{
+              ...spinnerStyle,
+              width: "18px",
+              height: "18px",
+              borderWidth: "2px",
+            }}
+            aria-hidden="true"
+          />
+          <span style={{ fontSize: "14px", color: "var(--text-muted)" }}>
+            Generating search queries...
+          </span>
+        </div>
+      )}
+
+      {/* Query list */}
+      {!generatingQueries && queries.length > 0 && (
+        <div style={sectionStyle}>
+          {queries.map((q, idx) => (
+            <div key={idx} style={queryRowStyle}>
+              {editingIdx === idx ? (
+                <>
+                  <Inp
+                    value={editValue}
+                    onChange={setEditValue}
+                    placeholder="Search query"
+                    style={{ flex: 1 }}
+                    aria-label={`Edit query ${idx + 1}`}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitEdit(idx);
+                      if (e.key === "Escape") cancelEdit();
+                    }}
+                  />
+                  <Btn
+                    size="sm"
+                    variant="primary"
+                    onClick={() => commitEdit(idx)}
+                    aria-label="Save query"
+                  >
+                    Save
+                  </Btn>
+                  <Btn
+                    size="sm"
+                    variant="ghost"
+                    onClick={cancelEdit}
+                    aria-label="Cancel edit"
+                  >
+                    Cancel
+                  </Btn>
+                </>
+              ) : (
+                <>
+                  <span style={queryTextStyle}>{q}</span>
+                  {queryStats.find((qs) => qs.query === q) && (
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color:
+                          (queryStats.find((qs) => qs.query === q)
+                            ?.resultCount ?? 0) === 0
+                            ? "var(--error)"
+                            : "var(--text-muted)",
+                        minWidth: "60px",
+                        textAlign: "right",
+                      }}
+                    >
+                      {queryStats.find((qs) => qs.query === q)?.resultCount ??
+                        0}{" "}
+                      jobs
+                    </span>
+                  )}
+                  <Btn
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => startEdit(idx)}
+                    aria-label={`Edit query: ${q}`}
+                  >
+                    Edit
+                  </Btn>
+                  <Btn
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeQuery(idx)}
+                    disabled={queries.length <= 1}
+                    aria-label={`Remove query: ${q}`}
+                  >
+                    x
+                  </Btn>
+                </>
+              )}
+            </div>
+          ))}
+
+          {/* Add query row */}
+          <div style={{ display: "flex", gap: "8px" }}>
+            <Inp
+              value={newQuery}
+              onChange={setNewQuery}
+              placeholder="Add a search query..."
+              aria-label="New search query"
+              style={{ flex: 1 }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addQuery();
+              }}
+            />
+            <Btn
+              size="sm"
+              variant="secondary"
+              onClick={addQuery}
+              disabled={!newQuery.trim()}
+              aria-label="Add query"
+            >
+              + Add
+            </Btn>
+          </div>
+        </div>
+      )}
+
+      {/* No-fly zones (avoid terms) — GS-MKT-02 */}
+      {avoidTerms.length > 0 && (
+        <div style={sectionStyle}>
+          <p
+            style={{ fontSize: "13px", color: "var(--text-muted)", margin: 0 }}
+          >
+            No-fly zones (excluded from queries):
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {avoidTerms.map((term, idx) => {
+              const label = typeof term === "string" ? term : term.term;
+              return (
+                <span key={idx} style={tagStyle}>
+                  {label}
+                  <button
+                    onClick={() => removeAvoidTerm(idx)}
+                    aria-label={`Remove avoid term: ${label}`}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "0 2px",
+                      color: "var(--text-muted)",
+                      fontSize: "14px",
+                      lineHeight: 1,
+                    }}
+                  >
+                    x
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Manual URL input (GS-MKT-21 — Post-MVP) */}
+      <div style={sectionStyle}>
+        <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: 0 }}>
+          Add a specific LinkedIn job posting:
+        </p>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <Inp
+            value={manualUrl}
+            onChange={(v) => {
+              setManualUrl(v);
+              setManualUrlError(null);
+            }}
+            placeholder="https://www.linkedin.com/jobs/view/..."
+            aria-label="LinkedIn job URL"
+            error={manualUrlError ?? undefined}
+            style={{ flex: 1 }}
+          />
+          <Btn
+            size="sm"
+            variant="secondary"
+            onClick={handleAddManualUrl}
+            disabled={!manualUrl.trim()}
+            aria-label="Add job URL"
+          >
+            Add
+          </Btn>
+        </div>
+      </div>
+
+      {/* Scrape error */}
+      {scrapeError && (
+        <p style={{ fontSize: "13px", color: "var(--error)", margin: 0 }}>
+          {scrapeError}
+        </p>
+      )}
+
+      {/* Scrape action */}
+      <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+        <Btn
+          variant="primary"
+          size="lg"
+          onClick={launchScrape}
+          disabled={
+            scraping ||
+            queries.length === 0 ||
+            (queueCooldownUntil !== null && Date.now() < queueCooldownUntil)
+          }
+          loading={scraping}
+          aria-label={`Launch recon with ${queries.length} quer${queries.length === 1 ? "y" : "ies"}`}
+        >
+          Launch Recon ({queries.length} quer
+          {queries.length === 1 ? "y" : "ies"})
+        </Btn>
+        {!generatingQueries && (
+          <Btn
+            variant="ghost"
+            size="sm"
+            onClick={generateQueries}
+            disabled={generatingQueries || scraping}
+            aria-label="Regenerate search queries"
+          >
+            Regenerate
+          </Btn>
+        )}
+      </div>
+    </div>
+  );
+}
+
+--- END built file ---
+
+--- BEGIN built file: src/components/steps/Step6Analysis.tsx ---
+"use client";
+// Step6Analysis.tsx — Step 5: Two-Phase Market Analysis + Category Selection
+// Feature: market-research | GS-MKT-11 through GS-MKT-20, GS-MKT-23, GS-MKT-24
+// BUG-012: fresh loadSession() each handler
+// BUG-064: substep state single source of truth
+// GS-MKT-20 note: auto-save callbacks MUST omit jobTypes; only Lock includes them
+
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { Btn } from "@/components/ui/Btn";
+import { callClaude, cleanJson, isRocketError } from "@/lib/api";
+import { buildMarketPrepPayload, preprocessMarketData } from "@/lib/utils";
+import { WEIGHTS } from "@/lib/competitiveness";
+import type {
+  SessionData,
+  JobType,
+  MarketAnalysis,
+  Keyword,
+} from "@/lib/types";
+
+export interface Step6AnalysisProps {
+  session: SessionData;
+  initialViewPhase?: "analyzing" | "categories";
+  onStatusChange?: (
+    status: "idle" | "running" | "done" | "error",
+    error?: string,
+    jobCount?: number,
+  ) => void;
+  onComplete: (data: Partial<SessionData>) => void;
+  onSessionUpdate?: (data: Partial<SessionData>) => void;
+}
+
+// ── MARKET output parsing ─────────────────────────────────────────────────────
+
+interface MarketRawOutput {
+  keywords?: Keyword[];
+  compRanges?: { low: string; median: string; high: string } | null;
+  jobTypes?: Array<{
+    name: string;
+    description: string;
+    why: string;
+    compRange?: string | null;
+    volume?: string | null;
+    matchStrength?: "high" | "mid" | "low";
+    searchTerms?: string[];
+  }>;
+  miningQuestions?: Array<{ id: string; question: string; why?: string }>;
+  discoveryRecs?: Array<{
+    id: string;
+    name: string;
+    rationale: string;
+    compRange?: string;
+    volume?: string;
+  }>;
+  exclusionTags?: string[];
+  educationVisibility?: string;
+}
+
+function parseMarketOutput(raw: string): {
+  marketAnalysis: MarketAnalysis;
+  jobTypes: JobType[];
+  miningQuestions: Array<{ id: string; question: string; why?: string }>;
+} {
+  const parsed = JSON.parse(cleanJson(raw)) as MarketRawOutput;
+
+  const jobTypes: JobType[] = (parsed.jobTypes ?? []).map((jt) => ({
+    name: jt.name ?? "",
+    description: jt.description ?? "",
+    why: jt.why ?? "",
+    compRange: jt.compRange ?? null,
+    volume: jt.volume ?? null,
+    matchStrength: jt.matchStrength ?? "mid",
+    selected: true, // GS-MKT-14: all default selected
+    searchTerms: jt.searchTerms,
+  }));
+
+  const marketAnalysis: MarketAnalysis = {
+    keywords: parsed.keywords ?? [],
+    compRanges: parsed.compRanges ?? null,
+    discoveryRecs: (parsed.discoveryRecs ?? []).map((r, i) => ({
+      id: r.id ?? `rec-${i}`,
+      name: r.name ?? "",
+      rationale: r.rationale ?? "",
+      compRange: r.compRange,
+      volume: r.volume,
+    })),
+    exclusionTags: parsed.exclusionTags ?? [],
+    educationVisibility: parsed.educationVisibility ?? "show",
+  };
+
+  return {
+    marketAnalysis,
+    jobTypes,
+    miningQuestions: parsed.miningQuestions ?? [],
+  };
+}
+
+// ── FOMO competitiveness delta ────────────────────────────────────────────────
+
+function getFomoDelta(jobTypes: JobType[]): number {
+  const allSelected = jobTypes.every((jt) => jt.selected);
+  if (allSelected) return 0;
+  const unselected = jobTypes.filter((jt) => !jt.selected);
+  // Each unselected category represents a fraction of the category weight
+  const perCat = WEIGHTS.categoriesSelected / Math.max(jobTypes.length, 1);
+  return Math.round(unselected.length * perCat);
+}
+
+// ── Match strength badge label/color ─────────────────────────────────────────
+
+function matchBadge(strength: "high" | "mid" | "low"): {
+  label: string;
+  color: string;
+} {
+  switch (strength) {
+    case "high":
+      return { label: "Top Candidate", color: "var(--primary, #ff5a17)" };
+    case "mid":
+      return { label: "Strong Fit", color: "var(--warning, #eab308)" };
+    case "low":
+      return { label: "Worth Exploring", color: "var(--text-muted)" };
+  }
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function Step6Analysis({
+  session,
+  initialViewPhase,
+  onStatusChange,
+  onComplete,
+  onSessionUpdate,
+}: Step6AnalysisProps) {
+  // View phase: "analyzing" while pipeline runs, "categories" once done
+  const [viewPhase, setViewPhase] = useState<"analyzing" | "categories">(
+    initialViewPhase ?? (session.marketAnalysis ? "categories" : "analyzing"),
+  );
+
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Category state (GS-MKT-17)
+  const [jobTypes, setJobTypes] = useState<JobType[]>(session.jobTypes ?? []);
+  const [marketAnalysis, setMarketAnalysis] = useState<MarketAnalysis | null>(
+    session.marketAnalysis ?? null,
+  );
+
+  // "Why you fit" expansions
+  const [expandedIdx, setExpandedIdx] = useState<Set<number>>(new Set());
+
+  // Discovery recs added count cap (max 10 total)
+  const MAX_CATEGORIES = 10;
+
+  const hasRun = useRef(false);
+
+  // ── Run two-phase pipeline ────────────────────────────────────────────────
+
+  const runAnalysis = useCallback(
+    async (isRerun: boolean = false) => {
+      // Fresh read: BUG-012
+      const marketRaw = session.marketRaw;
+      const profile = session.profile;
+      const preferences = session.preferences;
+      const queryStats = session.queryStats;
+
+      if (!marketRaw) {
+        setAnalysisError(
+          "No job data available. Please run job scraping first.",
+        );
+        onStatusChange?.("error", "No market data");
+        return;
+      }
+
+      // Thin data block (GS-MKT-26): block below 5 jobs
+      let jobCount = 0;
+      try {
+        const parsed = JSON.parse(marketRaw);
+        jobCount = Array.isArray(parsed) ? parsed.length : 0;
+      } catch {
+        // treat as 0
+      }
+
+      if (jobCount < 5) {
+        const msg = `Analysis requires at least 5 jobs (${jobCount} found). Broaden your search parameters.`;
+        setAnalysisError(msg);
+        onStatusChange?.("error", msg, jobCount);
+        return;
+      }
+
+      setIsRunning(true);
+      setAnalysisError(null);
+      onStatusChange?.("running", undefined, jobCount);
+
+      // ── Phase 1: MARKET_PREP ──────────────────────────────────────────────
+
+      let prepReport = "";
+      try {
+        let jobs: Array<Record<string, unknown>> = [];
+        try {
+          const p = JSON.parse(marketRaw);
+          jobs = Array.isArray(p) ? (p as Array<Record<string, unknown>>) : [];
+        } catch {
+          // Non-JSON marketRaw — use preprocessed text
+          const { text } = preprocessMarketData(marketRaw);
+          jobs = [{ description: text }];
+        }
+
+        const { payload } = buildMarketPrepPayload(
+          jobs,
+          (profile ?? {}) as Record<string, unknown>,
+          preferences?.employmentTypes ?? ["Full-time"],
+          queryStats,
+        );
+
+        // HYGIENE Rule 62: billing handled server-side via ROCKET_COSTS
+        const prepRaw = await callClaude("MARKET_PREP", payload, 4096);
+        prepReport = prepRaw;
+
+        // Save intermediate result (HYGIENE Rule 29)
+        onSessionUpdate?.({ marketPrepReport: prepReport });
+      } catch (e) {
+        // GS-MKT-12: fallback — continue with raw data on MARKET_PREP failure
+        if (isRocketError(e)) {
+          setAnalysisError(
+            `Insufficient rockets. ${e.remaining !== undefined ? `Balance: ${e.remaining}` : ""}`,
+          );
+          setIsRunning(false);
+          onStatusChange?.("error", "Insufficient rockets");
+          return;
+        }
+        // Non-rocket error: fall through to Phase 2 with raw data
+        prepReport = "";
+      }
+
+      // ── Phase 2: MARKET ───────────────────────────────────────────────────
+
+      try {
+        // Build Phase 2 message
+        let marketMessage: string;
+        if (prepReport) {
+          // Note: content derives from untrusted job data — wrapped in delimiter tags (RT-701)
+          marketMessage = JSON.stringify({
+            marketPrepReport: `<market_prep_output>\n${prepReport}\n</market_prep_output>`,
+            profile: {
+              discipline: profile?.discipline,
+              seniority: profile?.seniority,
+              hardSkills: profile?.hardSkills?.slice(0, 20),
+              differentiators: profile?.differentiators,
+              achievements: profile?.achievements?.slice(0, 5),
+              targetDirection: profile?.targetDirection,
+              avoidTerms: (profile?.avoidTerms ?? []).map((t) =>
+                typeof t === "string" ? t : t.term,
+              ),
+            },
+            employmentTypes: preferences?.employmentTypes ?? ["Full-time"],
+          });
+        } else {
+          // Fallback: send raw data directly
+          const { text } = preprocessMarketData(marketRaw);
+          marketMessage = JSON.stringify({
+            rawJobData: text,
+            profile: {
+              discipline: profile?.discipline,
+              seniority: profile?.seniority,
+              hardSkills: profile?.hardSkills?.slice(0, 20),
+              differentiators: profile?.differentiators,
+              achievements: profile?.achievements?.slice(0, 5),
+              targetDirection: profile?.targetDirection,
+              avoidTerms: (profile?.avoidTerms ?? []).map((t) =>
+                typeof t === "string" ? t : t.term,
+              ),
+            },
+            employmentTypes: preferences?.employmentTypes ?? ["Full-time"],
+          });
+        }
+
+        const marketRaw2 = await callClaude("MARKET", marketMessage, 4096);
+        const {
+          marketAnalysis: ma,
+          jobTypes: jts,
+          miningQuestions,
+        } = parseMarketOutput(marketRaw2);
+
+        setMarketAnalysis(ma);
+        setJobTypes(jts);
+
+        // Save analysis results (GS-MKT-13, HYGIENE Rule 29)
+        // Note: jobTypes NOT saved here — only via explicit Lock (GS-MKT-20 note)
+        onSessionUpdate?.({
+          marketPrepReport: prepReport || undefined,
+          marketAnalysis: ma,
+          miningQuestions,
+        });
+
+        setViewPhase("categories");
+        setIsRunning(false);
+        onStatusChange?.("done", undefined, jobCount);
+      } catch (e) {
+        const msg = isRocketError(e)
+          ? `Insufficient rockets for analysis.`
+          : e instanceof Error
+            ? e.message
+            : "Market analysis failed";
+        setAnalysisError(msg);
+        setIsRunning(false);
+        onStatusChange?.("error", msg, jobCount);
+      }
+    },
+    [session, onStatusChange, onSessionUpdate],
+  );
+
+  // ── Auto-run on mount ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    hasRun.current = false; // BUG-035: reset so React Strict Mode remount doesn't skip analysis
+    if (hasRun.current) return;
+    hasRun.current = true;
+
+    if (viewPhase === "categories" && session.marketAnalysis) {
+      // GS-MKT-16: auto-rerun detection
+      // If marketAnalysis exists but marketPrepReport is absent AND marketRaw exists
+      const needsUpgrade =
+        session.marketAnalysis &&
+        session.marketRaw &&
+        !session.marketPrepReport;
+
+      if (needsUpgrade) {
+        void runAnalysis(false);
+      } else {
+        onStatusChange?.("done", undefined, undefined);
+      }
+      return;
+    }
+
+    if (session.marketRaw) {
+      void runAnalysis(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Refresh analysis (GS-MKT-23) ─────────────────────────────────────────
+
+  async function handleRefresh() {
+    if (isRunning || isRefreshing) return;
+    setIsRefreshing(true);
+    setViewPhase("analyzing");
+    await runAnalysis(true);
+    setIsRefreshing(false);
+  }
+
+  // ── Category toggle (GS-MKT-17) ──────────────────────────────────────────
+
+  function toggleCategory(idx: number) {
+    const updated = jobTypes.map((jt, i) =>
+      i === idx ? { ...jt, selected: !jt.selected } : jt,
+    );
+    setJobTypes(updated);
+    // Don't save jobTypes here — only on Lock (GS-MKT-20 note)
+  }
+
+  // ── Why-you-fit expansion ─────────────────────────────────────────────────
+
+  function toggleExpand(idx: number) {
+    setExpandedIdx((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }
+
+  // ── Discovery rec addition (GS-MKT-19) ───────────────────────────────────
+
+  function addDiscoveryRec(
+    rec: NonNullable<MarketAnalysis["discoveryRecs"]>[number],
+  ) {
+    if (jobTypes.length >= MAX_CATEGORIES) return;
+    const alreadyAdded = jobTypes.some(
+      (jt) => jt.name === rec.name && jt.fromRec,
+    );
+    if (alreadyAdded) return;
+
+    const newType: JobType = {
+      name: rec.name,
+      description: rec.rationale,
+      why: rec.rationale,
+      compRange: rec.compRange ?? null,
+      volume: rec.volume ?? null,
+      matchStrength: "low",
+      selected: true,
+      fromRec: true,
+      id: rec.id,
+    };
+    setJobTypes((prev) => [...prev, newType]);
+  }
+
+  // ── Lock categories (GS-MKT-20) ──────────────────────────────────────────
+
+  function lockCategories() {
+    const hasSelected = jobTypes.some((jt) => jt.selected);
+    if (!hasSelected) return;
+
+    // HYGIENE Rule 56: advance to step 6 hardcoded (not relative +1)
+    onComplete({
+      jobTypes,
+      rankedCategories: jobTypes.filter((jt) => jt.selected),
+      currentStep: 6,
+    });
+  }
+
+  // ── Styles ────────────────────────────────────────────────────────────────
+
+  const containerStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "24px",
+    maxWidth: "640px",
+    margin: "0 auto",
+    padding: "24px 16px",
+  };
+
+  const spinnerStyle: React.CSSProperties = {
+    width: "28px",
+    height: "28px",
+    border: "3px solid var(--border)",
+    borderTopColor: "var(--primary)",
+    borderRadius: "50%",
+    animation: "spin 0.8s linear infinite",
+    flexShrink: 0,
+  };
+
+  const cardStyle = (selected: boolean): React.CSSProperties => ({
+    background: selected ? "var(--surface-alt)" : "var(--surface)",
+    border: `1px solid ${selected ? "var(--border)" : "var(--border)"}`,
+    borderRadius: "var(--radius)",
+    padding: "16px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    opacity: selected ? 1 : 0.5,
+    cursor: "pointer",
+    transition: "opacity 0.15s",
+  });
+
+  const fomodelta = getFomoDelta(jobTypes);
+
+  // ── Analyzing view ────────────────────────────────────────────────────────
+
+  if (viewPhase === "analyzing" || isRunning) {
+    return (
+      <div style={containerStyle}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        {analysisError ? (
+          <div
+            style={{
+              background: "color-mix(in srgb, var(--error) 8%, transparent)",
+              border:
+                "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+              borderRadius: "var(--radius)",
+              padding: "16px",
+              fontSize: "14px",
+              color: "var(--error)",
+            }}
+          >
+            {analysisError}
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              padding: "24px",
+              background: "var(--surface-alt)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+            }}
+          >
+            <div style={spinnerStyle} aria-hidden="true" />
+            <span style={{ fontSize: "14px", color: "var(--text-muted)" }}>
+              Running market analysis...
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Categories view ───────────────────────────────────────────────────────
+
+  const hasSelected = jobTypes.some((jt) => jt.selected);
+  const allSelected = jobTypes.every((jt) => jt.selected);
+
+  return (
+    <div style={containerStyle}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* Compensation Intel (GS-MKT-15) */}
+      {marketAnalysis && (
+        <div
+          style={{
+            background: "var(--surface-alt)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            padding: "16px",
+          }}
+        >
+          <p
+            style={{
+              fontSize: "13px",
+              fontWeight: 600,
+              color: "var(--text-muted)",
+              margin: "0 0 12px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            Compensation Intel
+          </p>
+          {marketAnalysis.compRanges ? (
+            <div style={{ display: "flex", gap: "24px" }}>
+              {[
+                { label: "Low", value: marketAnalysis.compRanges.low },
+                { label: "Median", value: marketAnalysis.compRanges.median },
+                { label: "High", value: marketAnalysis.compRanges.high },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "2px",
+                  }}
+                >
+                  <span
+                    style={{ fontSize: "11px", color: "var(--text-muted)" }}
+                  >
+                    {label}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "18px",
+                      fontWeight: 700,
+                      color: "var(--text)",
+                    }}
+                  >
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p
+              style={{
+                fontSize: "14px",
+                color: "var(--text-muted)",
+                margin: 0,
+              }}
+            >
+              Insufficient data to calculate compensation ranges.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Thin data advisory (GS-MKT-25) */}
+      {(() => {
+        if (!session.marketRaw) return null;
+        try {
+          const parsed = JSON.parse(session.marketRaw);
+          const count = Array.isArray(parsed) ? parsed.length : 0;
+          if (count > 0 && count < 15) {
+            return (
+              <div
+                style={{
+                  background:
+                    "color-mix(in srgb, var(--warning) 8%, transparent)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
+                  borderRadius: "var(--radius)",
+                  padding: "12px 16px",
+                  fontSize: "13px",
+                  color: "var(--text)",
+                }}
+              >
+                <strong>Thin data advisory:</strong> Only {count} jobs in
+                dataset. Analysis quality may be limited. Consider broadening
+                search parameters.
+              </div>
+            );
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      })()}
+
+      {/* Target Categories (GS-MKT-14, GS-MKT-17) */}
+      <div>
+        <p
+          style={{
+            fontSize: "13px",
+            fontWeight: 600,
+            color: "var(--text-muted)",
+            margin: "0 0 12px",
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+          }}
+        >
+          Target Categories
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {jobTypes.map((jt, idx) => {
+            const badge = matchBadge(jt.matchStrength);
+            const isExpanded = expandedIdx.has(idx);
+            return (
+              <div
+                key={idx}
+                style={cardStyle(jt.selected)}
+                onClick={() => toggleCategory(idx)}
+                role="button"
+                tabIndex={0}
+                aria-pressed={jt.selected}
+                aria-label={`${jt.selected ? "Deselect" : "Select"} category: ${jt.name}`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleCategory(idx);
+                  }
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: "8px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={jt.selected}
+                      onChange={() => toggleCategory(idx)}
+                      aria-label={`Select ${jt.name}`}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ cursor: "pointer" }}
+                    />
+                    <span
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 600,
+                        color: "var(--text)",
+                        textDecoration: jt.selected ? "none" : "line-through",
+                      }}
+                    >
+                      {jt.name}
+                    </span>
+                    {jt.fromRec && (
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          background: "var(--surface)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "4px",
+                          padding: "1px 6px",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        Discovery
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: badge.color,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {badge.label}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "12px",
+                    fontSize: "13px",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  {jt.compRange && <span>{jt.compRange}</span>}
+                  {jt.volume && <span>{jt.volume} volume</span>}
+                </div>
+
+                {jt.description && (
+                  <p
+                    style={{
+                      fontSize: "13px",
+                      color: "var(--text-muted)",
+                      margin: 0,
+                    }}
+                  >
+                    {jt.description}
+                  </p>
+                )}
+
+                {/* Why you fit expandable (GS-MKT-14) */}
+                {jt.why && (
+                  <div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleExpand(idx);
+                      }}
+                      aria-expanded={isExpanded}
+                      aria-label={`${isExpanded ? "Collapse" : "Expand"} why you fit for ${jt.name}`}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "var(--primary)",
+                        padding: "0",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      <span>{isExpanded ? "v" : ">"}</span>
+                      <span>Why you fit</span>
+                    </button>
+                    {isExpanded && (
+                      <p
+                        style={{
+                          fontSize: "13px",
+                          color: "var(--text-muted)",
+                          margin: "6px 0 0",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {jt.why}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Discovery recommendations (GS-MKT-19) */}
+      {marketAnalysis &&
+        marketAnalysis.discoveryRecs &&
+        marketAnalysis.discoveryRecs.length > 0 && (
+          <div>
+            <p
+              style={{
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                margin: "0 0 8px",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              Discovery Recommendations
+            </p>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+            >
+              {marketAnalysis.discoveryRecs.map((rec) => {
+                const alreadyAdded = jobTypes.some(
+                  (jt) => jt.name === rec.name && jt.fromRec,
+                );
+                const atCap = jobTypes.length >= MAX_CATEGORIES;
+                return (
+                  <div
+                    key={rec.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "12px",
+                      background: "var(--surface-alt)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius)",
+                      padding: "10px 14px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "2px",
+                        flex: 1,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: 600,
+                          color: "var(--text)",
+                        }}
+                      >
+                        {rec.name}
+                      </span>
+                      <span
+                        style={{ fontSize: "12px", color: "var(--text-muted)" }}
+                      >
+                        {rec.rationale}
+                      </span>
+                    </div>
+                    <Btn
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => addDiscoveryRec(rec)}
+                      disabled={alreadyAdded || atCap}
+                      aria-label={`Add discovery recommendation: ${rec.name}`}
+                    >
+                      {alreadyAdded ? "Added" : atCap ? "Cap reached" : "+ Add"}
+                    </Btn>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+      {/* FOMO warning (GS-MKT-18) */}
+      {!allSelected && fomodelta > 0 && (
+        <div
+          style={{
+            background: "color-mix(in srgb, var(--warning) 8%, transparent)",
+            border:
+              "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
+            borderRadius: "var(--radius)",
+            padding: "12px 16px",
+            fontSize: "13px",
+            color: "var(--text)",
+          }}
+          role="alert"
+        >
+          Selecting all categories would add +{fomodelta} competitiveness
+          points.
+        </div>
+      )}
+
+      {/* Actions */}
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <Btn
+          variant="primary"
+          size="lg"
+          onClick={lockCategories}
+          disabled={!hasSelected || isRunning}
+          aria-label="Lock your target categories and advance"
+        >
+          Lock Your Targets
+        </Btn>
+        <Btn
+          variant="secondary"
+          size="md"
+          onClick={handleRefresh}
+          disabled={isRunning || isRefreshing || !session.marketRaw}
+          loading={isRefreshing}
+          aria-label="Refresh market analysis without re-scraping"
+        >
+          Refresh Analysis
+        </Btn>
+      </div>
+
+      {analysisError && (
+        <p style={{ fontSize: "13px", color: "var(--error)", margin: 0 }}>
+          {analysisError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+--- END built file ---
+
+--- BEGIN built file: src/components/pages/AimPage.tsx ---
+"use client";
+// AimPage.tsx — Onboarding Steps 4-5 orchestrator
+// Feature: market-research | PRD Section 8, FLOW_SPEC substep architecture
+// BUG-004: page.tsx already renders AimPage — this is the component, not the route
+// BUG-012: fresh loadSession() each handler
+// HYGIENE Rule 29: saveSession before substep advance
+// BUG-064: substep state single source of truth
+// BUG-074: client never writes currentStep > maxStep+1
+// GS-MKT-20: auto-save callbacks omit jobTypes; only Lock includes them
+
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { loadSession, saveSession } from "@/lib/storage";
+import { StepCollect } from "@/components/steps/StepCollect";
+import { Step6Analysis } from "@/components/steps/Step6Analysis";
+import type { SessionData } from "@/lib/types";
+
+// ── Substep architecture ──────────────────────────────────────────────────────
+// substep 0: StepCollect — query editor + scrape launch + scrape progress
+// substep 1: StepCollect (analysis-running mode) + Step6Analysis hidden
+// substep 2: Step6Analysis (categories view)
+
+type Substep = 0 | 1 | 2;
+
+export function AimPage() {
+  const [session, setSession] = useState<SessionData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [substep, setSubstep] = useState<Substep>(0);
+
+  // Analysis status reported by Step6Analysis to show in StepCollect
+  const [analysisStatus, setAnalysisStatus] = useState<
+    "idle" | "running" | "done" | "error"
+  >("idle");
+  const [analysisError, setAnalysisError] = useState<string | undefined>(
+    undefined,
+  );
+  const [analysisJobCount, setAnalysisJobCount] = useState<number | undefined>(
+    undefined,
+  );
+
+  const saveInProgress = useRef(false);
+
+  // ── Load session on mount ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    loadSession()
+      .then((s) => {
+        const loaded = s ?? ({} as SessionData);
+        setSession(loaded);
+
+        // Determine initial substep from session state
+        if (loaded.marketAnalysis && loaded.jobTypes?.length) {
+          // Analysis already done — show categories
+          setSubstep(2);
+          setAnalysisStatus("done");
+        } else if (loaded.marketRaw) {
+          // Scrape done, analysis not yet complete — trigger analysis
+          setSubstep(1);
+        } else {
+          // Fresh entry — query editor
+          setSubstep(0);
+        }
+      })
+      .catch(() => {
+        setSession({} as SessionData);
+        setSubstep(0);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  // ── Session update helper (BUG-012: always read fresh) ───────────────────
+
+  const handleSessionUpdate = useCallback(
+    async (data: Partial<SessionData>) => {
+      if (saveInProgress.current) return;
+      saveInProgress.current = true;
+      try {
+        // BUG-012: fresh loadSession each time
+        const latest = (await loadSession()) ?? ({} as SessionData);
+        const updated = { ...latest, ...data };
+        await saveSession(updated);
+        setSession(updated);
+      } finally {
+        saveInProgress.current = false;
+      }
+    },
+    [],
+  );
+
+  // ── Scrape complete callback ───────────────────────────────────────────────
+  // Called by StepCollect when BD polling finishes.
+  // HYGIENE Rule 29: saveSession BEFORE advancing substep.
+
+  const handleScrapeComplete = useCallback(
+    async (data: {
+      marketRaw: string;
+      queryStats: Array<{ query: string; resultCount: number }>;
+      marketSource: "api";
+    }) => {
+      // Save scrape results before advancing
+      const latest = (await loadSession()) ?? ({} as SessionData);
+      const updated: SessionData = {
+        ...latest,
+        marketRaw: data.marketRaw,
+        queryStats: data.queryStats,
+        marketSource: data.marketSource,
+      };
+      await saveSession(updated);
+      setSession(updated);
+
+      // HYGIENE Rule 29: save complete, now advance substep
+      setSubstep(1);
+      setAnalysisStatus("idle");
+    },
+    [],
+  );
+
+  // ── Analysis status callback ───────────────────────────────────────────────
+  // Step6Analysis reports status so StepCollect can render the progress overlay.
+
+  const handleAnalysisStatusChange = useCallback(
+    (
+      status: "idle" | "running" | "done" | "error",
+      error?: string,
+      jobCount?: number,
+    ) => {
+      setAnalysisStatus(status);
+      setAnalysisError(error);
+      setAnalysisJobCount(jobCount);
+    },
+    [],
+  );
+
+  // ── Analysis session update ───────────────────────────────────────────────
+  // Step6Analysis saves intermediate results (marketPrepReport, marketAnalysis).
+  // NOTE: does NOT include jobTypes (GS-MKT-20).
+
+  const handleAnalysisSessionUpdate = useCallback(
+    async (data: Partial<SessionData>) => {
+      await handleSessionUpdate(data);
+    },
+    [handleSessionUpdate],
+  );
+
+  // ── View targets callback ─────────────────────────────────────────────────
+  // When analysis is done and user taps "View Your Targets", advance substep.
+  // HYGIENE Rule 29: session already saved by analysis pipeline; just advance.
+
+  const handleViewTargets = useCallback(() => {
+    setSubstep(2);
+  }, []);
+
+  // ── Lock categories (complete) ────────────────────────────────────────────
+  // Step6Analysis calls onComplete with jobTypes + rankedCategories + currentStep.
+  // HYGIENE Rule 29: save BEFORE state update.
+  // GS-MKT-20: hardcoded currentStep: 6 (HYGIENE Rule 56).
+  // BUG-074: never write currentStep > maxStep+1.
+
+  const handleComplete = useCallback(async (data: Partial<SessionData>) => {
+    const latest = (await loadSession()) ?? ({} as SessionData);
+    const currentMax = latest.maxStep ?? latest.currentStep ?? 0;
+    const nextStep = data.currentStep ?? 6;
+    // BUG-074: clamp advancement
+    const safeStep = Math.min(nextStep, currentMax + 1);
+
+    const updated: SessionData = {
+      ...latest,
+      ...data,
+      currentStep: safeStep,
+      maxStep: Math.max(currentMax, safeStep),
+    };
+
+    // HYGIENE Rule 29: save before page re-init
+    await saveSession(updated);
+    setSession(updated);
+
+    // Trigger page.tsx re-render at new step (self-managing page pattern)
+    window.location.reload();
+  }, []);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  if (loading || !session) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "60vh",
+          color: "var(--text-muted)",
+          fontSize: "14px",
+        }}
+      >
+        Loading...
+      </div>
+    );
+  }
+
+  const containerStyle: React.CSSProperties = {
+    minHeight: "100vh",
+    background: "var(--background)",
+    color: "var(--text)",
+    fontFamily: "var(--font-body)",
+  };
+
+  // Step6Analysis is mounted hidden in substeps 1-2 so it can run the pipeline
+  // while StepCollect shows the progress overlay (PRD Section 8 implementation).
+  const step6Visible = substep === 2;
+
+  return (
+    <div style={containerStyle}>
+      {/* StepCollect — visible in substeps 0 and 1 */}
+      {substep <= 1 && (
+        <StepCollect
+          session={session}
+          substep={substep}
+          analysisStatus={substep === 1 ? analysisStatus : "idle"}
+          analysisError={substep === 1 ? analysisError : undefined}
+          jobCount={analysisJobCount}
+          onScrapeComplete={handleScrapeComplete}
+          onViewTargets={handleViewTargets}
+          onSessionUpdate={(data) => void handleSessionUpdate(data)}
+        />
+      )}
+
+      {/* Step6Analysis — mounted (hidden) in substep 1 to run pipeline,
+          fully visible in substep 2 (categories view) */}
+      {substep >= 1 && (
+        <div style={{ display: step6Visible ? "block" : "none" }}>
+          <Step6Analysis
+            session={session}
+            initialViewPhase={substep === 1 ? "analyzing" : "categories"}
+            onStatusChange={handleAnalysisStatusChange}
+            onComplete={(data) => void handleComplete(data)}
+            onSessionUpdate={(data) => void handleAnalysisSessionUpdate(data)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+--- END built file ---
+
+--- BEGIN built file: src/app/api/jobs/route.ts ---
+// /api/jobs — Bright Data LinkedIn Jobs scraper trigger + poll
+// Feature: market-research | GS-MKT-06, GS-MKT-08, GS-MKT-09, GS-MKT-10
+// HYGIENE Rule 27: validateOrigin returns boolean — never try/catch
+
+import { NextResponse, type NextRequest } from "next/server";
+import { validateOrigin } from "@/lib/csrf";
+import { getAuthToken, verifyJWT } from "@/lib/auth";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+import {
+  BD_DATASET_ID,
+  BD_API_BASE,
+  EMPLOYMENT_TYPE_MAP,
+} from "@/lib/scraper-scripts";
+import type { JobListing, QueryStat } from "@/lib/api";
+
+// ── Daily budget tracking ─────────────────────────────────────────────────────
+
+const DAILY_BD_BUDGET = 100;
+
+function dailyBudgetKey(): string {
+  const day = new Date().toISOString().slice(0, 10);
+  return `bd:budget:${day}`;
+}
+
+function getRedis(): Redis | null {
+  if (
+    !process.env.UPSTASH_REDIS_REST_URL ||
+    !process.env.UPSTASH_REDIS_REST_TOKEN
+  ) {
+    return null;
+  }
+  return new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  });
+}
+
+async function checkAndIncrementBudget(): Promise<{
+  allowed: boolean;
+  used: number;
+}> {
+  const redis = getRedis();
+  if (!redis) {
+    // No Redis configured — allow (dev mode)
+    return { allowed: true, used: 0 };
+  }
+  const key = dailyBudgetKey();
+  const current = (await redis.get<number>(key)) ?? 0;
+  if (current >= DAILY_BD_BUDGET) {
+    return { allowed: false, used: current };
+  }
+  await redis.incr(key);
+  // Expire at end of day
+  await redis.expire(key, 86400);
+  return { allowed: true, used: current + 1 };
+}
+
+// ── Rate limiting (10 req/min per IP) ────────────────────────────────────────
+
+function getRatelimit(): Ratelimit | null {
+  const redis = getRedis();
+  if (!redis) return null;
+  return new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(10, "1 m"),
+    prefix: "bd:rl",
+  });
+}
+
+// ── BD API helpers ────────────────────────────────────────────────────────────
+
+interface BDTriggerResponse {
+  snapshot_id: string;
+}
+
+interface BDProgressResponse {
+  snapshot_id: string;
+  status: "starting" | "running" | "ready" | "failed";
+}
+
+/**
+ * Trigger one BD discovery snapshot for a single keyword+employmentType combo.
+ * BUG-031: BD uses keyword input, NOT LinkedIn search URLs.
+ */
+async function triggerSnapshot(
+  keyword: string,
+  location: string,
+  employmentType: string,
+  apiKey: string,
+): Promise<string> {
+  const url = `${BD_API_BASE}/datasets/v3/trigger?dataset_id=${BD_DATASET_ID}&type=discover_new&discover_by=keyword&limit_per_input=30&format=json&include_errors=true`;
+
+  const body = JSON.stringify([
+    {
+      keyword,
+      location: location || "United States",
+      country: "US",
+      job_type: employmentType,
+    },
+  ]);
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`BD trigger failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as BDTriggerResponse;
+  return data.snapshot_id;
+}
+
+/**
+ * Check snapshot status.
+ */
+async function checkSnapshot(
+  snapshotId: string,
+  apiKey: string,
+): Promise<BDProgressResponse> {
+  const url = `${BD_API_BASE}/datasets/v3/snapshot/${snapshotId}/progress`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    throw new Error(`BD progress check failed (${res.status})`);
+  }
+  return (await res.json()) as BDProgressResponse;
+}
+
+/**
+ * Download snapshot data.
+ */
+async function downloadSnapshot(
+  snapshotId: string,
+  apiKey: string,
+): Promise<Array<Record<string, unknown>>> {
+  const url = `${BD_API_BASE}/datasets/v3/snapshot/${snapshotId}?format=json`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    throw new Error(`BD download failed (${res.status})`);
+  }
+  try {
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+// ── Job normalization ─────────────────────────────────────────────────────────
+
+function normalizeJob(
+  raw: Record<string, unknown>,
+  sourceQuery: string,
+): JobListing {
+  return {
+    title:
+      (raw.title as string) ||
+      (raw.job_title as string) ||
+      (raw.position as string) ||
+      "",
+    company:
+      (raw.company as string) ||
+      (raw.company_name as string) ||
+      (raw.employer as string) ||
+      "",
+    location:
+      (raw.location as string) ||
+      (raw.job_location as string) ||
+      (raw.city as string) ||
+      "",
+    description:
+      (raw.description as string) ||
+      (raw.job_description as string) ||
+      (raw.summary as string) ||
+      "",
+    salary:
+      (raw.salary as string) ||
+      (raw.salary_range as string) ||
+      (raw.compensation as string) ||
+      null,
+    seniority:
+      (raw.seniority_level as string) ||
+      (raw.seniority as string) ||
+      (raw.experience_level as string) ||
+      null,
+    employmentType:
+      (raw.employment_type as string) ||
+      (raw.job_type as string) ||
+      (raw.work_type as string) ||
+      null,
+    easyApply:
+      typeof raw.easy_apply === "boolean"
+        ? raw.easy_apply
+        : typeof raw.easyApply === "boolean"
+          ? raw.easyApply
+          : false,
+    url:
+      (raw.url as string) ||
+      (raw.job_url as string) ||
+      (raw.link as string) ||
+      null,
+    industries:
+      (raw.industries as string) ||
+      (raw.industry as string) ||
+      (raw.company_industry as string) ||
+      null,
+    jobFunction:
+      (raw.job_function as string) ||
+      (raw.function as string) ||
+      (raw.category as string) ||
+      null,
+    applicants:
+      typeof raw.num_applicants === "number"
+        ? raw.num_applicants
+        : typeof raw.applicants === "number"
+          ? raw.applicants
+          : null,
+    postedDate:
+      (raw.posted_date as string) ||
+      (raw.date_posted as string) ||
+      (raw.posted_at as string) ||
+      null,
+    sourceQuery,
+  };
+}
+
+/**
+ * Deduplicate jobs by title+company (case-insensitive).
+ * Also tracks per-query result counts (before dedup).
+ */
+function deduplicateJobs(
+  jobsByQuery: Array<{ query: string; jobs: JobListing[] }>,
+): { jobs: JobListing[]; queryStats: QueryStat[] } {
+  const seen = new Set<string>();
+  const deduped: JobListing[] = [];
+  const queryStats: QueryStat[] = [];
+
+  for (const { query, jobs } of jobsByQuery) {
+    queryStats.push({ query, resultCount: jobs.length });
+    for (const job of jobs) {
+      const key = `${job.title.toLowerCase().trim()}|${job.company.toLowerCase().trim()}`;
+      if (!seen.has(key) && (job.title || job.company)) {
+        seen.add(key);
+        deduped.push(job);
+      }
+    }
+  }
+
+  return { jobs: deduped, queryStats };
+}
+
+// ── Cycle employment types across queries ─────────────────────────────────────
+
+function cycleEmploymentTypes(
+  queries: string[],
+  employmentTypes: string[],
+): Array<{ query: string; employmentType: string }> {
+  if (!employmentTypes || employmentTypes.length === 0) {
+    return queries.map((q) => ({ query: q, employmentType: "Full-time" }));
+  }
+  const mapped = employmentTypes.map(
+    (et) => EMPLOYMENT_TYPE_MAP[et] ?? "Full-time",
+  );
+  return queries.map((q, i) => ({
+    query: q,
+    employmentType: mapped[i % mapped.length],
+  }));
+}
+
+// ── POST handler ──────────────────────────────────────────────────────────────
+
+export async function POST(req: NextRequest) {
+  // HYGIENE Rule 27: validateOrigin as boolean if-check, never try/catch
+  if (!validateOrigin(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Rate limit: 10 requests per minute per IP (GS-MKT-10)
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ratelimit = getRatelimit();
+  if (ratelimit) {
+    const { success, reset } = await ratelimit.limit(ip);
+    if (!success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please wait and try again." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil((reset - Date.now()) / 1000)),
+          },
+        },
+      );
+    }
+  }
+
+  const apiKey = process.env.BRIGHTDATA_API_KEY;
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid request body" },
+      { status: 400 },
+    );
+  }
+
+  const action = body.action as string;
+
+  // ── TRIGGER ──────────────────────────────────────────────────────────────
+
+  if (action === "trigger") {
+    // RT-201: auth guard — reject unauthenticated trigger requests
+    const authToken = await getAuthToken();
+    if (!authToken || !verifyJWT(authToken)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check daily budget (GS-MKT-10)
+    const { allowed, used } = await checkAndIncrementBudget();
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          error: `Daily scrape budget exhausted (${used}/${DAILY_BD_BUDGET} requests used today). Try again tomorrow.`,
+        },
+        { status: 429 },
+      );
+    }
+
+    const queries = body.queries as string[] | undefined;
+    const location = (body.location as string) || "United States";
+    const employmentTypes = (body.employmentTypes as string[]) || ["Full-time"];
+
+    if (!queries || !Array.isArray(queries) || queries.length === 0) {
+      return NextResponse.json(
+        { error: "At least one search query is required" },
+        { status: 400 },
+      );
+    }
+
+    // Dev/test mode — no real API key
+    if (!apiKey) {
+      // Return mock snapshot IDs for local development
+      const snapshotIds = queries.map((_, i) => `mock-snapshot-${i}`);
+      const queryMap: Record<string, string> = {};
+      queries.forEach((q, i) => {
+        queryMap[snapshotIds[i]] = q;
+      });
+      return NextResponse.json({ snapshotIds, queryMap });
+    }
+
+    const queryEmploymentPairs = cycleEmploymentTypes(queries, employmentTypes);
+
+    const snapshotIds: string[] = [];
+    const queryMap: Record<string, string> = {};
+    const errors: string[] = [];
+
+    // Trigger one snapshot per query (parallel)
+    await Promise.allSettled(
+      queryEmploymentPairs.map(async ({ query, employmentType }) => {
+        try {
+          const snapshotId = await triggerSnapshot(
+            query,
+            location,
+            employmentType,
+            apiKey,
+          );
+          snapshotIds.push(snapshotId);
+          queryMap[snapshotId] = query;
+        } catch (e) {
+          errors.push(
+            e instanceof Error ? e.message : `Trigger failed for: ${query}`,
+          );
+        }
+      }),
+    );
+
+    if (snapshotIds.length === 0) {
+      return NextResponse.json(
+        { error: `All scrape triggers failed: ${errors.join("; ")}` },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json({
+      snapshotIds,
+      queryMap,
+      warnings: errors.length > 0 ? errors : undefined,
+    });
+  }
+
+  // ── POLL ──────────────────────────────────────────────────────────────────
+
+  if (action === "poll") {
+    const snapshotIds = body.snapshotIds as string[] | undefined;
+    const queryMap = (body.queryMap as Record<string, string>) || {};
+    const force = body.force === true;
+
+    if (
+      !snapshotIds ||
+      !Array.isArray(snapshotIds) ||
+      snapshotIds.length === 0
+    ) {
+      return NextResponse.json(
+        { error: "snapshotIds required for poll" },
+        { status: 400 },
+      );
+    }
+
+    // RT-202: validate snapshot ID format before using in URL construction
+    const snapshotIdRegex = /^[a-zA-Z0-9_-]{8,64}$/;
+    for (const sid of snapshotIds) {
+      if (!snapshotIdRegex.test(sid)) {
+        return NextResponse.json(
+          { error: "Invalid snapshot ID format" },
+          { status: 400 },
+        );
+      }
+    }
+
+    // Dev mock mode
+    if (!apiKey) {
+      // Return mock results
+      const mockJobs: JobListing[] = snapshotIds.flatMap((sid) => {
+        const query = queryMap[sid] ?? "mock query";
+        return [
+          normalizeJob(
+            {
+              title: `Mock Job for ${query}`,
+              company: "Mock Corp",
+              location: "Remote",
+              description: "Mock job description for development testing.",
+              employment_type: "Full-time",
+            },
+            query,
+          ),
+        ];
+      });
+      const queryStats = snapshotIds.map((sid) => ({
+        query: queryMap[sid] ?? sid,
+        resultCount: 1,
+      }));
+      return NextResponse.json({
+        done: true,
+        jobs: mockJobs,
+        total: mockJobs.length,
+        pending: 0,
+        queryStats,
+      });
+    }
+
+    // Check progress for all snapshots in parallel
+    const progressResults = await Promise.allSettled(
+      snapshotIds.map((sid) => checkSnapshot(sid, apiKey)),
+    );
+
+    const readyIds: string[] = [];
+    const pendingIds: string[] = [];
+
+    progressResults.forEach((result, i) => {
+      const sid = snapshotIds[i];
+      if (result.status === "fulfilled") {
+        const { status } = result.value;
+        if (status === "ready") {
+          readyIds.push(sid);
+        } else if (status === "failed") {
+          // Treat failed snapshots as done (skip them)
+        } else {
+          pendingIds.push(sid);
+        }
+      } else {
+        // Error checking progress — treat as pending
+        pendingIds.push(sid);
+      }
+    });
+
+    const allDone = pendingIds.length === 0;
+    const shouldReturn = allDone || force;
+
+    if (!shouldReturn) {
+      return NextResponse.json({
+        done: false,
+        pending: pendingIds.length,
+        total: snapshotIds.length,
+      });
+    }
+
+    // Download ready snapshots
+    const jobsByQuery: Array<{ query: string; jobs: JobListing[] }> = [];
+
+    await Promise.allSettled(
+      readyIds.map(async (sid) => {
+        const query = queryMap[sid] ?? sid;
+        try {
+          const rawJobs = await downloadSnapshot(sid, apiKey);
+          const normalized = rawJobs.map((r) => normalizeJob(r, query));
+          jobsByQuery.push({ query, jobs: normalized });
+        } catch {
+          jobsByQuery.push({ query, jobs: [] });
+        }
+      }),
+    );
+
+    // Add zero-result entries for snapshots that weren't ready (forced partial)
+    for (const sid of pendingIds) {
+      const query = queryMap[sid] ?? sid;
+      const alreadyHasEntry = jobsByQuery.some((jbq) => jbq.query === query);
+      if (!alreadyHasEntry) {
+        jobsByQuery.push({ query, jobs: [] });
+      }
+    }
+
+    const { jobs, queryStats } = deduplicateJobs(jobsByQuery);
+
+    return NextResponse.json({
+      done: true,
+      jobs,
+      total: jobs.length,
+      pending: pendingIds.length,
+      queryStats,
+    });
+  }
+
+  return NextResponse.json(
+    { error: `Unknown action: ${action}` },
+    { status: 400 },
+  );
+}
+
+--- END built file ---
+
+--- BEGIN built file: src/lib/scraper-scripts.ts ---
+// scraper-scripts.ts — BD LinkedIn Jobs scraper dataset constants
+// Feature: market-research
+
+/**
+ * Bright Data dataset ID for LinkedIn Jobs discovery scraper.
+ * Used in /api/jobs trigger and poll requests.
+ */
+export const BD_DATASET_ID = "gd_lpfll7v5hcqtkxl6l";
+
+/**
+ * BD API base URL.
+ */
+export const BD_API_BASE = "https://api.brightdata.com";
+
+/**
+ * Employment type mapping from user preferences to BD job_type param.
+ * BD accepts: "Full-time", "Part-time", "Contract", "Temporary", "Internship", "Other"
+ */
+export const EMPLOYMENT_TYPE_MAP: Record<string, string> = {
+  "Full-time": "Full-time",
+  "Part-time": "Part-time",
+  Contract: "Contract",
+  Temporary: "Temporary",
+  Internship: "Internship",
+  Freelance: "Contract",
+  Other: "Other",
+};
+
+/**
+ * SCRAPER_SCRIPTS — kept for compatibility; extension uses these.
+ * These are not used by the LinkedIn Jobs discovery scraper (keyword-based, not URL-based).
+ */
+export const SCRAPER_SCRIPTS = Object.freeze({
+  SCROLL_LIST: "",
+  EXTRACT_CARDS: "",
+  CLICK_SHOW_MORE: "",
+});
+
+--- END built file ---

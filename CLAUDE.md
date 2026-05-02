@@ -76,16 +76,17 @@ Copy `.env.example` to `.env` and set:
 
 ## WarpOS Integration
 
-This project is prepared to pull settings, skills, hooks, and agent infrastructure from the WarpOS repo (GitHub). **Do not pull yet — WarpOS is being updated.**
+This project runs on WarpOS — pulled directly from `https://github.com/cygaco/WarpOS.git`. Current installed version is in `version.json`; install marker at `.claude/framework-installed.json`.
 
-When ready, WarpOS will provide:
+WarpOS provides:
 - `WarpOS.md` — technical backbone (stack, products table, decisions log, validated patterns)
-- Claude Code hooks and slash commands
-- TypeScript schemas (Deus Mechanicus, Warp Profiles)
-- Implementation patterns (encrypted storage, rate limiting, Bright Data, UI component kit)
-- Product-specific CLAUDE.md overlays
+- Claude Code hooks (`scripts/hooks/`) and slash commands (`.claude/commands/`)
+- TypeScript schemas (`schemas/`) — Deus Mechanicus, Warp Profiles
+- Implementation patterns (`patterns/`) — encrypted storage, rate limiting, Bright Data, UI component kit
+- Requirements engine (`requirements/`, `scripts/requirements/`)
+- Update engine (`scripts/warpos/update.js`) and release capsules (`warpos/releases/`)
 
-Integration point: `.warp/` directory will house pulled artifacts. The `sync-warp.sh` script (placeholder) will handle pulls.
+To upgrade: run `/warp:update` (dry-run by default) or `/warp:update --apply` once a newer capsule lands. Use `/warp:doctor` for full diagnostic.
 
 ## Warp Studio Context
 

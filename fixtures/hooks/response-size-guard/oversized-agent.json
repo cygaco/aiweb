@@ -1,0 +1,1 @@
+{"tool_name":"Agent","cwd":".","tool_input":{"subagent_type":"qa"},"tool_response":"{\"agent\":\"qa\",\"verdict\":\"pass\",\"confidence\":0.9,\"findings\":[],\"requiresHuman\":false}"}

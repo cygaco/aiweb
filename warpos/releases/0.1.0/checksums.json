@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "generatedAt": "2026-05-01T05:00:31.717Z",
+  "commit": "6bdd183d510e9e168e52ce0bc77c111b8704de60",
+  "entries": {
+    "changelog.md": "f983710f69513ca3b354ab82b230ec53fef2d6a5f58bc55aaadacaf45d314708",
+    "framework-manifest.json": "a41d3ca36e35f2dddbc6cb6f074a351e78ca2f801eaf1bee2c1386c301876e3a",
+    "release.json": "46b65810e7b8cb0951fac648bfe69e2bd4e6d21f2bad53df772ab9c01612dd9e",
+    "upgrade-notes.md": "f54185e64edfc4870813eba9245777f6f3f129cbfd794ed8c1855b08e539f1a4",
+    "../../../migrations/0.0.0-to-0.1.0/001-path-registry-v4.js": "7dafcdda1f0a82121b1a42978879d5928107d09ec7fdf16fb563efd0965556ff",
+    "../../../migrations/0.0.0-to-0.1.0/002-framework-manifest-v2.js": "ed91d349065f34cd65e65f4787086beadf0cd5582b442276e3646e78a2121ca4",
+    "../../../migrations/0.0.0-to-0.1.0/003-docs-to-requirements.js": "b6439eb96420cd92800ec25817d16513b609604add0a0e9b367ce650cc6f5c59",
+    "../../../migrations/0.0.0-to-0.1.0/004-rename-warp-sync-to-update.js": "27dabd02b58161eb14674d4394d36c591b5ce38a77afa8dad15324e823a7d6cb"
+  }
+}

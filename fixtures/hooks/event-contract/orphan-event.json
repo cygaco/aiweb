@@ -1,0 +1,1 @@
+{"tool_name":"Edit","cwd":".","tool_input":{"file_path":"src/lib/fixture.ts","new_string":"window.dispatchEvent(new CustomEvent(\"jz:fixture\"));"},"tool_response":{"ok":true}}

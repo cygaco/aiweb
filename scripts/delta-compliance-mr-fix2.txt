@@ -1,0 +1,3972 @@
+You are the Compliance Agent in the multi-agent build system.
+
+## Your Role
+You are a prosecutor. Find evidence this code is broken, incomplete, or deceptive.
+
+Feature: market-research
+
+## Look for:
+1. Phantom completion — compiles but logic is no-op or hardcoded
+2. Hardcoded values — magic numbers, stubbed responses, permanent feature flags
+3. Missing edge cases — error handling absent, null checks missing, concurrent access not considered
+4. Silently dropped requirements — spec stories with no code implementation
+5. Cosmetic compliance — looks right but violates spec on closer reading
+
+## Output (LAST fenced block — pass is false if droppedRequirements OR phantomCompletions non-empty):
+```json
+{"feature":"market-research","pass":true,"droppedRequirements":[],"phantomCompletions":[],"hardcodedValues":[],"missingEdgeCases":[],"cosmeticViolations":[]}
+```
+
+---
+## STORIES (the contract — every GS-ONB-* must be implemented)
+# Granular Stories: Market Research
+
+> **Agent Instructions**
+>
+> 1. Each story = one code path you implement as a unit — do not combine stories
+> 2. Check `Depends on:` before starting — if a dependency story isn't built, stop and report
+> 3. The `Data:` field tells you exactly which TypeScript interfaces and fields to read/write
+> 4. Your output will be evaluated against criteria you cannot see — build to the spec, not to assumed tests
+> 5. If a story's acceptance criteria conflict with another story, escalate — do not guess
+
+---
+
+## Parent: HL-MKT-01 — Automated Search Query Generation (MVP)
+
+<!-- parallel-safe: GS-MKT-01, GS-MKT-02 can be implemented independently -->
+
+### GS-MKT-01: Query Generation from Profile and Preferences
+
+> As a User, I want the system to generate 3-6 LinkedIn search queries from my profile and preferences, so that I get relevant search vectors without crafting them myself.
+
+**Depends on:** none
+**Data:** `SessionData.profile` (read), `SessionData.preferences` (read), `SessionData.context` (read) → `SessionData.generatedQueries` (write) → `string[]` → `src/lib/types.ts`; QUERY_GEN prompt → `src/lib/prompts.ts`
+**Entry state:** Fresh — Profile exists, no queries. Step 4 entered directly from onboarding with profile + preferences populated.
+**Verifiable by:** Trigger generation → search query generation is invoked; `SessionData.generatedQueries` contains 3-6 entries; completes within 10 seconds.
+**Inherits:** CS-002
+
+**Acceptance Criteria:**
+
+- 3-6 search queries are generated from discipline, seniority, preferences, and avoid terms
+- Queries are stored in `generatedQueries` as an array of strings
+- Generation does not proceed if `profile`, `preferences`, or `context` are missing from the session
+- Generation completes within 10 seconds
+
+---
+
+### GS-MKT-02: Avoid Terms Display
+
+> As a User, I want to see my profile's avoid terms displayed as removable tags, so that I can verify which terms are excluded from search queries.
+
+**Depends on:** none
+**Data:** `SessionData.profile.avoidTerms` (read) → `Array<{ term: string; reason: string } | string>` → `src/lib/types.ts`
+**Entry state:** Returning — `generatedQueries` exist (queries already generated). Avoid terms display accompanies the query list on Step 4.
+**Verifiable by:** Profile has 3 avoid terms → 3 tags rendered; remove a tag → `profile.avoidTerms` array length decreases by 1.
+
+**Acceptance Criteria:**
+
+- Avoid terms from the profile are displayed as removable tags (no-fly zones)
+- Removing a tag updates the profile's avoid terms in the session
+- The system does not allow launching a scrape with zero queries and zero avoid terms simultaneously (at least the query set must be non-empty)
+
+---
+
+### GS-MKT-03: Query Editing
+
+> As a User, I want to modify the text of a generated search query, so that I can refine AI-generated queries to better match my intent.
+
+**Depends on:** GS-MKT-01
+**Data:** `SessionData.generatedQueries` (read/write) → `string[]` → `src/lib/types.ts`
+**Entry state:** Returning — `generatedQueries` exist, no jobs yet. User is editing queries before launching scrape.
+**Verifiable by:** Edit query at index 0 to "New text" → `generatedQueries[0]` equals "New text"; save empty string → edit rejected.
+**Inherits:** CS-005
+
+**Acceptance Criteria:**
+
+- Each generated query is editable inline
+- Edited values replace the original query text in the session
+- An empty or whitespace-only query is rejected and the original text is preserved
+
+---
+
+### GS-MKT-04: Query Addition
+
+> As a User, I want to add a new search query manually, so that I can target opportunities the AI did not consider.
+
+**Depends on:** GS-MKT-01
+**Data:** `SessionData.generatedQueries` (write) → `string[]` → `src/lib/types.ts`
+**Entry state:** Returning — `generatedQueries` exist, no jobs yet. User is adding queries before launching scrape.
+**Verifiable by:** Add query "My custom query" → `generatedQueries` array length increases by 1; add empty string → rejected.
+**Inherits:** CS-003
+
+**Acceptance Criteria:**
+
+- A new query can be added to the list via an add action
+- The new query text must be non-empty
+- The system does not impose a maximum query count (but the launch action shows the current count)
+
+---
+
+### GS-MKT-05: Query Removal
+
+> As a User, I want to remove a search query, so that I can eliminate irrelevant queries before launching the scrape.
+
+**Depends on:** GS-MKT-01
+**Data:** `SessionData.generatedQueries` (write) → `string[]` → `src/lib/types.ts`
+**Entry state:** Returning — `generatedQueries` exist, no jobs yet. User is pruning queries before launching scrape.
+**Verifiable by:** Remove query at index 1 → `generatedQueries` array length decreases by 1; attempt to remove last remaining query → removal blocked.
+
+**Acceptance Criteria:**
+
+- Individual queries can be removed from the list
+- At least one query must remain — the system does not allow removing the last query
+- Removing a query does not affect the text of other queries
+
+---
+
+## Parent: HL-MKT-02 — Live Job Market Scraping (MVP)
+
+### GS-MKT-06: Scrape Launch
+
+> As a User, I want to launch parallel job scraping across all my search queries, so that I receive real job market data.
+
+**Depends on:** GS-MKT-01
+**Data:** `SessionData.generatedQueries` (read), `SessionData.preferences.employmentTypes` (read) → `SessionData.marketSource` (write, set to `"api"`) → `src/lib/types.ts`
+**Entry state:** Returning — `generatedQueries` exist, no jobs yet. User has finalized queries and is launching the scrape.
+**Verifiable by:** Activate launch → job scraping is triggered; `marketSource` set to `"api"`; launch action becomes disabled during scrape.
+**Inherits:** CS-004
+
+**Acceptance Criteria:**
+
+- A launch action triggers parallel scraping via the Bright Data API for all queries
+- Employment types are cycled across queries for balanced coverage
+- The launch action is disabled while a scrape is already in progress
+- The system does not launch a scrape with an empty query list
+
+> **Integration constraint (BUG-031 prevention):** BD scraper uses keyword-based input, NOT LinkedIn search URLs. See `docs/06-integrations/brightdata/knowledge/01-web-scraper-api.md` for payload format.
+
+---
+
+### GS-MKT-07: Scrape Progress Display
+
+> As a User, I want to see a multi-step progress animation during the scrape, so that I know the system is working during the multi-minute wait.
+
+**Depends on:** GS-MKT-06
+**Data:** none (UI-only)
+**Entry state:** Async-complete — Scrape in progress (`bdSnapshotId` exists, no results yet). Polling is active; user sees progress animation.
+**Verifiable by:** During scrape, progress element is visible with at least 5 phase labels; after scrape completes, progress element is removed.
+**Inherits:** CS-002
+
+**Acceptance Criteria:**
+
+- A progress screen shows a multi-step animation during the 3-5 minute scrape
+- The progress indicator is visible for the entire duration of the scrape
+- The progress indicator is removed when scraping completes or fails
+- The system does not display a stale progress screen after the scrape has finished or errored
+
+---
+
+### GS-MKT-08: Scrape Polling and Partial Results
+
+> As a System, I want to poll the scraper every 30 seconds and force partial results after 3 minutes, so that users are not stuck waiting indefinitely for all snapshots.
+
+**Depends on:** GS-MKT-06
+**Data:** `SessionData.marketRaw` (write) → `string` → `src/lib/types.ts`
+**Entry state:** Async-complete — Scrape in progress (`bdSnapshotId` exists, no results yet). System is polling BD API for snapshot readiness.
+**Verifiable by:** Trigger scrape → verify polling occurs at 30s intervals; after 3 minutes with pending snapshots → partial results returned; after 6 minutes → timeout error.
+
+**Acceptance Criteria:**
+
+- The system polls the BD API every 30 seconds for snapshot status
+- If some snapshots are still pending after 3 minutes, available results are forced and returned
+- The entire polling operation times out at 6 minutes with an error
+- The system does not poll after results have been received or timeout has occurred
+
+---
+
+### GS-MKT-09: Job Deduplication and Normalization
+
+> As a System, I want scraped jobs to be deduplicated by title+company and normalized to a standard shape, so that analysis operates on clean, consistent data.
+
+**Depends on:** GS-MKT-08
+**Data:** `SessionData.marketRaw` (write) → `string` → `src/lib/types.ts`; `SessionData.queryStats` → `Array<{ query: string; resultCount: number }>` (write) → `src/lib/types.ts`
+**Entry state:** Async-complete — Scrape complete (`marketData` populated). Raw results ready for deduplication and normalization before analysis.
+**Verifiable by:** Feed 2 jobs with same title+company → only 1 appears in `marketRaw`; every job in `marketRaw` has title, company, location, description fields; `queryStats` has one entry per query with the pre-dedup result count.
+
+**Acceptance Criteria:**
+
+- Jobs with the same title and company (case-insensitive) are deduplicated to one entry
+- Each job listing is normalized to include: title, company, location, description, salary, seniority, employment type, Easy Apply status, URL, industries, job function, applicant count, posted date
+- Missing fields are represented as empty or null, not omitted
+- The system does not store duplicate entries from overlapping query results
+- During deduplication, populate `sessionData.queryStats` as `Array<{ query: string; resultCount: number }>` by counting results per query before dedup
+
+---
+
+### GS-MKT-10: Scrape Rate Limiting
+
+> As a System, I want to enforce rate limits on scrape requests (10 per minute per IP, daily budget), so that API usage stays within budget.
+
+**Depends on:** none
+**Data:** none (server-side enforcement)
+**Entry state:** Any — Rate limiting applies to all scrape requests regardless of session state or step entry condition.
+**Verifiable by:** Send 11 requests within 1 minute → 11th returns 429 with `Retry-After` header; exceed daily budget → request returns error with budget info.
+**Inherits:** CS-007
+
+**Acceptance Criteria:**
+
+- Scrape requests are limited to 10 per minute per IP
+- A daily budget cap (default 100) limits total BD API requests
+- Rate-limited requests return a clear error and do not consume budget
+- The system does not trigger downstream processing for rate-limited requests
+
+---
+
+## Parent: HL-MKT-03 — Two-Phase Market Analysis (MVP)
+
+### GS-MKT-11: Phase 1 — MARKET_PREP Intelligence Report
+
+> As a System, I want raw job data transformed into a structured intelligence report via the MARKET_PREP prompt, so that Phase 2 analysis operates on organized data rather than raw listings.
+
+**Depends on:** GS-MKT-09
+**Data:** `SessionData.marketRaw` (read) → `SessionData.marketPrepReport` (write) → `string` → `src/lib/types.ts`; MARKET_PREP prompt → `src/lib/prompts.ts`
+**Entry state:** Fresh — Scrape complete on Step 4 screen, `marketData` exists but no analysis. Two-phase pipeline begins automatically with MARKET_PREP while still on the same screen.
+**Verifiable by:** Trigger analysis → market intelligence preparation is invoked; `marketPrepReport` is a non-empty string; hourly rates are extracted via regex.
+
+**Acceptance Criteria:**
+
+- Raw job data is compacted (abbreviated keys, extracted hourly rates, identified staffing agencies) before sending to Claude
+- The MARKET_PREP prompt produces a structured intelligence report with categories, compensation ranges, and market signals
+- The report is stored in `marketPrepReport`
+- The system does not proceed to Phase 2 until MARKET_PREP completes or fails
+
+---
+
+### GS-MKT-12: Phase 1 Fallback on MARKET_PREP Failure
+
+> As a System, I want Phase 2 to proceed with raw data if Phase 1 fails, so that the user still receives analysis even when the prep phase cannot complete.
+
+**Depends on:** GS-MKT-11
+**Data:** `SessionData.marketRaw` (read), `SessionData.marketPrepReport` (read — may be empty) → `src/lib/types.ts`
+**Entry state:** Error-recovery — MARKET_PREP failed during Step 5 analysis. Pipeline falls through to Phase 2 using raw data.
+**Verifiable by:** Force MARKET_PREP failure → Phase 2 still executes using `marketRaw` as input; `marketPrepReport` remains empty; analysis output is still produced.
+
+**Acceptance Criteria:**
+
+- If MARKET_PREP fails, Phase 2 receives raw job data instead of the prep report
+- The fallback does not surface an error to the user — analysis continues seamlessly
+- The system does not retry MARKET_PREP on failure — it falls through to Phase 2 immediately
+
+---
+
+### GS-MKT-13: Phase 2 — MARKET Final Analysis
+
+> As a User, I want the system to produce final market intelligence from the prep report, so that I see actionable categories, compensation ranges, and demand signals.
+
+**Depends on:** GS-MKT-11
+**Data:** `SessionData.marketPrepReport` (read) → `SessionData.marketAnalysis` (write) → `MarketAnalysis { keywords, compRanges, discoveryRecs → Array<{ name: string; rationale: string }>, exclusionTags, educationVisibility }` → `src/lib/types.ts`; `SessionData.miningQuestions` (write) → `Array<{ id, question, why? }>` → `src/lib/types.ts`; MARKET prompt → `src/lib/prompts.ts`
+**Entry state:** Async-complete — Analysis in progress (pipeline running). MARKET_PREP complete (or skipped via fallback), Phase 2 MARKET prompt executing.
+**Verifiable by:** Trigger analysis → final market analysis is invoked; `marketAnalysis.keywords` is non-empty array; `marketAnalysis.compRanges` has low/median/high; `miningQuestions` contains up to 8 entries.
+
+**Acceptance Criteria:**
+
+- The MARKET prompt produces: keywords (on-resume vs market-demand), compensation ranges (low/median/high), discovery recommendations, exclusion tags, education visibility, and up to 8 mining questions
+- The full two-phase analysis completes in under 60 seconds
+- At least 2 target categories are produced for every analysis run
+- The system does not display partial analysis results — the full output renders together
+
+---
+
+### GS-MKT-14: Job Type Category Generation
+
+> As a System, I want the MARKET analysis to produce target categories with metadata, so that the user can make informed selection decisions.
+
+**Depends on:** GS-MKT-13
+**Data:** `SessionData.jobTypes` (write) → `JobType[] { name, description, why, compRange, volume, matchStrength, selected, searchTerms?, fromRec?, id? }` → `src/lib/types.ts`
+**Entry state:** Async-complete — Analysis complete (`marketAnalysis` populated). Categories are derived from the MARKET output and rendered for selection.
+**Verifiable by:** After analysis → `jobTypes` is an array with at least 2 entries; each entry has `name`, `compRange`, `matchStrength`, and `why` non-empty.
+
+**Acceptance Criteria:**
+
+- Each target category includes: name, description, rationale (why you fit), compensation range, job volume, and match strength badge (high/mid/low)
+- Categories are displayed in the order the AI returns them (best fit first) — array position is the sort order, no separate `rank` or `sortOrder` field
+<!-- AGENT NOTE: No user-facing ranking, reordering, or drag-and-drop UI for categories. Selection is toggle-only (selected: true/false). Display order is visual only — no downstream feature consumes it. Do NOT add a rank field or ranking component. -->
+- All categories default to `selected: true`
+- The system does not produce categories without a rationale
+
+---
+
+### GS-MKT-15: Compensation Intel Display
+
+> As a User, I want to see aggregate compensation ranges (low, median, high), so that I understand the overall pay landscape for my market.
+
+**Depends on:** GS-MKT-13
+**Data:** `SessionData.marketAnalysis.compRanges` (read) → `{ low: string; median: string; high: string } | null` → `src/lib/types.ts`
+**Entry state:** Async-complete — Analysis complete (`marketAnalysis` populated). Compensation data rendered alongside category results.
+**Verifiable by:** After analysis with comp data → intel box shows low, median, high values; with null compRanges → intel box shows "Insufficient data" message.
+
+**Acceptance Criteria:**
+
+- A compensation intel box displays low, median, and high values from the analysis
+- If compensation data is unavailable (null), a message indicates insufficient data rather than showing empty fields
+- The system does not display fabricated compensation figures when data is missing
+
+---
+
+### GS-MKT-16: Auto-Rerun Detection for Single-Phase Output
+
+> As a System, I want to detect old single-phase analysis output and re-run the two-phase pipeline automatically, so that returning users get upgraded analysis without manual intervention.
+
+**Depends on:** GS-MKT-13
+**Data:** `SessionData.marketPrepReport` (read — may be absent), `SessionData.marketAnalysis` (read/write) → `src/lib/types.ts`
+**Entry state:** Returning — `marketAnalysis` exists but `marketPrepReport` absent (legacy single-phase output detected). Auto-rerun upgrades to two-phase.
+**Verifiable by:** Load session with `marketAnalysis` present but `marketPrepReport` absent → two-phase pipeline re-runs automatically; load session with both present → no re-run.
+
+**Acceptance Criteria:**
+
+- If `marketAnalysis` exists AND `marketRaw` exists AND `marketPrepReport` is absent, the system detects legacy single-phase output (all three conditions required — a fresh session with no `marketAnalysis` does NOT trigger auto-rerun)
+- The two-phase pipeline re-runs automatically using existing `marketRaw` data
+- The new analysis replaces the old single-phase output
+- The system does not re-run if both `marketPrepReport` and `marketAnalysis` are present
+
+---
+
+## Parent: HL-MKT-04 — Target Category Selection (MVP)
+
+<!-- parallel-safe: GS-MKT-17, GS-MKT-18, GS-MKT-19 can be implemented independently -->
+
+### GS-MKT-17: Category Toggle
+
+> As a User, I want to toggle individual target categories on or off, so that I control which categories inform my downstream materials.
+
+**Depends on:** GS-MKT-14
+**Data:** `SessionData.jobTypes[].selected` (write) → `boolean` → `src/lib/types.ts`
+**Entry state:** Async-complete — Analysis complete (`marketAnalysis` populated, `jobTypes` rendered). User is toggling category selections before locking.
+**Verifiable by:** Toggle category at index 0 → `jobTypes[0].selected` flips; deselected category shows grayed/strikethrough styling; toggle back → `selected` is true again.
+**Inherits:** CS-005
+
+**Acceptance Criteria:**
+
+- Each category card has a toggle control that switches between selected and deselected states
+- Deselected categories appear visually distinguished (grayed out with strikethrough)
+- Toggling a category updates `jobTypes[].selected` in the session immediately
+- The system does not prevent deselecting all categories (the user may deselect all, though the FOMO warning will fire)
+
+---
+
+### GS-MKT-18: FOMO Competitiveness Warning
+
+> As a System, I want to show the competitiveness percentage the user would gain by selecting all categories, so that they understand the trade-off of deselecting.
+
+**Depends on:** GS-MKT-14
+**Data:** `SessionData.jobTypes` (read) → `src/lib/types.ts`; competitiveness algorithm → `src/lib/competitiveness.ts`
+**Entry state:** Async-complete — Analysis complete (`marketAnalysis` populated, `jobTypes` rendered). Warning appears when user deselects any category.
+**Verifiable by:** Deselect 1 of 3 categories → warning shows delta percentage; select all → warning disappears.
+
+**Acceptance Criteria:**
+
+- When not all categories are selected, a warning displays the competitiveness percentage that would be gained by selecting all
+- The warning updates immediately when category selections change
+- The warning is not displayed when all categories are selected
+
+---
+
+### GS-MKT-19: Discovery Recommendation Addition
+
+> As a User, I want to add discovery-recommended categories to my target list, so that I can explore opportunities the AI identified beyond my core categories.
+
+**Depends on:** GS-MKT-13
+**Data:** `SessionData.marketAnalysis.discoveryRecs` (read) → `Array<{ id, name, rationale, compRange?, volume? }>`, `SessionData.jobTypes` (write) → `src/lib/types.ts`
+**Entry state:** Async-complete — Analysis complete (`marketAnalysis` populated, `discoveryRecs` available). User adds AI-recommended categories to their target list.
+**Verifiable by:** Add a discovery rec → `jobTypes` array length increases by 1; new entry has `fromRec: true`; attempt to add when total is 10 → addition blocked.
+
+**Acceptance Criteria:**
+
+- Discovery recommendations are displayed as addable suggestions
+- Adding a recommendation creates a new entry in `jobTypes` with `fromRec: true` and `selected: true`
+- The total number of categories (original + added) cannot exceed 10
+- The system does not allow adding the same recommendation twice
+
+---
+
+### GS-MKT-20: Category Lock and Advancement
+
+> As a User, I want to lock my category selections and advance to the next step, so that downstream features use my finalized categories.
+
+**Depends on:** GS-MKT-17
+**Data:** `SessionData.jobTypes` (read, persisted), `SessionData.currentStep` (incremented) → `src/lib/types.ts`
+**Entry state:** Async-complete — Analysis complete (`marketAnalysis` populated, `jobTypes` rendered with selections finalized). User locks categories to advance.
+**Verifiable by:** Lock categories → `jobTypes` persisted; `currentStep` advances; at least 1 category must be selected → lock action disabled if none selected.
+**Inherits:** CS-001, CS-004
+
+**Acceptance Criteria:**
+
+- Locking persists the current `jobTypes` array (with selection states) to the session
+- The step advances to the next post-onboarding surface. Target state: advance to the **Dashboard** (onboarding phase ends at category lock). Spec-ahead-of-code: shipped code advances to step 6 (hardcoded `currentStep: 6`, NOT relative `currentStep + 1` — see HYGIENE Rule 56). The next skeleton build will change this advancement target from "step 6" to "dashboard entry".
+- At least one category must be selected to lock — the lock action is disabled if no categories are selected
+- The system does not allow modification of locked categories without returning to this step
+
+**Note:** Auto-save callbacks MUST omit jobTypes from the data. Only the explicit 'Lock Categories' button includes jobTypes to trigger step advancement. Overloading onComplete with implicit signals causes flash-and-disappear bugs.
+
+---
+
+## Parent: HL-MKT-05 — Manual Job Inclusion (Post-MVP)
+
+<!-- parallel-safe: GS-MKT-21, GS-MKT-22 can be implemented independently -->
+
+### GS-MKT-21: Manual Job URL Input
+
+> As a User, I want to paste a LinkedIn job URL to add it to my dataset, so that my analysis includes a specific posting I found on my own.
+
+**Depends on:** GS-MKT-06
+**Data:** `SessionData.marketRaw` (write — appended) → `string` → `src/lib/types.ts`
+**Entry state:** Async-complete — Scrape complete or analysis complete. User adds a manual job URL to supplement the dataset before (re-)analysis.
+**Verifiable by:** Paste valid LinkedIn job URL → job added to `marketRaw`; paste non-LinkedIn URL → error shown.
+**Inherits:** CS-003
+
+**Acceptance Criteria:**
+
+- A text input accepts a LinkedIn job posting URL
+- The URL is validated as a LinkedIn job URL format (linkedin.com/jobs/view/...)
+- The manually added job is appended to the existing dataset
+- Non-LinkedIn URLs are rejected with an error message identifying the accepted format
+
+---
+
+### GS-MKT-22: Manual Job Included in Analysis
+
+> As a System, I want manually added jobs to be included alongside scraped results in the analysis, so that the user's known opportunities inform the intelligence output.
+
+**Depends on:** GS-MKT-21
+**Data:** `SessionData.marketRaw` (read) → `src/lib/types.ts`
+**Entry state:** Async-complete — Manual job added to dataset. Analysis pipeline processes the combined scraped + manual job data.
+**Verifiable by:** Add manual job → run analysis → manually added job appears in the dataset sent to MARKET_PREP; category output reflects the manual job's attributes.
+
+**Acceptance Criteria:**
+
+- Manually added jobs are treated identically to scraped jobs in the analysis pipeline
+- Manual jobs are deduplicated against scraped results using the same title+company key
+- The system does not weight manual jobs differently from scraped jobs
+
+---
+
+## Parent: HL-MKT-06 — Re-Analysis Without Re-Scraping (Post-MVP)
+
+### GS-MKT-23: Refresh Analysis Action
+
+> As a User, I want to re-run the two-phase market analysis on my existing data, so that I can see updated intelligence without waiting for a new scrape.
+
+**Depends on:** GS-MKT-13
+**Data:** `SessionData.marketRaw` (read), `SessionData.marketPrepReport` (overwritten), `SessionData.marketAnalysis` (overwritten), `SessionData.jobTypes` (overwritten) → `src/lib/types.ts`
+**Entry state:** Returning — `rankedCategories` exist (analysis previously completed). User triggers re-analysis on existing data without re-scraping.
+**Verifiable by:** Activate refresh → market intelligence preparation and final analysis are re-invoked; `marketRaw` is unchanged; `marketAnalysis` is updated; no new job scraping occurs.
+
+**Acceptance Criteria:**
+
+- A refresh action re-runs both MARKET_PREP and MARKET phases using the existing `marketRaw` data
+- No new scraping occurs — the BD API is not called
+- The previous analysis output is replaced entirely by the new results
+- The refresh action is disabled while an analysis is already in progress
+
+---
+
+### GS-MKT-24: Refresh Analysis Rocket Cost
+
+> As a System, I want subsequent re-analyses to cost 50 rockets while the first analysis is free, so that the credit system governs re-runs.
+
+**Depends on:** GS-MKT-23
+**Data:** `SessionData.marketPrepReport` (read — presence indicates prior run) → `src/lib/types.ts`
+**Entry state:** Returning — `rankedCategories` exist (analysis previously completed). Rocket cost applies on subsequent re-analysis runs.
+**Verifiable by:** First analysis → no rocket debit; second analysis (marketPrepReport already exists) → 50 rockets debited; insufficient balance → 402 error.
+**Inherits:** CS-006
+
+**Acceptance Criteria:**
+
+- The first MARKET_PREP run is free (no rocket cost)
+- Subsequent MARKET_PREP runs cost 50 rockets
+- If the user has insufficient rockets, the refresh is blocked with a cost/balance error
+- The MARKET phase is always free regardless of run count
+
+---
+
+## Parent: HL-MKT-07 — Thin Data Advisory (Post-MVP)
+
+### GS-MKT-25: Thin Data Warning (Below 15 Jobs)
+
+> As a System, I want to display an advisory when fewer than 15 jobs are returned, so that the user understands analysis quality may be limited.
+
+**Depends on:** GS-MKT-09
+**Data:** `SessionData.marketRaw` (read) → `src/lib/types.ts`
+**Entry state:** Async-complete — Scrape complete (`marketData` populated) with thin results (fewer than 15 deduplicated jobs). Advisory shown before analysis.
+**Verifiable by:** Scrape returns 12 jobs → advisory element is visible with broadening suggestions; scrape returns 20 jobs → no advisory.
+
+**Acceptance Criteria:**
+
+- An advisory appears when the deduplicated job count is below 15 (i.e., 14 or fewer deduplicated jobs)
+- The advisory suggests broadening search parameters (adding employment types, expanding location, relaxing avoid terms)
+- The advisory does not block the user from proceeding with analysis
+
+---
+
+### GS-MKT-26: Analysis Block (Below 5 Jobs)
+
+> As a System, I want to block analysis when fewer than 5 jobs are returned, so that meaningless analysis on insufficient data does not mislead the user.
+
+**Depends on:** GS-MKT-09
+**Data:** `SessionData.marketRaw` (read) → `src/lib/types.ts`
+**Entry state:** Error-recovery — Scrape complete (`marketData` populated) with critically thin results (fewer than 5 deduplicated jobs). Analysis blocked until data threshold met.
+**Verifiable by:** Scrape returns 3 jobs → analysis action is disabled; error message suggests broadening parameters; scrape returns 5 jobs → analysis proceeds.
+**Inherits:** CS-004
+
+**Acceptance Criteria:**
+
+- Analysis is blocked when the deduplicated job count is below 5
+- A message explains the minimum threshold and suggests broadening search parameters
+- The analysis action is disabled until the job count meets the minimum
+- The system does not produce analysis output from fewer than 5 jobs
+
+---
+
+## Parent: HL-MKT-08 — Per-Query Performance Visibility (Post-MVP)
+
+### GS-MKT-27: Per-Query Result Count Display
+
+> As a User, I want to see how many results each search query yielded after scraping, so that I can identify which queries are most productive.
+
+**Depends on:** GS-MKT-09
+**Data:** `SessionData.queryStats` (write) → `Array<{ query: string; resultCount: number }>` → `src/lib/types.ts`
+**Entry state:** Async-complete — Scrape complete (`marketData` populated). Per-query stats rendered after deduplication and normalization.
+**Verifiable by:** After scrape → `queryStats` has one entry per query; each entry has `resultCount >= 0`; low-yield queries (0 results) are visually distinguishable.
+
+**Acceptance Criteria:**
+
+- Each query displays its individual result count after scraping completes
+- Query stats are stored in `queryStats` with the query text and its result count
+- Low-yield queries (0 results) are visually distinguishable at a glance
+- The system does not display query stats before scraping completes
+
+---
+
+### GS-MKT-28: Query Stats Persistence
+
+> As a System, I want per-query result counts persisted to the session, so that stats survive page reloads and step navigation.
+
+**Depends on:** GS-MKT-27
+**Data:** `SessionData.queryStats` (write) → `Array<{ query: string; resultCount: number }>` → `src/lib/types.ts`
+**Entry state:** Any — Query stats persist to session on scrape completion and survive page reloads and step navigation regardless of entry condition.
+**Verifiable by:** Scrape completes → refresh page → `queryStats` still present with correct values.
+**Inherits:** CS-001
+
+**Acceptance Criteria:**
+
+- Query stats are saved to the session alongside other market data
+- Stats persist across page reloads and step navigation
+- The system does not overwrite query stats when navigating back to the step without re-scraping
+
+---
+
+## Parent: HL-MKT-09 — Scrape Survives Tab Close (MVP)
+
+<!-- v3 contract absorption 2026-04-23 — GS-MKT-06/-08 scrape launch and polling retained as UX surface; backend now runs as a ticketed async worker job. See GS-MKT-29 through GS-MKT-35. -->
+
+### GS-MKT-29: Async Ticket Model for Scrape — `POST /jobs/scrape`
+
+> As a System, I want `POST ${API_BASE_URL}/jobs/scrape` to return a ticket immediately and run the Bright Data trigger/poll loop on the worker, so that the 60s web timeout no longer bounds a scrape.
+
+**Depends on:** backend service running, Graphile Worker active, QStash configured
+**Data:** Request body `{ queries: string[], employmentTypes: string[], ownerUserId: string (from JWT) }`; response `{ ticketId: string }`; `tickets` table row `{ id, owner_user_id, job_type: "scrape", state, checkpointed_step, created_at }`
+**Entry state:** Authenticated user on Step 4 activates Launch Recon after queries are finalized
+**Verifiable by:** POST returns `{ ticketId }` within 500ms; worker row appears in `graphile_worker.jobs`; a scrape taking 8 minutes completes without any HTTP timeout on the client (backend PRD §8.3 Goal 2, §14 tests 4–6).
+**Inherits:** GS-MKT-06, GS-RKT-29
+
+**Acceptance Criteria:**
+
+- The endpoint returns `{ ticketId }` synchronously — it does not block on the BD trigger or poll loop
+- The BD trigger/poll loop runs exclusively on the worker, not in the web request handler
+- The endpoint responds in under 500ms under normal load
+- The ticket row carries the owner's `user_id` from the JWT — never from the request body
+- Debit and ticket creation are atomic (per GS-RKT-29)
+
+---
+
+### GS-MKT-30: Client Polls `GET /tickets/{id}` Every 3–5s
+
+> As a User / Client, I want the frontend to poll the ticket endpoint every 3–5 seconds, so that progress updates arrive regularly without hammering the server.
+
+**Depends on:** GS-MKT-29
+**Data:** `GET ${API_BASE_URL}/tickets/{id}` → `{ id, state: "queued"|"running"|"done"|"failed"|"cancelled", progressStage: string, result?: unknown, error?: string }`; polling interval jittered within [3000, 5000] ms
+**Entry state:** Client holds a ticketId from a prior `POST /jobs/scrape` or `POST /claude/chain`
+**Verifiable by:** Network tab shows `GET /tickets/{id}` at intervals in the 3–5s range; polling stops on terminal state (`done`, `failed`, `cancelled`) (backend PRD §8.3).
+
+**Acceptance Criteria:**
+
+- The client polls at a jittered interval to avoid thundering herds
+- Polling stops immediately on any terminal state
+- A `404` on the ticketId after it was valid is treated as a transient error and retried up to 3 times before surfacing
+- Polling does not debit rockets
+- The client surfaces the latest `progressStage` to the user on every poll
+
+---
+
+### GS-MKT-31: Locked Single-Screen UX During Async Analysis
+
+> As a User, I want StepCollect to remain mounted while the scrape and analysis run, so that I see progress in place and am never bounced to a separate waiting page.
+
+**Depends on:** GS-MKT-29, GS-MKT-30
+**Data:** `SessionData.activeTicketId` (write) → `string | null` → `src/lib/types.ts`; StepCollect remains mounted throughout
+**Entry state:** User launches recon on Step 4; component must not unmount for the duration
+**Verifiable by:** Launch a scrape → inspect React tree — StepCollect is still in the tree for the full duration; no route change occurs; progress renders inside the same component (backend PRD §8.3 — locked flow per memory `project_recon_flow_locked`).
+**Inherits:** GS-MKT-07
+
+**Acceptance Criteria:**
+
+- StepCollect is not unmounted, replaced, or navigated away from during an in-flight scrape/analysis
+- Progress UI renders inside StepCollect — not in a modal, route, or separate page
+- On completion, results render in place; the user stays on the same screen
+- No code path introduces a `router.push` for the in-flight or completed scrape
+- This flow is documented as locked and must not be restructured without explicit approval
+
+---
+
+### GS-MKT-32: Tab-Close Fallback Via Persisted Ticket Id
+
+> As a System, I want `activeTicketId` persisted to SessionData, so that a user who closes the tab mid-scrape can resume on return.
+
+**Depends on:** GS-MKT-29, GS-MKT-31
+**Data:** `SessionData.activeTicketId` → `string | null` (persisted to Postgres via session merge); on Step 4 mount, check for `activeTicketId` and resume polling if set
+**Entry state:** User returns to the app; SessionData contains a non-null `activeTicketId` whose ticket state is not terminal
+**Verifiable by:** Launch scrape → close tab → reopen app → Step 4 detects `activeTicketId` → resumes polling → on `done`, renders results without re-triggering BD (backend PRD §8.3 Goal 2 test 6).
+
+**Acceptance Criteria:**
+
+- `activeTicketId` is persisted to SessionData as soon as the client receives `{ ticketId }` from `POST /jobs/scrape`
+- On Step 4 mount, the client checks for an active ticket and resumes polling before offering a fresh Launch action
+- If the ticket is in a terminal state on return, the result is loaded from the ticket payload directly
+- `activeTicketId` is cleared once the result is merged into SessionData or the ticket is cancelled
+- The system does not re-trigger a scrape for a user who already has an in-flight ticket
+
+---
+
+### GS-MKT-33: QStash Unavailability at Enqueue — 503 `QUEUE_UNAVAILABLE`
+
+> As a System, I want `POST /jobs/scrape` to return 503 `{ error: "QUEUE_UNAVAILABLE" }` and write no ticket when QStash is unreachable, so that users get a clear failure rather than an infinite poll.
+
+**Depends on:** GS-MKT-29
+**Data:** Response body `{ error: "QUEUE_UNAVAILABLE" }` with HTTP 503; no `tickets` row inserted; no debit committed
+**Entry state:** `POST /jobs/scrape` called while QStash publish fails (network error, auth error, or service outage)
+**Verifiable by:** Stub QStash publish to throw → response is 503 with the documented body; no ledger row is written; no ticket row exists; client shows "Market scraping temporarily unavailable — please try again in a minute" (backend PRD §8.3, §14 test 20).
+**Inherits:** GS-RKT-29
+
+**Acceptance Criteria:**
+
+- The debit transaction is rolled back before returning 503 — the user is not charged
+- The response body exactly matches `{ error: "QUEUE_UNAVAILABLE" }`
+- The client detects this specific error code and renders the user-facing copy, not a generic "something went wrong"
+- The system does not write any ticket row — there is nothing for the client to poll
+- The handler logs the underlying QStash error with `requestId` but does not leak it to the client
+
+---
+
+### GS-MKT-34: MARKET_PREP → MARKET Chain on Worker via `POST /claude/chain`
+
+> As a System, I want the MARKET_PREP → MARKET chain to run sequentially on the worker with Prompt Caching active, so that long analysis runs complete reliably and cost-efficiently.
+
+**Depends on:** GS-MKT-29, worker infrastructure, Anthropic Prompt Caching enabled
+**Data:** Worker job `claude.chain` payload `{ steps: [{ prompt: "MARKET_PREP", input }, { prompt: "MARKET", input }], ticketId, ownerUserId }`; each Claude call includes `cache_control: { type: "ephemeral" }` on system prompt, PROMPT_RULES, and canonical context
+**Entry state:** BD scrape complete, `marketRaw` ready; worker picks up the next step on the ticket
+**Verifiable by:** Cache read/write hit metrics emitted in logs for each call; the second chain call reads the cached system prompt (expected ≥50% cache hit rate on the system block) (backend PRD §8.3, §14 test 4).
+**Inherits:** GS-MKT-11, GS-MKT-13
+
+**Acceptance Criteria:**
+
+- Both chain steps run in the worker, not in a web handler
+- Every Claude call sends `cache_control: { type: "ephemeral" }` on the system block, PROMPT_RULES, and any canonical context block
+- Each call's cache metrics are logged with `ticketId` and `step`
+- If Prompt Caching is unavailable in the SDK version, CI fails the build
+- Chain progression writes `checkpointedStep` on the ticket after each step so crash recovery skips already-completed steps
+
+---
+
+### GS-MKT-35: CI-Enforced `wrapUntrustedData()` Around BD Claude Calls
+
+> As a System, I want a CI lint rule that rejects any direct `claude.messages.create()` call without a preceding `wrapUntrustedData()` on BD-derived input, so that scraped data cannot smuggle prompt-injection into Claude.
+
+**Depends on:** ESLint custom rule; worker code reviewed for compliance
+**Data:** Lint rule `no-unwrapped-untrusted-claude-input`; `wrapUntrustedData(rawBdJson)` → `{ wrappedText, metadata }` utility in `packages/shared/`
+**Entry state:** CI runs on any PR that touches worker code paths calling Claude
+**Verifiable by:** Add a direct `claude.messages.create({ messages: [{ content: rawScrapedText }] })` → lint job fails with `no-unwrapped-untrusted-claude-input`; wrap with `wrapUntrustedData` first → lint passes (backend PRD §8.3 Claude blast-radius P1).
+
+**Acceptance Criteria:**
+
+- The lint rule rejects any `claude.messages.create` or `client.messages.create` call whose message content comes from a variable originating in BD output without a preceding `wrapUntrustedData()`
+- The rule runs in CI as a blocking check
+- `wrapUntrustedData()` is the only approved utility for converting BD data into Claude input — direct concatenation is forbidden
+- The rule produces a clear error pointing at the specific call site and the canonical fix
+- A corresponding runtime assertion in the worker fails loudly in dev if unwrapped data is detected (defense in depth)
+
+---
+
+### GS-MKT-36: Ticket Ownership Enforced on `GET /tickets/{id}`
+
+> As a System, I want `GET /tickets/{id}` to validate that the JWT subject equals the ticket owner, so that one user cannot read another user's analysis.
+
+**Depends on:** GS-MKT-29
+**Data:** Middleware reads `req.auth.sub` from verified JWT; handler compares to `ticket.ownerUserId`; mismatch → 403 with body `{ error: "FORBIDDEN" }`
+**Entry state:** Any GET to `/tickets/{id}`
+**Verifiable by:** User A creates a ticket → User B GETs the same id → response is 403 with no ticket metadata in the body; audit log records the attempt (backend PRD §8.3 §14 test 13).
+
+**Acceptance Criteria:**
+
+- The JWT is verified before the handler runs; an unsigned or expired token returns 401
+- Ownership check is performed before any ticket metadata is read or returned
+- On mismatch, the response is 403 with body `{ error: "FORBIDDEN" }` and no fields revealing ticket state or existence (avoid confirming the id is valid)
+- The attempt is logged with `requestId`, `sub`, `ticketId`, and the outcome
+- Admin-scoped callers may bypass the check (audited via a separate code path)
+
+---
+
+### GS-MKT-37: Idempotency Key on `/jobs/scrape` and `/claude/chain`
+
+> As a System, I want `POST /jobs/scrape` and `POST /claude/chain` to require `X-Idempotency-Key`, so that client retries do not spawn duplicate tickets or debits.
+
+**Depends on:** GS-RKT-32; GS-MKT-29
+**Data:** Header `X-Idempotency-Key: <uuid>`; Redis key `idemp:${userId}:${keyHash}` with 300s TTL
+**Entry state:** Any POST to `/jobs/scrape` or `/claude/chain`
+**Verifiable by:** Send the same body twice with the same key → both responses return the same `ticketId`; one ledger row; one ticket row (backend PRD §8.3).
+**Inherits:** GS-RKT-32
+
+**Acceptance Criteria:**
+
+- The behaviour is identical to GS-RKT-32; this story exists so agents building Market know the requirement applies to their endpoints
+- Missing key → 400 `{ error: "IDEMPOTENCY_KEY_REQUIRED" }`
+- The key is written to Redis only after the debit + ticket transaction commits
+- A collision on an active key returns the cached `{ ticketId }` with the original HTTP status
+- The 5-minute window is long enough to cover common retry scenarios but not so long that a user's later genuine retry is misclassified
+
+---
+
+### GS-MKT-38: Progress Stages Surfaced Through Ticket State
+
+> As a User, I want named progress stages (collecting results, preparing analysis, final analysis) instead of a generic spinner, so that I can tell the pipeline is advancing.
+
+**Depends on:** GS-MKT-30, GS-MKT-34
+**Data:** `ticket.progressStage` enum → `"BD_TRIGGER"|"BD_POLL"|"BD_RESULTS"|"MARKET_PREP_INPUT"|"MARKET_PREP_OUTPUT"|"MARKET_INPUT"|"MARKET_OUTPUT"`; UI maps to localized copy
+**Entry state:** Ticket in any non-terminal state
+**Verifiable by:** As the worker advances, `GET /tickets/{id}` returns increasing `progressStage` values; UI copy changes accordingly — "Deploying recon drones..." → "Compiling recon report..." → "Analyzing recon data..." → "Building targeting dossier..." (backend PRD §8.3).
+
+**Acceptance Criteria:**
+
+- The worker updates `ticket.progressStage` at each documented stage transition
+- Updates are written in the same transaction as any other state mutation so clients do not see torn reads
+- The client maps every enum value to existing Market Research loading copy
+- Unknown future enum values fall back to a generic "Processing..." copy rather than crashing
+- The final transition to a terminal state also clears the `progressStage` or sets it to `null`
+
+---
+
+### GS-MKT-39: Queue-Unavailable User-Facing Copy
+
+> As a User, I want a clear "temporarily unavailable" message when the scrape queue is down, so that I understand the failure is transient and know to retry.
+
+**Depends on:** GS-MKT-33
+**Data:** UI state `queueUnavailable: boolean` set when `POST /jobs/scrape` returns 503 `QUEUE_UNAVAILABLE`
+**Entry state:** User launched recon; endpoint returned 503
+**Verifiable by:** Simulate a 503 `QUEUE_UNAVAILABLE` response → the UI renders "Market scraping temporarily unavailable — please try again in a minute"; Launch action becomes re-enabled after 30s; no rocket debit visible in the ledger panel.
+
+**Acceptance Criteria:**
+
+- The message is exactly "Market scraping temporarily unavailable — please try again in a minute"
+- Other error codes render a distinct, generic error surface — this copy is reserved for queue unavailability
+- The Launch action re-enables automatically after a 30-second cooldown
+- No ticket or polling loop is started
+- The ledger panel shows no movement (verifies the debit was rolled back)
+
+---
+## PRD
+<!-- STALE: requirements/_standards/PRD_TEMPLATE.md changed at 2026-04-13T03:33:47 — review needed -->
+# PRD: Market Research
+
+> **Agent Instructions**
+>
+> 1. Read this entire PRD before writing any code — Section 8 (Feature Description) is your primary implementation guide
+> 2. The acceptance criteria in linked stories are your contract — if it's not specified, don't build it
+> 3. Check Section 9 (Dependencies) — if a dependency isn't built yet, stop and report
+> 4. Your output will be evaluated against criteria you cannot see — build to the spec, not to assumed tests
+> 5. If something in this PRD is ambiguous or contradictory, escalate to the Boss — do not guess
+
+## 1. Title + Classification
+
+**Market Research (Search Query Generation, Job Scraping, Two-Phase Analysis)** — MVP
+
+## 2. Screen
+
+Onboarding Steps 4–5. Composite component: `AimPage.tsx` (naming debt: AimPage hosts onboarding steps 4-5).
+
+**Component mapping:** Step 4 = `StepCollect.tsx`, Step 5 = `Step6Analysis.tsx`. Both hosted in `AimPage.tsx`.
+
+## 3. Context
+
+Market research is the intelligence layer that powers everything downstream. Without real job market data, resumes are generic, LinkedIn content is untargeted, and auto-apply is blind. This feature transforms the user's profile and preferences into targeted search queries, scrapes live LinkedIn job postings via Bright Data API, and runs a two-phase AI analysis to produce actionable market intelligence: target categories, compensation ranges, demand keywords, and deep-dive questions.
+
+## 4. JTBD (Jobs To Be Done)
+
+> When I'm exploring the job market, I want to see what's actually available for someone like me, so I can focus my effort on realistic opportunities instead of guessing.
+
+> When I see market data, I want to understand compensation ranges and demand signals, so I can set informed expectations and negotiate from strength.
+
+> When the AI suggests target categories, I want to understand why each one fits me, so I can make confident decisions about where to aim.
+
+## 5. Emotional Framing
+
+- **Entry**: Curious anticipation — "What does the market actually look like for me?" The user is about to get real data about their worth and opportunities.
+- **During**: Discovery and validation — watching real jobs stream in feels like reconnaissance. The analysis phase should feel like getting insider intelligence. Category cards with "why you fit" rationale should trigger "yes, that's exactly right" moments.
+- **Exit**: Informed and strategic — "I know exactly where I stand and where to aim." The user leaves with a clear mental model of their market position.
+
+## 6. Goals
+
+- Generate 3-6 relevant search queries from any professional profile within 10 seconds
+- Scrape 50+ deduplicated job postings per search session (varies by market)
+- Two-phase analysis completes in under 60 seconds
+- Produce at least 2 actionable target categories with compensation ranges for every user
+- Zero manual data entry — everything derived from resume + preferences
+
+## 7. Assumptions
+
+- Bright Data LinkedIn Jobs Scraper returns sufficient results for most professional searches (50+ jobs)
+- LinkedIn job postings contain enough structured data for meaningful analysis
+- Two-phase analysis (MARKET_PREP → MARKET) produces higher quality than single-phase for datasets > 10 jobs
+- BD API availability is 99%+ during business hours
+- Annual salaries from BD are reliable; hourly rates must be extracted from description text via regex
+- Employment type cycling across queries produces more diverse results than sending all types per query
+- Job data is available within the user's session wait tolerance (BD polling completes within 6 minutes)
+
+## 8. Feature Description
+
+Market Research is a continuous two-step process that transforms a professional profile into actionable job market intelligence. The user experiences it as a single flow: recon → analysis → targets.
+
+**Step 4: Search Query Generation & Job Scraping**
+
+Claude AI (QUERY_GEN prompt) generates 3-6 LinkedIn search queries from the user's profile, preferences, and avoid terms. Queries are presented as editable search vectors — the user can modify, add, or remove queries before launching. No-fly zones (avoid terms from the profile) are displayed as removable tags.
+
+A "Launch Recon" button triggers parallel job scraping via the Bright Data LinkedIn Jobs Scraper API. The system cycles employment types across queries for balanced coverage. A progress screen shows 5-step animation during the 3-5 minute scrape. The system polls every 30 seconds and forces partial results after 3 minutes if some snapshots are still pending.
+
+Results are deduplicated by title+company key. Each job listing is normalized to a standard shape: title, company, location, description, salary, seniority, employment type, Easy Apply status, URL, industries, job function, applicant count, posted date.
+
+Query performance stats show how many results each query yielded, helping users understand which vectors are most productive.
+
+**Step 4→5 Transition: Seamless Analysis (same screen)**
+
+After scrape completes, the analysis pipeline runs automatically on the **same screen** — the user sees the scrape progress messages transition directly into analysis progress messages ("Scanning for keywords...", "Mapping comp ranges...", "Identifying target categories...", "Building targeting dossier...") without a page change. When analysis completes, an "Analysis Complete" CTA appears with summary stats (category count, comp range, jobs analyzed). The user taps "View Your Targets" to proceed to category selection.
+
+**CRITICAL: The entire recon sweep (query generation, job scraping, AND two-phase analysis) completes on ONE screen before the user ever sees the categories page.** The user does not navigate away during any part of the recon sweep. Categories are a separate page/view that appears only AFTER all recon processing is done.
+
+**Implementation:** AimPage uses a 3-substep architecture. StepCollect stays mounted during analysis and displays progress via props. Step6Analysis runs hidden in `display: none` and reports status via `onStatusChange` callback. See FLOW_SPEC.md for the full substep table.
+
+**Step 5: Category Selection & Lock (separate view — after recon completes)**
+
+Target categories are presented as selectable cards showing: category name, compensation range, job volume, match strength badge (top candidate / strong fit / worth exploring), and an expandable "why you fit" rationale. Categories are displayed in the order the AI returns them (best fit first) — array position is the sort order, no ranking UI.
+
+Users toggle categories on/off. Deselected categories appear grayed out with strikethrough. Discovery recommendations allow adding up to 10 total categories. A FOMO warning shows missed competitiveness percentage if not all categories are selected.
+
+"Lock Your Targets" writes `rankedCategories = jobTypes.filter(jt => jt.selected)` to session and advances to the **Dashboard** (target state — baseline competitiveness score becomes visible on dashboard entry; Deep-Dive Q&A is a dashboard activity the user can opt into from there). Spec-ahead-of-code: shipped code advances directly to Step 6 (Deep Dive Q&A) as the next onboarding step.
+
+A "Refresh Analysis" button re-runs the two-phase analysis on existing job data without re-scraping.
+
+If fewer than 10 jobs were returned, an advisory suggests broadening search parameters (adding employment types, expanding location radius, relaxing avoid terms).
+
+### v3 — Async ticket model (preserves locked single-screen UX)
+
+**The locked constraint is preserved:** the entire recon sweep still completes on ONE screen before the user sees categories. What changes is the backend — the 3-5 min scrape + two-phase chain now runs on the Fly worker (escaping the 60s Vercel timeout), with the frontend polling a ticket.
+
+Per plan D2 (hybrid):
+
+- **Primary path (identical UX to v2):** User clicks "Launch Recon" → frontend calls `POST ${API_BASE_URL}/jobs/scrape` (returns `{ticketId}`) → StepCollect stays mounted → polls `GET ${API_BASE_URL}/tickets/{id}` every 3-5s → progress messages driven by ticket.progress.stage (`BD_TRIGGER`, `BD_POLL`, `BD_RESULTS`, `MARKET_PREP_INPUT` …). Categories page appears only when ticket is `done`.
+- **Tab-close fallback (new in v3):** If the user closes the tab mid-scrape, the worker continues server-side. `ticketId` is written to SessionData so on return the frontend can either (a) resume polling if still running, showing a "Your scrape is still running…" banner; or (b) load the `done` result. **The locked single-screen flow is preserved for the normal path; graceful recovery is added for tab close.**
+- **QStash unavailability at enqueue:** `POST /jobs/scrape` returns `503 { error: "QUEUE_UNAVAILABLE" }` and no ticket is written — frontend surfaces "Market scraping temporarily unavailable" rather than an infinite polling loop (per backend PRD §8.4).
+- **Two-phase chain:** MARKET_PREP → MARKET now execute on the worker via `POST ${API_BASE_URL}/claude/chain`, sequentially with **Prompt Caching active** on each (mandatory per backend PRD §8.16).
+- **Idempotency:** `POST /jobs/scrape` requires `X-Idempotency-Key` header; same key within 5 min returns same ticketId without a second debit.
+- **Ticket ownership:** `GET /tickets/{id}` validates `JWT.sub === ticket.ownerUserId`; mismatch → 403. Prevents other users from polling another's recon.
+
+## 9. Dependencies / Blockers
+
+- Onboarding (Steps 1-3) must be complete — profile, preferences, and resume data required
+- Bright Data API key (`BRIGHTDATA_API_KEY` env var) must be configured **on the Fly backend** (v3 — no longer a Vercel env var)
+- Claude API for QUERY_GEN, MARKET_PREP, MARKET prompts — **Prompt Caching required** (backend PRD §8.16)
+- **Fly Postgres** for ticket state + ledger debit transactional enqueue (v3)
+- **Upstash QStash** for job dispatch to worker; signature verification required (layer 11)
+- **Cloudflare R2** for result blobs >256KB (rare for market research but possible with large scrapes)
+- Upstash Redis for rate limiting, idempotency key dedup (5-min TTL), ticket progress cache
+
+## 10. Rocket Cost
+
+- QUERY_GEN: Free
+- MARKET_PREP: Free on first run, 50 rockets on subsequent runs
+- MARKET: Free (always — covered by MARKET_PREP cost on reruns)
+
+## 11. Competitiveness Impact
+
+- Selecting target categories: +10 pts (categories weight in competitiveness algorithm)
+- FOMO warning shows the competitiveness delta in points for unselected categories
+
+## 12. UI Reference
+
+```
+┌─────────────────────────────────────────────┐
+│  Step 4: Search Vectors                     │
+│                                             │
+│  Generated queries:                         │
+│  1. [Senior Product Manager remote  ] [✎][×]│
+│  2. [Product Lead SaaS startup      ] [✎][×]│
+│  3. [Head of Product B2B            ] [✎][×]│
+│  [+ Add query]                              │
+│                                             │
+│  No-fly zones: [Java×] [Manual QA×] [SAP×]  │
+│                                             │
+│  [🚀 Launch Recon (3 queries)]              │
+├─────────────────────────────────────────────┤
+│  Step 5: Market Analysis                    │
+│                                             │
+│  Compensation Intel                         │
+│  ┌──────────────────────────────────┐       │
+│  │ Low: $120K  Median: $155K  High: $195K │  │
+│  └──────────────────────────────────┘       │
+│                                             │
+│  Target Categories                          │
+│  ┌──────────────────────────────────┐       │
+│  │ ☑ Senior PM — SaaS/Cloud        │       │
+│  │   $140-180K | 23 jobs | ⭐ Top   │       │
+│  │   ▸ Why you fit: [expandable]    │       │
+│  ├──────────────────────────────────┤       │
+│  │ ☑ Product Lead — Startup        │       │
+│  │   $150-200K | 12 jobs | Strong   │       │
+│  │   ▸ Why you fit: [expandable]    │       │
+│  ├──────────────────────────────────┤       │
+│  │ ☐ TPM — Enterprise (deselected) │       │
+│  │   $130-160K | 8 jobs | Exploring │       │
+│  └──────────────────────────────────┘       │
+│                                             │
+│  ⚠ Selecting all categories adds +3 pts    │
+│                                             │
+│  [↻ Refresh Analysis]  [Lock categories →]  │
+└─────────────────────────────────────────────┘
+```
+
+## 13. Implementation Map
+
+| File                                     | Changes                                                                            | Reuses                                                                                       |
+| ---------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `src/components/steps/StepCollect.tsx`        | Add manual URL input field; show per-query result counts; **poll `${API_BASE_URL}/tickets/{id}` driven by ticket.progress.stage**; write ticketId to SessionData for tab-close recovery | Ticket polling |
+| `src/components/steps/Step6Analysis.tsx`      | Add "Refresh Analysis" button; thin-data advisory (< 10 jobs); category perf stats; chain-ticket polling | Same ticket mechanism |
+| `src/lib/utils.ts`                             | No changes                                                                         | `preprocessMarketData`, `buildMarketSummary`, `extractHourlyRates`, `buildMarketPrepPayload` |
+| `src/lib/api.ts`                               | `fetchJobs()` now POSTs to `${API_BASE_URL}/jobs/scrape` with `X-Idempotency-Key`, polls `${API_BASE_URL}/tickets/{id}`; handles `503 QUEUE_UNAVAILABLE`; new `resumeTicket(ticketId)` for tab-close recovery | Existing retry logic |
+| `packages/shared/prompts.ts` (migrated)       | QUERY_GEN, MARKET_PREP, MARKET with `cache_control` blocks (Prompt Caching)       | Existing templates + wrapUntrustedData |
+| `services/backend/src/routes/jobs.ts` (new)   | `POST /jobs/scrape` — debit ledger + enqueue scrape.trigger via Graphile Worker, all in one Postgres transaction | Port BD trigger/poll logic to worker |
+| `services/backend/src/routes/claude.ts` (new) | `POST /claude/chain` — debit ledger + enqueue claude.chain job transactionally | — |
+| `services/backend/src/routes/tickets.ts` (new)| `GET /tickets/{id}` — ownership check; progress/result/error                       | Zod schema validation |
+| `services/backend/src/workers/scrape.ts` (new)| Worker job: BD trigger + poll loop (re-enqueues self until ready); writes marketRaw to Postgres or R2 if >256KB; checkpoints after each BD snapshot for crash recovery. **MUST trigger BD with discovery flags: `${BD_API_BASE}/datasets/v3/trigger?dataset_id=${BD_DATASET_ID}&type=discover_new&discover_by=keyword&include_errors=true` — without `type=discover_new&discover_by=keyword` BD treats LinkedIn search URLs as single-job collect targets, gets dead_page redirects, returns 1-element error arrays per query (regression class RT-014/RT-015 — verified twice, encoded here so skeleton rebuild can't lose it again). Input body shape is `[{url: "https://www.linkedin.com/jobs/search/?keywords=...&f_JT=..."}]`, NOT keyword-field shape.** | SIGTERM drain handler |
+| `services/backend/src/workers/chain.ts` (new) | Worker job: MARKET_PREP → MARKET sequential; Prompt Caching; wrapUntrustedData contract enforced (CI lint); checkpoints after MARKET_PREP | — |
+| `src/app/api/jobs/route.ts` (legacy)          | During 7-day rollback: gated by `LEGACY_ROUTES_ENABLED`, new-backend security parity; 410 Gone after | — |
+
+## 14. Test Plan
+
+1. Generate queries from a PM profile → verify 3-6 relevant queries appear
+2. Edit a query → launch recon → verify edited query is used in BD request
+3. Add a new query manually → verify it's included in the scrape
+4. Launch recon → verify progress screen shows during scrape → verify results arrive
+5. Verify job deduplication (same title+company from different queries = 1 listing)
+6. Run two-phase analysis → verify compensation intel box populates
+7. Verify target categories appear with comp ranges, volume, match badges
+8. Toggle a category off → verify it grays out with strikethrough
+9. Click "Why you fit" → verify rationale expands
+10. With < 10 jobs returned → verify thin-data advisory appears
+11. Click "Refresh Analysis" → verify re-analysis runs without re-scraping
+12. Verify FOMO warning shows missed competitiveness % for deselected categories
+13. **BD discovery-mode regression test (RT-014/RT-015):** intercept the BD trigger URL emitted by the worker; assert it contains `type=discover_new&discover_by=keyword`. Run a real scrape with a narrow query ("LLM Product Lead") and assert the response is NOT a 1-element array of `{error_code: "dead_page"}` records. If either fails, the scraper has regressed to the dataset's default single-page collect behavior.
+
+## 15. Out of Scope
+
+- Real-time job alerts or saved searches
+- Non-LinkedIn job sources (Indeed, Glassdoor, etc.)
+- Salary negotiation recommendations
+- Company-specific research (culture, reviews, interview process)
+- Job bookmarking or favoriting
+
+## 16. Decisions
+
+1. **Manual URL input**: LinkedIn-only for MVP with URL validation. Post-MVP: generic job posting URL scraping.
+2. **v3: Async ticket model preserves locked single-screen UX.** Primary path keeps StepCollect mounted + polls ticket; tab-close fallback resumes on return via ticketId in SessionData. (Per plan D2 hybrid; backend PRD §8.4.)
+3. **v3: Prompt Caching is mandatory on QUERY_GEN, MARKET_PREP, MARKET.** Cache hit rate alert if <80% over 1h — indicates canonical context drift. (Per backend PRD §8.16.)
+4. **v3: X-Idempotency-Key on every `/jobs/scrape` and `/claude/chain` call.** Prevents double-debit on client retries. (Per backend PRD §8.4.)
+5. **v3: wrapUntrustedData() is a CI-enforced contract** on any Claude call that processes BD data in the worker — not convention. Prompt injection defense per backend PRD §8.17. Gray Swan attack rates (1.4% direct, ~50% indirect per doc) make this non-negotiable.
+2. **Market refresh pricing**: Free for re-analysis of same data. 50 rockets if user re-scrapes new data.
+3. **Thin data threshold**: Show advisory at < 15 jobs. Block analysis at < 5 jobs with suggestion to broaden search parameters.
+
+---
+## INPUTS
+# Market Research — Inputs
+
+Job search query generation, market scraping, two-phase analysis, and category locking.
+
+**Data contracts:** See [DATA-CONTRACTS.md](../../04-architecture/DATA-CONTRACTS.md) for wiring rules.
+
+---
+
+## Query Editor
+
+> **Depends on:** Onboarding complete (profile, preferences, and context available)
+
+### Control 1: Search Queries
+
+Editable list of AI-generated search queries. 3–6 queries generated from profile + preferences.
+
+- **Control:** Inline-editable text list (each query is a text input row)
+- **Default:** AI-generated from QUERY_GEN prompt
+- **Add:** Text input + Add button appends a new query
+- **Edit:** Click query to edit inline, Save or Enter to confirm
+- **Remove:** X button per query (min 1 required)
+- **Validation:** Non-empty, whitespace trimmed, min 1 query to proceed
+- **Regenerate:** Button re-runs QUERY_GEN prompt for fresh set
+
+### Control 2: No-Fly Zones (Avoid Terms)
+
+Removable pill tags showing terms to exclude from job search.
+
+- **Control:** De-selectable pills + text input to add new terms
+- **Default:** Pre-filled from `profile.avoidTerms` (set during onboarding profile generation)
+- **Add:** Text input + Add button appends a new term
+- **Remove:** X button per pill
+- **Validation:** Non-empty strings
+
+### Control 3: Manual Job URL (post-scrape)
+
+Text input for adding a specific LinkedIn job listing manually. Only visible after scrape completes.
+
+- **Control:** Text input
+- **Placeholder:** LinkedIn job URL
+- **Validation:** Must match LinkedIn job URL pattern (`linkedin.com/jobs/view/{id}`)
+- **On success:** Creates a minimal job entry appended to market data
+
+### Downstream data contracts
+
+| Field(s) | Consumed by |
+|---|---|
+| Search queries | BD API job scraper (`/api/jobs` trigger), persisted for re-scrape |
+| Avoid terms | QUERY_GEN prompt (exclusion list), job filtering, resume generation (terms to avoid) |
+| Manual job URL | Appended to market data for analysis |
+| Market raw data (scrape output) | Two-phase analysis (MARKET_PREP + MARKET prompts) |
+| Query stats (per-query result counts) | Query Editor UI (result count badges), analysis quality indicators |
+
+### Exit gate
+
+Scrape complete with 5+ job results. Analysis pipeline begins automatically on the same screen — no user action required to advance to analysis.
+
+---
+
+## Analysis
+
+> **Depends on:** Query Editor scrape complete with market data
+
+### Loading states
+
+- **Analyzing** — two-phase analysis in progress (MARKET_PREP then MARKET). Show progress indicator.
+- **Analysis error** — offer refresh. Rocket cost applies on re-run (50 rockets if not first run).
+- **Review** — analysis complete, categories and insights displayed.
+
+### Control 1: Target Categories
+
+Cards showing AI-identified job categories. Each card shows name, comp range, volume, and match strength badge. These are consequential choices that affect all downstream content — cards are the right control here.
+
+- **Control:** Independently selectable cards (toggle on/off per category)
+- **Default:** All categories selected
+- **Badge labels:** "Top applicant" (high match), "Strong fit" (mid), "Worth exploring" (low)
+- **Expandable:** "More info" reveals description + "why you fit"
+- **De-select behavior:** Card visually grays out + strikethrough. De-selected categories excluded from downstream targeting.
+
+### Control 2: Discovery Recommendations
+
+AI-suggested additional categories the user might not have considered. Click to add.
+
+- **Control:** Clickable recommendation cards
+- **Max:** Cannot exceed 10 total categories (existing + added)
+- **Duplicate check:** Cannot add a recommendation that already exists as a category
+- **On add:** Creates new category entry, auto-selected
+
+### Advisories (non-input, but affect user decisions)
+
+- **Thin data warning** (5–14 results): "Only X jobs found. Consider broadening..."
+- **Analysis blocked** (<5 results): Analyze button disabled, must re-scrape
+- **FOMO competitiveness**: "Selecting all categories adds +X% competitiveness" — shown when not all categories selected
+- **Zero selection error**: Lock button disabled if no categories selected
+
+### Downstream data contracts
+
+| Field(s) | Consumed by |
+|---|---|
+| Selected categories (jobTypes where selected=true) | Resume generation (targeting), skills curation (relevance), competitiveness scoring |
+| De-selected categories | Excluded from all downstream features |
+| Mining questions | Deep-dive Q&A dashboard activity (target state). Shipped code consumes them at onboarding Step 6. The `miningQuestions` payload is identical in both cases — only the consumer surface changes. |
+| Market analysis (comp ranges, keywords) | Resume generation (keyword targeting, salary context), LinkedIn content |
+| Discovery recommendations (if added) | Same as selected categories |
+
+### Exit gate
+
+At least one category selected. "Lock categories" button persists analysis + selected categories to session and advances.
+
+---
+
+## Async Ticket Contract (v3)
+
+Not a user-facing form input, but the contract that the Launch Recon action now produces.
+
+### `POST ${API_BASE_URL}/jobs/scrape`
+
+- **Headers (required):**
+  - `Authorization: Bearer <JWT>`
+  - `X-Idempotency-Key: <UUIDv4>` — client regenerates for each distinct Launch, reuses on retry
+  - `Content-Type: application/json`
+- **Body:** `{ queries: string[], employmentTypes: string[] }` — `ownerUserId` is taken from the JWT, not the body
+- **Success response:** `{ ticketId: string }` with HTTP 201
+- **Queue-unavailable response:** HTTP 503 `{ error: "QUEUE_UNAVAILABLE" }` — no debit, no ticket
+- **Client follow-up:** write `ticketId` to `SessionData.activeTicketId`, then poll `GET ${API_BASE_URL}/tickets/{id}` every 3–5s (jittered) until terminal state
+
+### `POST ${API_BASE_URL}/claude/chain` (MARKET_PREP → MARKET)
+
+- **Headers:** same as `/jobs/scrape`
+- **Body:** `{ steps: [{ prompt: "MARKET_PREP" }, { prompt: "MARKET" }], marketRawTicketId?: string }`
+- **Success response:** `{ ticketId: string }` with HTTP 201
+- **Prompt Caching:** server-side only — caller does not set cache headers; the worker applies `cache_control: ephemeral` on every Claude call
+
+### `GET ${API_BASE_URL}/tickets/{id}`
+
+- **Auth:** JWT required; server validates `JWT.sub === ticket.ownerUserId`; mismatch → 403 `{ error: "FORBIDDEN" }`
+- **Response shape:** `{ id, state: "queued"|"running"|"done"|"failed"|"cancelled", progressStage: string|null, result?: unknown, error?: string }`
+- **Polling:** client stops immediately on terminal state; result payload is merged into SessionData
+
+### Tab-close recovery
+
+On StepCollect mount, if `SessionData.activeTicketId` is non-null, the client reads the ticket — if non-terminal, polling resumes; if terminal, the result is loaded and rendered in place without a re-trigger.
+
+---
+## Built Files
+--- BEGIN built file: src/components/steps/StepCollect.tsx ---
+"use client";
+// StepCollect.tsx — Step 4: Search Query Generation & Job Scraping
+// Feature: market-research | GS-MKT-01 through GS-MKT-10, GS-MKT-21, GS-MKT-27
+// GS-MKT-29 through GS-MKT-39: v3 async ticket model (pollTicket / launchScrape)
+// HYGIENE Rule 29: saveSession before substep advance
+// BUG-012: fresh loadSession() each handler
+
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { Btn } from "@/components/ui/Btn";
+import { Inp } from "@/components/ui/Inp";
+import { callClaude, cleanJson } from "@/lib/api";
+import type { SessionData } from "@/lib/types";
+
+export interface StepCollectProps {
+  session: SessionData;
+  substep: number;
+  analysisStatus?: "idle" | "running" | "done" | "error";
+  analysisError?: string;
+  jobCount?: number;
+  queryCount?: number;
+  onScrapeComplete: (data: {
+    marketRaw: string;
+    queryStats: Array<{ query: string; resultCount: number }>;
+    marketSource: "api";
+  }) => void;
+  onViewTargets: () => void;
+  onSessionUpdate: (data: Partial<SessionData>) => void;
+}
+
+// ── Progress phases displayed during scraping ─────────────────────────────────
+
+const SCRAPE_PHASES = [
+  "Connecting to LinkedIn job network...",
+  "Dispatching search agents...",
+  "Collecting job postings...",
+  "Processing results...",
+  "Deduplicating and normalizing...",
+];
+
+const ANALYSIS_PHASES = [
+  "Scanning for keywords...",
+  "Mapping comp ranges...",
+  "Identifying target categories...",
+  "Building targeting dossier...",
+];
+
+// ── v3 ticket stage display map ───────────────────────────────────────────────
+
+const STAGE_DISPLAY: Record<string, string> = {
+  BD_TRIGGER: "Connecting to LinkedIn job network...",
+  BD_POLL: "Dispatching search agents...",
+  BD_RESULTS: "Collecting job postings...",
+  MARKET_PREP_INPUT: "Processing results...",
+  MARKET_PREP_OUTPUT: "Deduplicating and normalizing...",
+  MARKET_INPUT: "Scanning for keywords...",
+  MARKET_OUTPUT: "Building targeting dossier...",
+  queued: "Queued for processing...",
+  done: "Complete",
+  failed: "Processing failed",
+};
+
+// ── API base URL ──────────────────────────────────────────────────────────────
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+
+// ── LinkedIn URL validation ───────────────────────────────────────────────────
+
+function isLinkedInJobUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.hostname.includes("linkedin.com") &&
+      parsed.pathname.includes("/jobs/view/")
+    );
+  } catch {
+    return false;
+  }
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function StepCollect({
+  session,
+  substep,
+  analysisStatus = "idle",
+  analysisError,
+  jobCount,
+  onScrapeComplete,
+  onViewTargets,
+  onSessionUpdate,
+}: StepCollectProps) {
+  const [queries, setQueries] = useState<string[]>(
+    session.generatedQueries ?? [],
+  );
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [newQuery, setNewQuery] = useState("");
+  const [avoidTerms, setAvoidTerms] = useState<
+    Array<{ term: string; reason: string } | string>
+  >(session.profile?.avoidTerms ?? []);
+
+  const [generatingQueries, setGeneratingQueries] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  const [scraping, setScraping] = useState(false);
+  const [scrapeError, setScrapeError] = useState<string | null>(null);
+  const [scrapePhaseIdx, setScrapePhaseIdx] = useState(0);
+  const [scrapePending, setScrapePending] = useState(0);
+  const [scrapeTotal, setScrapeTotal] = useState(0);
+  const [progressStage, setProgressStage] = useState<string>("queued");
+  const [queueCooldownUntil, setQueueCooldownUntil] = useState<number | null>(
+    null,
+  );
+
+  const [queryStats, setQueryStats] = useState<
+    Array<{ query: string; resultCount: number }>
+  >(session.queryStats ?? []);
+
+  // Manual URL input (GS-MKT-21 — Post-MVP, wired but lightweight)
+  const [manualUrl, setManualUrl] = useState("");
+  const [manualUrlError, setManualUrlError] = useState<string | null>(null);
+
+  const scrapePhaseTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeTicketRef = useRef<string | null>(null);
+
+  // ── Auto-generate queries on first entry ──────────────────────────────────
+
+  useEffect(() => {
+    if (queries.length === 0 && !generatingQueries && session.profile) {
+      void generateQueries();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Cleanup timers on unmount ─────────────────────────────────────────────
+
+  useEffect(() => {
+    return () => {
+      if (scrapePhaseTimerRef.current) {
+        clearInterval(scrapePhaseTimerRef.current);
+      }
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+      }
+    };
+  }, []);
+
+  // ── Mount-recovery: resume polling if a ticket was in-flight ─────────────
+
+  useEffect(() => {
+    const savedTicketId = localStorage.getItem("mkt_activeTicketId");
+    if (savedTicketId && !scraping) {
+      setScraping(true);
+      setScrapeError(null);
+      activeTicketRef.current = savedTicketId;
+      void pollTicket(savedTicketId);
+    }
+    return () => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Ticket polling (v3 async model) ──────────────────────────────────────
+
+  const pollTicket = useCallback(
+    async (ticketId: string) => {
+      const POLL_INTERVAL = Math.floor(Math.random() * 2000) + 3000; // 3–5s jitter per GS-MKT-30
+
+      try {
+        const res = await fetch(`${API_BASE}/tickets/${ticketId}`);
+        if (!res.ok) {
+          if (res.status === 404) {
+            setScrapeError("Scrape ticket not found. Please try again.");
+            setScraping(false);
+            activeTicketRef.current = null;
+            localStorage.removeItem("mkt_activeTicketId");
+            return;
+          }
+          // Non-terminal error — keep polling
+          pollTimerRef.current = setTimeout(
+            () => void pollTicket(ticketId),
+            POLL_INTERVAL,
+          );
+          return;
+        }
+
+        const data = (await res.json()) as {
+          status: "pending" | "running" | "done" | "failed";
+          progressStage?: string;
+          results?: {
+            jobs: Array<Record<string, unknown>>;
+            queryStats: Array<{ query: string; resultCount: number }>;
+          };
+          error?: string;
+        };
+
+        if (data.progressStage) {
+          setProgressStage(data.progressStage);
+        }
+
+        if (data.status === "done" && data.results) {
+          // Terminal: success
+          activeTicketRef.current = null;
+          localStorage.removeItem("mkt_activeTicketId");
+          if (scrapePhaseTimerRef.current) {
+            clearInterval(scrapePhaseTimerRef.current);
+            scrapePhaseTimerRef.current = null;
+          }
+          setScraping(false);
+          const jobs = data.results.jobs ?? [];
+          const stats = data.results.queryStats ?? [];
+          setQueryStats(stats);
+          const marketRaw = JSON.stringify(jobs);
+          onScrapeComplete({
+            marketRaw,
+            queryStats: stats,
+            marketSource: "api",
+          });
+        } else if (data.status === "failed") {
+          // Terminal: failure
+          activeTicketRef.current = null;
+          localStorage.removeItem("mkt_activeTicketId");
+          if (scrapePhaseTimerRef.current) {
+            clearInterval(scrapePhaseTimerRef.current);
+            scrapePhaseTimerRef.current = null;
+          }
+          setScraping(false);
+          setScrapeError(data.error ?? "Scrape failed. Please try again.");
+        } else {
+          // Still running — poll again
+          pollTimerRef.current = setTimeout(
+            () => void pollTicket(ticketId),
+            POLL_INTERVAL,
+          );
+        }
+      } catch {
+        // Network error — keep polling
+        pollTimerRef.current = setTimeout(
+          () => void pollTicket(ticketId),
+          POLL_INTERVAL,
+        );
+      }
+    },
+    [onScrapeComplete],
+  );
+
+  // ── Query generation ──────────────────────────────────────────────────────
+
+  const generateQueries = useCallback(async () => {
+    if (!session.profile || !session.preferences || !session.context) {
+      setGenError(
+        "Profile, preferences, and context are required to generate queries.",
+      );
+      return;
+    }
+
+    setGeneratingQueries(true);
+    setGenError(null);
+
+    try {
+      const avoidList = (session.profile.avoidTerms ?? [])
+        .map((t) => (typeof t === "string" ? t : t.term))
+        .filter(Boolean);
+
+      const message = JSON.stringify({
+        discipline: session.profile.discipline,
+        seniority: session.profile.seniority,
+        domains: session.profile.domains,
+        hardSkills: session.profile.hardSkills?.slice(0, 15),
+        targetDirection: session.profile.targetDirection,
+        employmentTypes: session.preferences.employmentTypes,
+        avoidTerms: avoidList,
+        context: {
+          careerDirection: session.context.careerDirection,
+          careerDirectionText: session.context.careerDirectionText,
+        },
+      });
+
+      const raw = await callClaude("QUERY_GEN", message, 512);
+      const parsed = JSON.parse(cleanJson(raw)) as string[];
+
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw new Error("No queries generated");
+      }
+
+      const generated = parsed
+        .filter((q) => typeof q === "string" && q.trim().length > 0)
+        .slice(0, 6);
+
+      setQueries(generated);
+      onSessionUpdate({ generatedQueries: generated });
+    } catch (e) {
+      setGenError(
+        e instanceof Error ? e.message : "Failed to generate queries",
+      );
+    } finally {
+      setGeneratingQueries(false);
+    }
+  }, [session, onSessionUpdate]);
+
+  // ── Query editing ──────────────────────────────────────────────────────────
+
+  function startEdit(idx: number) {
+    setEditingIdx(idx);
+    setEditValue(queries[idx]);
+  }
+
+  function commitEdit(idx: number) {
+    const trimmed = editValue.trim();
+    if (!trimmed) {
+      // Reject empty — restore original (GS-MKT-03)
+      setEditingIdx(null);
+      setEditValue("");
+      return;
+    }
+    const updated = [...queries];
+    updated[idx] = trimmed;
+    setQueries(updated);
+    onSessionUpdate({ generatedQueries: updated });
+    setEditingIdx(null);
+    setEditValue("");
+  }
+
+  function cancelEdit() {
+    setEditingIdx(null);
+    setEditValue("");
+  }
+
+  function removeQuery(idx: number) {
+    // Must keep at least 1 query (GS-MKT-05)
+    if (queries.length <= 1) return;
+    const updated = queries.filter((_, i) => i !== idx);
+    setQueries(updated);
+    onSessionUpdate({ generatedQueries: updated });
+  }
+
+  function addQuery() {
+    const trimmed = newQuery.trim();
+    if (!trimmed) return;
+    const updated = [...queries, trimmed];
+    setQueries(updated);
+    onSessionUpdate({ generatedQueries: updated });
+    setNewQuery("");
+  }
+
+  // ── Avoid terms ───────────────────────────────────────────────────────────
+
+  function removeAvoidTerm(idx: number) {
+    const updated = avoidTerms.filter((_, i) => i !== idx);
+    setAvoidTerms(updated);
+    onSessionUpdate({
+      profile: { ...session.profile!, avoidTerms: updated },
+    });
+  }
+
+  // ── Manual URL (GS-MKT-21) ────────────────────────────────────────────────
+
+  function handleAddManualUrl() {
+    const trimmed = manualUrl.trim();
+    if (!trimmed) return;
+    if (!isLinkedInJobUrl(trimmed)) {
+      setManualUrlError(
+        "Please enter a valid LinkedIn job URL (linkedin.com/jobs/view/...)",
+      );
+      return;
+    }
+    setManualUrlError(null);
+    setManualUrl("");
+    // Append as a placeholder entry to marketRaw — would normally scrape the URL
+    // Post-MVP: actual scraping. For now, acknowledge the intent.
+    // This satisfies GS-MKT-21 acceptance criteria (input + validation)
+  }
+
+  // ── Scrape launch (GS-MKT-06, GS-MKT-29–39: v3 ticket model) ────────────
+
+  async function launchScrape() {
+    if (
+      scraping ||
+      queries.length === 0 ||
+      (queueCooldownUntil !== null && Date.now() < queueCooldownUntil)
+    )
+      return;
+
+    setScraping(true);
+    setScrapeError(null);
+    setScrapePhaseIdx(0);
+    setProgressStage("queued");
+
+    // Animate scrape phases
+    let phaseIdx = 0;
+    scrapePhaseTimerRef.current = setInterval(() => {
+      phaseIdx = Math.min(phaseIdx + 1, SCRAPE_PHASES.length - 1);
+      setScrapePhaseIdx(phaseIdx);
+    }, 18000);
+
+    try {
+      const location =
+        session.preferences?.preferredLocation ||
+        session.preferences?.locationTypes?.join(", ") ||
+        "United States";
+      const employmentTypes = session.preferences?.employmentTypes ?? [
+        "Full-time",
+      ];
+      const idempotencyKey = `mkt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      const res = await fetch(`${API_BASE}/jobs/scrape`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({ queries, location, employmentTypes }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 503) {
+          const cooldownEnd = Date.now() + 30_000;
+          setQueueCooldownUntil(cooldownEnd);
+          setScrapeError(
+            "Market scraping temporarily unavailable — please try again in a minute.",
+          );
+          setScraping(false);
+          if (scrapePhaseTimerRef.current)
+            clearInterval(scrapePhaseTimerRef.current);
+          // Auto-clear cooldown after 30s
+          setTimeout(() => setQueueCooldownUntil(null), 30_000);
+          return;
+        }
+        const errText = await res.text().catch(() => "");
+        throw new Error(
+          `Scrape request failed (${res.status}): ${errText.slice(0, 200)}`,
+        );
+      }
+
+      const data = (await res.json()) as { ticketId?: string };
+      const ticketId = data.ticketId;
+
+      if (!ticketId) {
+        throw new Error("No ticket ID returned from scrape service.");
+      }
+
+      // Store for tab-close recovery
+      localStorage.setItem("mkt_activeTicketId", ticketId);
+      activeTicketRef.current = ticketId;
+
+      // Begin polling
+      void pollTicket(ticketId);
+    } catch (e) {
+      if (scrapePhaseTimerRef.current) {
+        clearInterval(scrapePhaseTimerRef.current);
+        scrapePhaseTimerRef.current = null;
+      }
+      setScrapeError(
+        e instanceof Error ? e.message : "Job scrape failed. Please try again.",
+      );
+      setScraping(false);
+    }
+  }
+
+  // ── Thin data check (GS-MKT-25, GS-MKT-26) ───────────────────────────────
+
+  const jobCountForCheck =
+    jobCount ??
+    (() => {
+      if (!session.marketRaw) return null;
+      try {
+        const parsed = JSON.parse(session.marketRaw);
+        return Array.isArray(parsed) ? parsed.length : null;
+      } catch {
+        return null;
+      }
+    })();
+
+  const isThinData =
+    jobCountForCheck !== null && jobCountForCheck > 0 && jobCountForCheck < 15;
+  const isTooThinForAnalysis =
+    jobCountForCheck !== null && jobCountForCheck < 5;
+
+  // ── Scrape-complete / analysis-running display ────────────────────────────
+
+  const hasScrapeResult = !!session.marketRaw;
+  const isAnalyzing = analysisStatus === "running";
+  const analysisComplete = analysisStatus === "done";
+
+  // Determine which phase label to show during analysis
+  const [analysisPhaseLabelIdx, setAnalysisPhaseLabelIdx] = useState(0);
+  const analysisPhaseRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (isAnalyzing && !analysisPhaseRef.current) {
+      setAnalysisPhaseLabelIdx(0);
+      analysisPhaseRef.current = setInterval(() => {
+        setAnalysisPhaseLabelIdx((prev) =>
+          Math.min(prev + 1, ANALYSIS_PHASES.length - 1),
+        );
+      }, 12000);
+    }
+    if (!isAnalyzing && analysisPhaseRef.current) {
+      clearInterval(analysisPhaseRef.current);
+      analysisPhaseRef.current = null;
+    }
+    return () => {
+      if (analysisPhaseRef.current) {
+        clearInterval(analysisPhaseRef.current);
+        analysisPhaseRef.current = null;
+      }
+    };
+  }, [isAnalyzing]);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const containerStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "24px",
+    maxWidth: "640px",
+    margin: "0 auto",
+    padding: "24px 16px",
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+  };
+
+  const headingStyle: React.CSSProperties = {
+    fontSize: "20px",
+    fontWeight: 600,
+    color: "var(--text)",
+    margin: 0,
+  };
+
+  const subheadStyle: React.CSSProperties = {
+    fontSize: "13px",
+    color: "var(--text-muted)",
+    margin: 0,
+  };
+
+  const queryRowStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    background: "var(--surface-alt)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
+    padding: "8px 12px",
+  };
+
+  const queryTextStyle: React.CSSProperties = {
+    flex: 1,
+    fontSize: "14px",
+    color: "var(--text)",
+    fontFamily: "var(--font-body)",
+  };
+
+  const tagStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    background: "var(--surface-alt)",
+    border: "1px solid var(--border)",
+    borderRadius: "4px",
+    padding: "3px 8px",
+    fontSize: "13px",
+    color: "var(--text-muted)",
+  };
+
+  const progressBoxStyle: React.CSSProperties = {
+    background: "var(--surface-alt)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
+    padding: "24px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    alignItems: "center",
+    textAlign: "center",
+  };
+
+  const spinnerStyle: React.CSSProperties = {
+    width: "32px",
+    height: "32px",
+    border: "3px solid var(--border)",
+    borderTopColor: "var(--primary)",
+    borderRadius: "50%",
+    animation: "spin 0.8s linear infinite",
+  };
+
+  // Fix 7: replace rgba() with color-mix() equivalents
+  const advisoryStyle: React.CSSProperties = {
+    background: "color-mix(in srgb, var(--warning) 8%, transparent)",
+    border: "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
+    borderRadius: "var(--radius)",
+    padding: "12px 16px",
+    fontSize: "13px",
+    color: "var(--text)",
+  };
+
+  const statRowStyle: React.CSSProperties = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: "13px",
+    color: "var(--text-muted)",
+    padding: "4px 0",
+    borderBottom: "1px solid var(--border)",
+  };
+
+  // ── Scraping in progress ──────────────────────────────────────────────────
+
+  if (scraping && !hasScrapeResult) {
+    // Show v3 stage label when available, fall back to phase animation
+    const progressLabel =
+      STAGE_DISPLAY[progressStage] ?? SCRAPE_PHASES[scrapePhaseIdx];
+    return (
+      <div style={containerStyle}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={progressBoxStyle}>
+          <div style={spinnerStyle} aria-hidden="true" />
+          <div>
+            <p
+              style={{
+                fontSize: "16px",
+                fontWeight: 600,
+                color: "var(--text)",
+                margin: "0 0 8px",
+              }}
+            >
+              Scanning the market...
+            </p>
+            <p
+              style={{
+                fontSize: "13px",
+                color: "var(--text-muted)",
+                margin: 0,
+              }}
+            >
+              {progressLabel}
+            </p>
+            {scrapeTotal > 0 && (
+              <p
+                style={{
+                  fontSize: "12px",
+                  color: "var(--text-muted)",
+                  marginTop: "8px",
+                }}
+              >
+                {scrapeTotal - scrapePending} of {scrapeTotal} queries processed
+              </p>
+            )}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+              width: "100%",
+            }}
+          >
+            {SCRAPE_PHASES.map((phase, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  fontSize: "12px",
+                  color:
+                    i < scrapePhaseIdx
+                      ? "var(--success, #22c55e)"
+                      : i === scrapePhaseIdx
+                        ? "var(--text)"
+                        : "var(--text-muted)",
+                  opacity: i > scrapePhaseIdx ? 0.4 : 1,
+                }}
+              >
+                <span>
+                  {i < scrapePhaseIdx ? "+" : i === scrapePhaseIdx ? ">" : " "}
+                </span>
+                <span>{phase}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Analysis in progress (same screen, post-scrape) ───────────────────────
+
+  if (hasScrapeResult && (isAnalyzing || analysisComplete)) {
+    const currentAnalysisPhase = ANALYSIS_PHASES[analysisPhaseLabelIdx];
+    const jobsCount = jobCountForCheck ?? 0;
+
+    return (
+      <div style={containerStyle}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        {/* Query stats summary */}
+        {queryStats.length > 0 && (
+          <div style={sectionStyle}>
+            <p style={subheadStyle}>Query performance</p>
+            {queryStats.map((qs) => (
+              <div key={qs.query} style={statRowStyle}>
+                <span style={{ color: "var(--text)" }}>{qs.query}</span>
+                <span
+                  style={{
+                    fontWeight: 600,
+                    color:
+                      qs.resultCount === 0
+                        ? "var(--error)"
+                        : "var(--text-muted)",
+                  }}
+                >
+                  {qs.resultCount} results
+                </span>
+              </div>
+            ))}
+            <p
+              style={{
+                fontSize: "13px",
+                color: "var(--text-muted)",
+                margin: 0,
+              }}
+            >
+              {jobsCount} unique jobs found
+            </p>
+          </div>
+        )}
+
+        {/* Thin data advisory (GS-MKT-25) */}
+        {isThinData && !isTooThinForAnalysis && (
+          <div style={advisoryStyle}>
+            <strong>Thin data advisory:</strong> Only {jobsCount} jobs returned.
+            Analysis quality may be limited. Consider broadening your search
+            parameters (add employment types, expand location, relax avoid
+            terms).
+          </div>
+        )}
+
+        {/* Analysis progress or complete */}
+        <div style={progressBoxStyle}>
+          {isAnalyzing ? (
+            <>
+              <div style={spinnerStyle} aria-hidden="true" />
+              <div>
+                <p
+                  style={{
+                    fontSize: "16px",
+                    fontWeight: 600,
+                    color: "var(--text)",
+                    margin: "0 0 8px",
+                  }}
+                >
+                  Analyzing your market...
+                </p>
+                <p
+                  style={{
+                    fontSize: "13px",
+                    color: "var(--text-muted)",
+                    margin: 0,
+                  }}
+                >
+                  {currentAnalysisPhase}
+                </p>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  width: "100%",
+                }}
+              >
+                {ANALYSIS_PHASES.map((phase, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      fontSize: "12px",
+                      color:
+                        i < analysisPhaseLabelIdx
+                          ? "var(--success, #22c55e)"
+                          : i === analysisPhaseLabelIdx
+                            ? "var(--text)"
+                            : "var(--text-muted)",
+                      opacity: i > analysisPhaseLabelIdx ? 0.4 : 1,
+                    }}
+                  >
+                    <span>
+                      {i < analysisPhaseLabelIdx
+                        ? "+"
+                        : i === analysisPhaseLabelIdx
+                          ? ">"
+                          : " "}
+                    </span>
+                    <span>{phase}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            /* analysisComplete */
+            <>
+              <p
+                style={{
+                  fontSize: "20px",
+                  fontWeight: 700,
+                  color: "var(--text)",
+                  margin: 0,
+                }}
+              >
+                Analysis Complete
+              </p>
+              <p
+                style={{
+                  fontSize: "13px",
+                  color: "var(--text-muted)",
+                  margin: 0,
+                }}
+              >
+                {jobsCount} jobs analyzed
+              </p>
+              <Btn variant="primary" size="lg" onClick={onViewTargets}>
+                View Your Targets
+              </Btn>
+            </>
+          )}
+        </div>
+
+        {analysisError && (
+          <p style={{ fontSize: "13px", color: "var(--error)", margin: 0 }}>
+            {analysisError}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // ── Query editor (default view) ────────────────────────────────────────────
+
+  return (
+    <div style={containerStyle}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      <div style={sectionStyle}>
+        <h2 style={headingStyle}>Search Vectors</h2>
+        <p style={subheadStyle}>
+          These queries will be used to scan LinkedIn for jobs matching your
+          profile. Edit, add, or remove before launching.
+        </p>
+      </div>
+
+      {/* Generation error */}
+      {genError && (
+        <p style={{ fontSize: "13px", color: "var(--error)", margin: 0 }}>
+          {genError}
+        </p>
+      )}
+
+      {/* Loading state */}
+      {generatingQueries && (
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div
+            style={{
+              ...spinnerStyle,
+              width: "18px",
+              height: "18px",
+              borderWidth: "2px",
+            }}
+            aria-hidden="true"
+          />
+          <span style={{ fontSize: "14px", color: "var(--text-muted)" }}>
+            Generating search queries...
+          </span>
+        </div>
+      )}
+
+      {/* Query list */}
+      {!generatingQueries && queries.length > 0 && (
+        <div style={sectionStyle}>
+          {queries.map((q, idx) => (
+            <div key={idx} style={queryRowStyle}>
+              {editingIdx === idx ? (
+                <>
+                  <Inp
+                    value={editValue}
+                    onChange={setEditValue}
+                    placeholder="Search query"
+                    style={{ flex: 1 }}
+                    aria-label={`Edit query ${idx + 1}`}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitEdit(idx);
+                      if (e.key === "Escape") cancelEdit();
+                    }}
+                  />
+                  <Btn
+                    size="sm"
+                    variant="primary"
+                    onClick={() => commitEdit(idx)}
+                    aria-label="Save query"
+                  >
+                    Save
+                  </Btn>
+                  <Btn
+                    size="sm"
+                    variant="ghost"
+                    onClick={cancelEdit}
+                    aria-label="Cancel edit"
+                  >
+                    Cancel
+                  </Btn>
+                </>
+              ) : (
+                <>
+                  <span style={queryTextStyle}>{q}</span>
+                  {queryStats.find((qs) => qs.query === q) && (
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color:
+                          (queryStats.find((qs) => qs.query === q)
+                            ?.resultCount ?? 0) === 0
+                            ? "var(--error)"
+                            : "var(--text-muted)",
+                        minWidth: "60px",
+                        textAlign: "right",
+                      }}
+                    >
+                      {queryStats.find((qs) => qs.query === q)?.resultCount ??
+                        0}{" "}
+                      jobs
+                    </span>
+                  )}
+                  <Btn
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => startEdit(idx)}
+                    aria-label={`Edit query: ${q}`}
+                  >
+                    Edit
+                  </Btn>
+                  <Btn
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeQuery(idx)}
+                    disabled={queries.length <= 1}
+                    aria-label={`Remove query: ${q}`}
+                  >
+                    x
+                  </Btn>
+                </>
+              )}
+            </div>
+          ))}
+
+          {/* Add query row */}
+          <div style={{ display: "flex", gap: "8px" }}>
+            <Inp
+              value={newQuery}
+              onChange={setNewQuery}
+              placeholder="Add a search query..."
+              aria-label="New search query"
+              style={{ flex: 1 }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addQuery();
+              }}
+            />
+            <Btn
+              size="sm"
+              variant="secondary"
+              onClick={addQuery}
+              disabled={!newQuery.trim()}
+              aria-label="Add query"
+            >
+              + Add
+            </Btn>
+          </div>
+        </div>
+      )}
+
+      {/* No-fly zones (avoid terms) — GS-MKT-02 */}
+      {avoidTerms.length > 0 && (
+        <div style={sectionStyle}>
+          <p
+            style={{ fontSize: "13px", color: "var(--text-muted)", margin: 0 }}
+          >
+            No-fly zones (excluded from queries):
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {avoidTerms.map((term, idx) => {
+              const label = typeof term === "string" ? term : term.term;
+              return (
+                <span key={idx} style={tagStyle}>
+                  {label}
+                  <button
+                    onClick={() => removeAvoidTerm(idx)}
+                    aria-label={`Remove avoid term: ${label}`}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "0 2px",
+                      color: "var(--text-muted)",
+                      fontSize: "14px",
+                      lineHeight: 1,
+                    }}
+                  >
+                    x
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Manual URL input (GS-MKT-21 — Post-MVP) */}
+      <div style={sectionStyle}>
+        <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: 0 }}>
+          Add a specific LinkedIn job posting:
+        </p>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <Inp
+            value={manualUrl}
+            onChange={(v) => {
+              setManualUrl(v);
+              setManualUrlError(null);
+            }}
+            placeholder="https://www.linkedin.com/jobs/view/..."
+            aria-label="LinkedIn job URL"
+            error={manualUrlError ?? undefined}
+            style={{ flex: 1 }}
+          />
+          <Btn
+            size="sm"
+            variant="secondary"
+            onClick={handleAddManualUrl}
+            disabled={!manualUrl.trim()}
+            aria-label="Add job URL"
+          >
+            Add
+          </Btn>
+        </div>
+      </div>
+
+      {/* Scrape error */}
+      {scrapeError && (
+        <p style={{ fontSize: "13px", color: "var(--error)", margin: 0 }}>
+          {scrapeError}
+        </p>
+      )}
+
+      {/* Scrape action */}
+      <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+        <Btn
+          variant="primary"
+          size="lg"
+          onClick={launchScrape}
+          disabled={
+            scraping ||
+            queries.length === 0 ||
+            (queueCooldownUntil !== null && Date.now() < queueCooldownUntil)
+          }
+          loading={scraping}
+          aria-label={`Launch recon with ${queries.length} quer${queries.length === 1 ? "y" : "ies"}`}
+        >
+          Launch Recon ({queries.length} quer
+          {queries.length === 1 ? "y" : "ies"})
+        </Btn>
+        {!generatingQueries && (
+          <Btn
+            variant="ghost"
+            size="sm"
+            onClick={generateQueries}
+            disabled={generatingQueries || scraping}
+            aria-label="Regenerate search queries"
+          >
+            Regenerate
+          </Btn>
+        )}
+      </div>
+    </div>
+  );
+}
+
+--- END built file ---
+
+--- BEGIN built file: src/components/steps/Step6Analysis.tsx ---
+"use client";
+// Step6Analysis.tsx — Step 5: Two-Phase Market Analysis + Category Selection
+// Feature: market-research | GS-MKT-11 through GS-MKT-20, GS-MKT-23, GS-MKT-24
+// BUG-012: fresh loadSession() each handler
+// BUG-064: substep state single source of truth
+// GS-MKT-20 note: auto-save callbacks MUST omit jobTypes; only Lock includes them
+
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { Btn } from "@/components/ui/Btn";
+import { callClaude, cleanJson, isRocketError } from "@/lib/api";
+import { buildMarketPrepPayload, preprocessMarketData } from "@/lib/utils";
+import { WEIGHTS } from "@/lib/competitiveness";
+import type {
+  SessionData,
+  JobType,
+  MarketAnalysis,
+  Keyword,
+} from "@/lib/types";
+
+export interface Step6AnalysisProps {
+  session: SessionData;
+  initialViewPhase?: "analyzing" | "categories";
+  onStatusChange?: (
+    status: "idle" | "running" | "done" | "error",
+    error?: string,
+    jobCount?: number,
+  ) => void;
+  onComplete: (data: Partial<SessionData>) => void;
+  onSessionUpdate?: (data: Partial<SessionData>) => void;
+}
+
+// ── MARKET output parsing ─────────────────────────────────────────────────────
+
+interface MarketRawOutput {
+  keywords?: Keyword[];
+  compRanges?: { low: string; median: string; high: string } | null;
+  jobTypes?: Array<{
+    name: string;
+    description: string;
+    why: string;
+    compRange?: string | null;
+    volume?: string | null;
+    matchStrength?: "high" | "mid" | "low";
+    searchTerms?: string[];
+  }>;
+  miningQuestions?: Array<{ id: string; question: string; why?: string }>;
+  discoveryRecs?: Array<{
+    id: string;
+    name: string;
+    rationale: string;
+    compRange?: string;
+    volume?: string;
+  }>;
+  exclusionTags?: string[];
+  educationVisibility?: string;
+}
+
+function parseMarketOutput(raw: string): {
+  marketAnalysis: MarketAnalysis;
+  jobTypes: JobType[];
+  miningQuestions: Array<{ id: string; question: string; why?: string }>;
+} {
+  const parsed = JSON.parse(cleanJson(raw)) as MarketRawOutput;
+
+  const jobTypes: JobType[] = (parsed.jobTypes ?? []).map((jt) => ({
+    name: jt.name ?? "",
+    description: jt.description ?? "",
+    why: jt.why ?? "",
+    compRange: jt.compRange ?? null,
+    volume: jt.volume ?? null,
+    matchStrength: jt.matchStrength ?? "mid",
+    selected: true, // GS-MKT-14: all default selected
+    searchTerms: jt.searchTerms,
+  }));
+
+  const marketAnalysis: MarketAnalysis = {
+    keywords: parsed.keywords ?? [],
+    compRanges: parsed.compRanges ?? null,
+    discoveryRecs: (parsed.discoveryRecs ?? []).map((r, i) => ({
+      id: r.id ?? `rec-${i}`,
+      name: r.name ?? "",
+      rationale: r.rationale ?? "",
+      compRange: r.compRange,
+      volume: r.volume,
+    })),
+    exclusionTags: parsed.exclusionTags ?? [],
+    educationVisibility: parsed.educationVisibility ?? "show",
+  };
+
+  return {
+    marketAnalysis,
+    jobTypes,
+    miningQuestions: parsed.miningQuestions ?? [],
+  };
+}
+
+// ── FOMO competitiveness delta ────────────────────────────────────────────────
+
+function getFomoDelta(jobTypes: JobType[]): number {
+  const allSelected = jobTypes.every((jt) => jt.selected);
+  if (allSelected) return 0;
+  const unselected = jobTypes.filter((jt) => !jt.selected);
+  // Each unselected category represents a fraction of the category weight
+  const perCat = WEIGHTS.categoriesSelected / Math.max(jobTypes.length, 1);
+  return Math.round(unselected.length * perCat);
+}
+
+// ── Match strength badge label/color ─────────────────────────────────────────
+
+function matchBadge(strength: "high" | "mid" | "low"): {
+  label: string;
+  color: string;
+} {
+  switch (strength) {
+    case "high":
+      return { label: "Top Candidate", color: "var(--primary, #ff5a17)" };
+    case "mid":
+      return { label: "Strong Fit", color: "var(--warning, #eab308)" };
+    case "low":
+      return { label: "Worth Exploring", color: "var(--text-muted)" };
+  }
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function Step6Analysis({
+  session,
+  initialViewPhase,
+  onStatusChange,
+  onComplete,
+  onSessionUpdate,
+}: Step6AnalysisProps) {
+  // View phase: "analyzing" while pipeline runs, "categories" once done
+  const [viewPhase, setViewPhase] = useState<"analyzing" | "categories">(
+    initialViewPhase ?? (session.marketAnalysis ? "categories" : "analyzing"),
+  );
+
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Category state (GS-MKT-17)
+  const [jobTypes, setJobTypes] = useState<JobType[]>(session.jobTypes ?? []);
+  const [marketAnalysis, setMarketAnalysis] = useState<MarketAnalysis | null>(
+    session.marketAnalysis ?? null,
+  );
+
+  // "Why you fit" expansions
+  const [expandedIdx, setExpandedIdx] = useState<Set<number>>(new Set());
+
+  // Discovery recs added count cap (max 10 total)
+  const MAX_CATEGORIES = 10;
+
+  const hasRun = useRef(false);
+
+  // ── Run two-phase pipeline ────────────────────────────────────────────────
+
+  const runAnalysis = useCallback(
+    async (isRerun: boolean = false) => {
+      // Fresh read: BUG-012
+      const marketRaw = session.marketRaw;
+      const profile = session.profile;
+      const preferences = session.preferences;
+      const queryStats = session.queryStats;
+
+      if (!marketRaw) {
+        setAnalysisError(
+          "No job data available. Please run job scraping first.",
+        );
+        onStatusChange?.("error", "No market data");
+        return;
+      }
+
+      // Thin data block (GS-MKT-26): block below 5 jobs
+      let jobCount = 0;
+      try {
+        const parsed = JSON.parse(marketRaw);
+        jobCount = Array.isArray(parsed) ? parsed.length : 0;
+      } catch {
+        // treat as 0
+      }
+
+      if (jobCount < 5) {
+        const msg = `Analysis requires at least 5 jobs (${jobCount} found). Broaden your search parameters.`;
+        setAnalysisError(msg);
+        onStatusChange?.("error", msg, jobCount);
+        return;
+      }
+
+      setIsRunning(true);
+      setAnalysisError(null);
+      onStatusChange?.("running", undefined, jobCount);
+
+      // ── Phase 1: MARKET_PREP ──────────────────────────────────────────────
+
+      let prepReport = "";
+      try {
+        let jobs: Array<Record<string, unknown>> = [];
+        try {
+          const p = JSON.parse(marketRaw);
+          jobs = Array.isArray(p) ? (p as Array<Record<string, unknown>>) : [];
+        } catch {
+          // Non-JSON marketRaw — use preprocessed text
+          const { text } = preprocessMarketData(marketRaw);
+          jobs = [{ description: text }];
+        }
+
+        const { payload } = buildMarketPrepPayload(
+          jobs,
+          (profile ?? {}) as Record<string, unknown>,
+          preferences?.employmentTypes ?? ["Full-time"],
+          queryStats,
+        );
+
+        // HYGIENE Rule 62: billing handled server-side via ROCKET_COSTS
+        const prepRaw = await callClaude("MARKET_PREP", payload, 4096);
+        prepReport = prepRaw;
+
+        // Save intermediate result (HYGIENE Rule 29)
+        onSessionUpdate?.({ marketPrepReport: prepReport });
+      } catch (e) {
+        // GS-MKT-12: fallback — continue with raw data on MARKET_PREP failure
+        if (isRocketError(e)) {
+          setAnalysisError(
+            `Insufficient rockets. ${e.remaining !== undefined ? `Balance: ${e.remaining}` : ""}`,
+          );
+          setIsRunning(false);
+          onStatusChange?.("error", "Insufficient rockets");
+          return;
+        }
+        // Non-rocket error: fall through to Phase 2 with raw data
+        prepReport = "";
+      }
+
+      // ── Phase 2: MARKET ───────────────────────────────────────────────────
+
+      try {
+        // Build Phase 2 message
+        let marketMessage: string;
+        if (prepReport) {
+          // Note: content derives from untrusted job data — wrapped in delimiter tags (RT-701)
+          marketMessage = JSON.stringify({
+            marketPrepReport: `<market_prep_output>\n${prepReport}\n</market_prep_output>`,
+            profile: {
+              discipline: profile?.discipline,
+              seniority: profile?.seniority,
+              hardSkills: profile?.hardSkills?.slice(0, 20),
+              differentiators: profile?.differentiators,
+              achievements: profile?.achievements?.slice(0, 5),
+              targetDirection: profile?.targetDirection,
+              avoidTerms: (profile?.avoidTerms ?? []).map((t) =>
+                typeof t === "string" ? t : t.term,
+              ),
+            },
+            employmentTypes: preferences?.employmentTypes ?? ["Full-time"],
+          });
+        } else {
+          // Fallback: send raw data directly
+          const { text } = preprocessMarketData(marketRaw);
+          marketMessage = JSON.stringify({
+            rawJobData: text,
+            profile: {
+              discipline: profile?.discipline,
+              seniority: profile?.seniority,
+              hardSkills: profile?.hardSkills?.slice(0, 20),
+              differentiators: profile?.differentiators,
+              achievements: profile?.achievements?.slice(0, 5),
+              targetDirection: profile?.targetDirection,
+              avoidTerms: (profile?.avoidTerms ?? []).map((t) =>
+                typeof t === "string" ? t : t.term,
+              ),
+            },
+            employmentTypes: preferences?.employmentTypes ?? ["Full-time"],
+          });
+        }
+
+        const marketRaw2 = await callClaude("MARKET", marketMessage, 4096);
+        const {
+          marketAnalysis: ma,
+          jobTypes: jts,
+          miningQuestions,
+        } = parseMarketOutput(marketRaw2);
+
+        setMarketAnalysis(ma);
+        setJobTypes(jts);
+
+        // Save analysis results (GS-MKT-13, HYGIENE Rule 29)
+        // Note: jobTypes NOT saved here — only via explicit Lock (GS-MKT-20 note)
+        onSessionUpdate?.({
+          marketPrepReport: prepReport || undefined,
+          marketAnalysis: ma,
+          miningQuestions,
+        });
+
+        setViewPhase("categories");
+        setIsRunning(false);
+        onStatusChange?.("done", undefined, jobCount);
+      } catch (e) {
+        const msg = isRocketError(e)
+          ? `Insufficient rockets for analysis.`
+          : e instanceof Error
+            ? e.message
+            : "Market analysis failed";
+        setAnalysisError(msg);
+        setIsRunning(false);
+        onStatusChange?.("error", msg, jobCount);
+      }
+    },
+    [session, onStatusChange, onSessionUpdate],
+  );
+
+  // ── Auto-run on mount ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    hasRun.current = false; // BUG-035: reset so React Strict Mode remount doesn't skip analysis
+    if (hasRun.current) return;
+    hasRun.current = true;
+
+    if (viewPhase === "categories" && session.marketAnalysis) {
+      // GS-MKT-16: auto-rerun detection
+      // If marketAnalysis exists but marketPrepReport is absent AND marketRaw exists
+      const needsUpgrade =
+        session.marketAnalysis &&
+        session.marketRaw &&
+        !session.marketPrepReport;
+
+      if (needsUpgrade) {
+        void runAnalysis(false);
+      } else {
+        onStatusChange?.("done", undefined, undefined);
+      }
+      return;
+    }
+
+    if (session.marketRaw) {
+      void runAnalysis(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Refresh analysis (GS-MKT-23) ─────────────────────────────────────────
+
+  async function handleRefresh() {
+    if (isRunning || isRefreshing) return;
+    setIsRefreshing(true);
+    setViewPhase("analyzing");
+    await runAnalysis(true);
+    setIsRefreshing(false);
+  }
+
+  // ── Category toggle (GS-MKT-17) ──────────────────────────────────────────
+
+  function toggleCategory(idx: number) {
+    const updated = jobTypes.map((jt, i) =>
+      i === idx ? { ...jt, selected: !jt.selected } : jt,
+    );
+    setJobTypes(updated);
+    // Don't save jobTypes here — only on Lock (GS-MKT-20 note)
+  }
+
+  // ── Why-you-fit expansion ─────────────────────────────────────────────────
+
+  function toggleExpand(idx: number) {
+    setExpandedIdx((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }
+
+  // ── Discovery rec addition (GS-MKT-19) ───────────────────────────────────
+
+  function addDiscoveryRec(
+    rec: NonNullable<MarketAnalysis["discoveryRecs"]>[number],
+  ) {
+    if (jobTypes.length >= MAX_CATEGORIES) return;
+    const alreadyAdded = jobTypes.some(
+      (jt) => jt.name === rec.name && jt.fromRec,
+    );
+    if (alreadyAdded) return;
+
+    const newType: JobType = {
+      name: rec.name,
+      description: rec.rationale,
+      why: rec.rationale,
+      compRange: rec.compRange ?? null,
+      volume: rec.volume ?? null,
+      matchStrength: "low",
+      selected: true,
+      fromRec: true,
+      id: rec.id,
+    };
+    setJobTypes((prev) => [...prev, newType]);
+  }
+
+  // ── Lock categories (GS-MKT-20) ──────────────────────────────────────────
+
+  function lockCategories() {
+    const hasSelected = jobTypes.some((jt) => jt.selected);
+    if (!hasSelected) return;
+
+    // HYGIENE Rule 56: advance to step 6 hardcoded (not relative +1)
+    onComplete({
+      jobTypes,
+      rankedCategories: jobTypes.filter((jt) => jt.selected),
+      currentStep: 6,
+    });
+  }
+
+  // ── Styles ────────────────────────────────────────────────────────────────
+
+  const containerStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "24px",
+    maxWidth: "640px",
+    margin: "0 auto",
+    padding: "24px 16px",
+  };
+
+  const spinnerStyle: React.CSSProperties = {
+    width: "28px",
+    height: "28px",
+    border: "3px solid var(--border)",
+    borderTopColor: "var(--primary)",
+    borderRadius: "50%",
+    animation: "spin 0.8s linear infinite",
+    flexShrink: 0,
+  };
+
+  const cardStyle = (selected: boolean): React.CSSProperties => ({
+    background: selected ? "var(--surface-alt)" : "var(--surface)",
+    border: `1px solid ${selected ? "var(--border)" : "var(--border)"}`,
+    borderRadius: "var(--radius)",
+    padding: "16px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    opacity: selected ? 1 : 0.5,
+    cursor: "pointer",
+    transition: "opacity 0.15s",
+  });
+
+  const fomodelta = getFomoDelta(jobTypes);
+
+  // ── Analyzing view ────────────────────────────────────────────────────────
+
+  if (viewPhase === "analyzing" || isRunning) {
+    return (
+      <div style={containerStyle}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        {analysisError ? (
+          <div
+            style={{
+              background: "color-mix(in srgb, var(--error) 8%, transparent)",
+              border:
+                "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+              borderRadius: "var(--radius)",
+              padding: "16px",
+              fontSize: "14px",
+              color: "var(--error)",
+            }}
+          >
+            {analysisError}
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              padding: "24px",
+              background: "var(--surface-alt)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+            }}
+          >
+            <div style={spinnerStyle} aria-hidden="true" />
+            <span style={{ fontSize: "14px", color: "var(--text-muted)" }}>
+              Running market analysis...
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Categories view ───────────────────────────────────────────────────────
+
+  const hasSelected = jobTypes.some((jt) => jt.selected);
+  const allSelected = jobTypes.every((jt) => jt.selected);
+
+  return (
+    <div style={containerStyle}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* Compensation Intel (GS-MKT-15) */}
+      {marketAnalysis && (
+        <div
+          style={{
+            background: "var(--surface-alt)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            padding: "16px",
+          }}
+        >
+          <p
+            style={{
+              fontSize: "13px",
+              fontWeight: 600,
+              color: "var(--text-muted)",
+              margin: "0 0 12px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            Compensation Intel
+          </p>
+          {marketAnalysis.compRanges ? (
+            <div style={{ display: "flex", gap: "24px" }}>
+              {[
+                { label: "Low", value: marketAnalysis.compRanges.low },
+                { label: "Median", value: marketAnalysis.compRanges.median },
+                { label: "High", value: marketAnalysis.compRanges.high },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "2px",
+                  }}
+                >
+                  <span
+                    style={{ fontSize: "11px", color: "var(--text-muted)" }}
+                  >
+                    {label}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "18px",
+                      fontWeight: 700,
+                      color: "var(--text)",
+                    }}
+                  >
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p
+              style={{
+                fontSize: "14px",
+                color: "var(--text-muted)",
+                margin: 0,
+              }}
+            >
+              Insufficient data to calculate compensation ranges.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Thin data advisory (GS-MKT-25) */}
+      {(() => {
+        if (!session.marketRaw) return null;
+        try {
+          const parsed = JSON.parse(session.marketRaw);
+          const count = Array.isArray(parsed) ? parsed.length : 0;
+          if (count > 0 && count < 15) {
+            return (
+              <div
+                style={{
+                  background:
+                    "color-mix(in srgb, var(--warning) 8%, transparent)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
+                  borderRadius: "var(--radius)",
+                  padding: "12px 16px",
+                  fontSize: "13px",
+                  color: "var(--text)",
+                }}
+              >
+                <strong>Thin data advisory:</strong> Only {count} jobs in
+                dataset. Analysis quality may be limited. Consider broadening
+                search parameters.
+              </div>
+            );
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      })()}
+
+      {/* Target Categories (GS-MKT-14, GS-MKT-17) */}
+      <div>
+        <p
+          style={{
+            fontSize: "13px",
+            fontWeight: 600,
+            color: "var(--text-muted)",
+            margin: "0 0 12px",
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+          }}
+        >
+          Target Categories
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {jobTypes.map((jt, idx) => {
+            const badge = matchBadge(jt.matchStrength);
+            const isExpanded = expandedIdx.has(idx);
+            return (
+              <div
+                key={idx}
+                style={cardStyle(jt.selected)}
+                onClick={() => toggleCategory(idx)}
+                role="button"
+                tabIndex={0}
+                aria-pressed={jt.selected}
+                aria-label={`${jt.selected ? "Deselect" : "Select"} category: ${jt.name}`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleCategory(idx);
+                  }
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: "8px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={jt.selected}
+                      onChange={() => toggleCategory(idx)}
+                      aria-label={`Select ${jt.name}`}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ cursor: "pointer" }}
+                    />
+                    <span
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 600,
+                        color: "var(--text)",
+                        textDecoration: jt.selected ? "none" : "line-through",
+                      }}
+                    >
+                      {jt.name}
+                    </span>
+                    {jt.fromRec && (
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          background: "var(--surface)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "4px",
+                          padding: "1px 6px",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        Discovery
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: badge.color,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {badge.label}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "12px",
+                    fontSize: "13px",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  {jt.compRange && <span>{jt.compRange}</span>}
+                  {jt.volume && <span>{jt.volume} volume</span>}
+                </div>
+
+                {jt.description && (
+                  <p
+                    style={{
+                      fontSize: "13px",
+                      color: "var(--text-muted)",
+                      margin: 0,
+                    }}
+                  >
+                    {jt.description}
+                  </p>
+                )}
+
+                {/* Why you fit expandable (GS-MKT-14) */}
+                {jt.why && (
+                  <div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleExpand(idx);
+                      }}
+                      aria-expanded={isExpanded}
+                      aria-label={`${isExpanded ? "Collapse" : "Expand"} why you fit for ${jt.name}`}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "var(--primary)",
+                        padding: "0",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      <span>{isExpanded ? "v" : ">"}</span>
+                      <span>Why you fit</span>
+                    </button>
+                    {isExpanded && (
+                      <p
+                        style={{
+                          fontSize: "13px",
+                          color: "var(--text-muted)",
+                          margin: "6px 0 0",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {jt.why}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Discovery recommendations (GS-MKT-19) */}
+      {marketAnalysis &&
+        marketAnalysis.discoveryRecs &&
+        marketAnalysis.discoveryRecs.length > 0 && (
+          <div>
+            <p
+              style={{
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                margin: "0 0 8px",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              Discovery Recommendations
+            </p>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+            >
+              {marketAnalysis.discoveryRecs.map((rec) => {
+                const alreadyAdded = jobTypes.some(
+                  (jt) => jt.name === rec.name && jt.fromRec,
+                );
+                const atCap = jobTypes.length >= MAX_CATEGORIES;
+                return (
+                  <div
+                    key={rec.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "12px",
+                      background: "var(--surface-alt)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius)",
+                      padding: "10px 14px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "2px",
+                        flex: 1,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: 600,
+                          color: "var(--text)",
+                        }}
+                      >
+                        {rec.name}
+                      </span>
+                      <span
+                        style={{ fontSize: "12px", color: "var(--text-muted)" }}
+                      >
+                        {rec.rationale}
+                      </span>
+                    </div>
+                    <Btn
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => addDiscoveryRec(rec)}
+                      disabled={alreadyAdded || atCap}
+                      aria-label={`Add discovery recommendation: ${rec.name}`}
+                    >
+                      {alreadyAdded ? "Added" : atCap ? "Cap reached" : "+ Add"}
+                    </Btn>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+      {/* FOMO warning (GS-MKT-18) */}
+      {!allSelected && fomodelta > 0 && (
+        <div
+          style={{
+            background: "color-mix(in srgb, var(--warning) 8%, transparent)",
+            border:
+              "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
+            borderRadius: "var(--radius)",
+            padding: "12px 16px",
+            fontSize: "13px",
+            color: "var(--text)",
+          }}
+          role="alert"
+        >
+          Selecting all categories would add +{fomodelta} competitiveness
+          points.
+        </div>
+      )}
+
+      {/* Actions */}
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <Btn
+          variant="primary"
+          size="lg"
+          onClick={lockCategories}
+          disabled={!hasSelected || isRunning}
+          aria-label="Lock your target categories and advance"
+        >
+          Lock Your Targets
+        </Btn>
+        <Btn
+          variant="secondary"
+          size="md"
+          onClick={handleRefresh}
+          disabled={isRunning || isRefreshing || !session.marketRaw}
+          loading={isRefreshing}
+          aria-label="Refresh market analysis without re-scraping"
+        >
+          Refresh Analysis
+        </Btn>
+      </div>
+
+      {analysisError && (
+        <p style={{ fontSize: "13px", color: "var(--error)", margin: 0 }}>
+          {analysisError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+--- END built file ---
+
+--- BEGIN built file: src/components/pages/AimPage.tsx ---
+"use client";
+// AimPage.tsx — Onboarding Steps 4-5 orchestrator
+// Feature: market-research | PRD Section 8, FLOW_SPEC substep architecture
+// BUG-004: page.tsx already renders AimPage — this is the component, not the route
+// BUG-012: fresh loadSession() each handler
+// HYGIENE Rule 29: saveSession before substep advance
+// BUG-064: substep state single source of truth
+// BUG-074: client never writes currentStep > maxStep+1
+// GS-MKT-20: auto-save callbacks omit jobTypes; only Lock includes them
+
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { loadSession, saveSession } from "@/lib/storage";
+import { StepCollect } from "@/components/steps/StepCollect";
+import { Step6Analysis } from "@/components/steps/Step6Analysis";
+import type { SessionData } from "@/lib/types";
+
+// ── Substep architecture ──────────────────────────────────────────────────────
+// substep 0: StepCollect — query editor + scrape launch + scrape progress
+// substep 1: StepCollect (analysis-running mode) + Step6Analysis hidden
+// substep 2: Step6Analysis (categories view)
+
+type Substep = 0 | 1 | 2;
+
+export function AimPage() {
+  const [session, setSession] = useState<SessionData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [substep, setSubstep] = useState<Substep>(0);
+
+  // Analysis status reported by Step6Analysis to show in StepCollect
+  const [analysisStatus, setAnalysisStatus] = useState<
+    "idle" | "running" | "done" | "error"
+  >("idle");
+  const [analysisError, setAnalysisError] = useState<string | undefined>(
+    undefined,
+  );
+  const [analysisJobCount, setAnalysisJobCount] = useState<number | undefined>(
+    undefined,
+  );
+
+  const saveInProgress = useRef(false);
+
+  // ── Load session on mount ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    loadSession()
+      .then((s) => {
+        const loaded = s ?? ({} as SessionData);
+        setSession(loaded);
+
+        // Determine initial substep from session state
+        if (loaded.marketAnalysis && loaded.jobTypes?.length) {
+          // Analysis already done — show categories
+          setSubstep(2);
+          setAnalysisStatus("done");
+        } else if (loaded.marketRaw) {
+          // Scrape done, analysis not yet complete — trigger analysis
+          setSubstep(1);
+        } else {
+          // Fresh entry — query editor
+          setSubstep(0);
+        }
+      })
+      .catch(() => {
+        setSession({} as SessionData);
+        setSubstep(0);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  // ── Session update helper (BUG-012: always read fresh) ───────────────────
+
+  const handleSessionUpdate = useCallback(
+    async (data: Partial<SessionData>) => {
+      if (saveInProgress.current) return;
+      saveInProgress.current = true;
+      try {
+        // BUG-012: fresh loadSession each time
+        const latest = (await loadSession()) ?? ({} as SessionData);
+        const updated = { ...latest, ...data };
+        await saveSession(updated);
+        setSession(updated);
+      } finally {
+        saveInProgress.current = false;
+      }
+    },
+    [],
+  );
+
+  // ── Scrape complete callback ───────────────────────────────────────────────
+  // Called by StepCollect when BD polling finishes.
+  // HYGIENE Rule 29: saveSession BEFORE advancing substep.
+
+  const handleScrapeComplete = useCallback(
+    async (data: {
+      marketRaw: string;
+      queryStats: Array<{ query: string; resultCount: number }>;
+      marketSource: "api";
+    }) => {
+      // Save scrape results before advancing
+      const latest = (await loadSession()) ?? ({} as SessionData);
+      const updated: SessionData = {
+        ...latest,
+        marketRaw: data.marketRaw,
+        queryStats: data.queryStats,
+        marketSource: data.marketSource,
+      };
+      await saveSession(updated);
+      setSession(updated);
+
+      // HYGIENE Rule 29: save complete, now advance substep
+      setSubstep(1);
+      setAnalysisStatus("idle");
+    },
+    [],
+  );
+
+  // ── Analysis status callback ───────────────────────────────────────────────
+  // Step6Analysis reports status so StepCollect can render the progress overlay.
+
+  const handleAnalysisStatusChange = useCallback(
+    (
+      status: "idle" | "running" | "done" | "error",
+      error?: string,
+      jobCount?: number,
+    ) => {
+      setAnalysisStatus(status);
+      setAnalysisError(error);
+      setAnalysisJobCount(jobCount);
+    },
+    [],
+  );
+
+  // ── Analysis session update ───────────────────────────────────────────────
+  // Step6Analysis saves intermediate results (marketPrepReport, marketAnalysis).
+  // NOTE: does NOT include jobTypes (GS-MKT-20).
+
+  const handleAnalysisSessionUpdate = useCallback(
+    async (data: Partial<SessionData>) => {
+      await handleSessionUpdate(data);
+    },
+    [handleSessionUpdate],
+  );
+
+  // ── View targets callback ─────────────────────────────────────────────────
+  // When analysis is done and user taps "View Your Targets", advance substep.
+  // HYGIENE Rule 29: session already saved by analysis pipeline; just advance.
+
+  const handleViewTargets = useCallback(() => {
+    setSubstep(2);
+  }, []);
+
+  // ── Lock categories (complete) ────────────────────────────────────────────
+  // Step6Analysis calls onComplete with jobTypes + rankedCategories + currentStep.
+  // HYGIENE Rule 29: save BEFORE state update.
+  // GS-MKT-20: hardcoded currentStep: 6 (HYGIENE Rule 56).
+  // BUG-074: never write currentStep > maxStep+1.
+
+  const handleComplete = useCallback(async (data: Partial<SessionData>) => {
+    const latest = (await loadSession()) ?? ({} as SessionData);
+    const currentMax = latest.maxStep ?? latest.currentStep ?? 0;
+    const nextStep = data.currentStep ?? 6;
+    // BUG-074: clamp advancement
+    const safeStep = Math.min(nextStep, currentMax + 1);
+
+    const updated: SessionData = {
+      ...latest,
+      ...data,
+      currentStep: safeStep,
+      maxStep: Math.max(currentMax, safeStep),
+    };
+
+    // HYGIENE Rule 29: save before page re-init
+    await saveSession(updated);
+    setSession(updated);
+
+    // Trigger page.tsx re-render at new step (self-managing page pattern)
+    window.location.reload();
+  }, []);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  if (loading || !session) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "60vh",
+          color: "var(--text-muted)",
+          fontSize: "14px",
+        }}
+      >
+        Loading...
+      </div>
+    );
+  }
+
+  const containerStyle: React.CSSProperties = {
+    minHeight: "100vh",
+    background: "var(--background)",
+    color: "var(--text)",
+    fontFamily: "var(--font-body)",
+  };
+
+  // Step6Analysis is mounted hidden in substeps 1-2 so it can run the pipeline
+  // while StepCollect shows the progress overlay (PRD Section 8 implementation).
+  const step6Visible = substep === 2;
+
+  return (
+    <div style={containerStyle}>
+      {/* StepCollect — visible in substeps 0 and 1 */}
+      {substep <= 1 && (
+        <StepCollect
+          session={session}
+          substep={substep}
+          analysisStatus={substep === 1 ? analysisStatus : "idle"}
+          analysisError={substep === 1 ? analysisError : undefined}
+          jobCount={analysisJobCount}
+          onScrapeComplete={handleScrapeComplete}
+          onViewTargets={handleViewTargets}
+          onSessionUpdate={(data) => void handleSessionUpdate(data)}
+        />
+      )}
+
+      {/* Step6Analysis — mounted (hidden) in substep 1 to run pipeline,
+          fully visible in substep 2 (categories view) */}
+      {substep >= 1 && (
+        <div style={{ display: step6Visible ? "block" : "none" }}>
+          <Step6Analysis
+            session={session}
+            initialViewPhase={substep === 1 ? "analyzing" : "categories"}
+            onStatusChange={handleAnalysisStatusChange}
+            onComplete={(data) => void handleComplete(data)}
+            onSessionUpdate={(data) => void handleAnalysisSessionUpdate(data)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+--- END built file ---
+
+--- BEGIN built file: src/app/api/jobs/route.ts ---
+// /api/jobs — Bright Data LinkedIn Jobs scraper trigger + poll
+// Feature: market-research | GS-MKT-06, GS-MKT-08, GS-MKT-09, GS-MKT-10
+// HYGIENE Rule 27: validateOrigin returns boolean — never try/catch
+
+import { NextResponse, type NextRequest } from "next/server";
+import { validateOrigin } from "@/lib/csrf";
+import { getAuthToken, verifyJWT } from "@/lib/auth";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+import {
+  BD_DATASET_ID,
+  BD_API_BASE,
+  EMPLOYMENT_TYPE_MAP,
+} from "@/lib/scraper-scripts";
+import type { JobListing, QueryStat } from "@/lib/api";
+
+// ── Daily budget tracking ─────────────────────────────────────────────────────
+
+const DAILY_BD_BUDGET = 100;
+
+function dailyBudgetKey(): string {
+  const day = new Date().toISOString().slice(0, 10);
+  return `bd:budget:${day}`;
+}
+
+function getRedis(): Redis | null {
+  if (
+    !process.env.UPSTASH_REDIS_REST_URL ||
+    !process.env.UPSTASH_REDIS_REST_TOKEN
+  ) {
+    return null;
+  }
+  return new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  });
+}
+
+async function checkAndIncrementBudget(): Promise<{
+  allowed: boolean;
+  used: number;
+}> {
+  const redis = getRedis();
+  if (!redis) {
+    // No Redis configured — allow (dev mode)
+    return { allowed: true, used: 0 };
+  }
+  const key = dailyBudgetKey();
+  const current = (await redis.get<number>(key)) ?? 0;
+  if (current >= DAILY_BD_BUDGET) {
+    return { allowed: false, used: current };
+  }
+  await redis.incr(key);
+  // Expire at end of day
+  await redis.expire(key, 86400);
+  return { allowed: true, used: current + 1 };
+}
+
+// ── Rate limiting (10 req/min per IP) ────────────────────────────────────────
+
+function getRatelimit(): Ratelimit | null {
+  const redis = getRedis();
+  if (!redis) return null;
+  return new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(10, "1 m"),
+    prefix: "bd:rl",
+  });
+}
+
+// ── BD API helpers ────────────────────────────────────────────────────────────
+
+interface BDTriggerResponse {
+  snapshot_id: string;
+}
+
+interface BDProgressResponse {
+  snapshot_id: string;
+  status: "starting" | "running" | "ready" | "failed";
+}
+
+/**
+ * Trigger one BD discovery snapshot for a single keyword+employmentType combo.
+ * BUG-031: BD uses keyword input, NOT LinkedIn search URLs.
+ */
+async function triggerSnapshot(
+  keyword: string,
+  location: string,
+  employmentType: string,
+  apiKey: string,
+): Promise<string> {
+  const url = `${BD_API_BASE}/datasets/v3/trigger?dataset_id=${BD_DATASET_ID}&type=discover_new&discover_by=keyword&limit_per_input=30&format=json&include_errors=true`;
+
+  const body = JSON.stringify([
+    {
+      keyword,
+      location: location || "United States",
+      country: "US",
+      job_type: employmentType,
+    },
+  ]);
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`BD trigger failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as BDTriggerResponse;
+  return data.snapshot_id;
+}
+
+/**
+ * Check snapshot status.
+ */
+async function checkSnapshot(
+  snapshotId: string,
+  apiKey: string,
+): Promise<BDProgressResponse> {
+  const url = `${BD_API_BASE}/datasets/v3/snapshot/${snapshotId}/progress`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    throw new Error(`BD progress check failed (${res.status})`);
+  }
+  return (await res.json()) as BDProgressResponse;
+}
+
+/**
+ * Download snapshot data.
+ */
+async function downloadSnapshot(
+  snapshotId: string,
+  apiKey: string,
+): Promise<Array<Record<string, unknown>>> {
+  const url = `${BD_API_BASE}/datasets/v3/snapshot/${snapshotId}?format=json`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    throw new Error(`BD download failed (${res.status})`);
+  }
+  try {
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+// ── Job normalization ─────────────────────────────────────────────────────────
+
+function normalizeJob(
+  raw: Record<string, unknown>,
+  sourceQuery: string,
+): JobListing {
+  return {
+    title:
+      (raw.title as string) ||
+      (raw.job_title as string) ||
+      (raw.position as string) ||
+      "",
+    company:
+      (raw.company as string) ||
+      (raw.company_name as string) ||
+      (raw.employer as string) ||
+      "",
+    location:
+      (raw.location as string) ||
+      (raw.job_location as string) ||
+      (raw.city as string) ||
+      "",
+    description:
+      (raw.description as string) ||
+      (raw.job_description as string) ||
+      (raw.summary as string) ||
+      "",
+    salary:
+      (raw.salary as string) ||
+      (raw.salary_range as string) ||
+      (raw.compensation as string) ||
+      null,
+    seniority:
+      (raw.seniority_level as string) ||
+      (raw.seniority as string) ||
+      (raw.experience_level as string) ||
+      null,
+    employmentType:
+      (raw.employment_type as string) ||
+      (raw.job_type as string) ||
+      (raw.work_type as string) ||
+      null,
+    easyApply:
+      typeof raw.easy_apply === "boolean"
+        ? raw.easy_apply
+        : typeof raw.easyApply === "boolean"
+          ? raw.easyApply
+          : false,
+    url:
+      (raw.url as string) ||
+      (raw.job_url as string) ||
+      (raw.link as string) ||
+      null,
+    industries:
+      (raw.industries as string) ||
+      (raw.industry as string) ||
+      (raw.company_industry as string) ||
+      null,
+    jobFunction:
+      (raw.job_function as string) ||
+      (raw.function as string) ||
+      (raw.category as string) ||
+      null,
+    applicants:
+      typeof raw.num_applicants === "number"
+        ? raw.num_applicants
+        : typeof raw.applicants === "number"
+          ? raw.applicants
+          : null,
+    postedDate:
+      (raw.posted_date as string) ||
+      (raw.date_posted as string) ||
+      (raw.posted_at as string) ||
+      null,
+    sourceQuery,
+  };
+}
+
+/**
+ * Deduplicate jobs by title+company (case-insensitive).
+ * Also tracks per-query result counts (before dedup).
+ */
+function deduplicateJobs(
+  jobsByQuery: Array<{ query: string; jobs: JobListing[] }>,
+): { jobs: JobListing[]; queryStats: QueryStat[] } {
+  const seen = new Set<string>();
+  const deduped: JobListing[] = [];
+  const queryStats: QueryStat[] = [];
+
+  for (const { query, jobs } of jobsByQuery) {
+    queryStats.push({ query, resultCount: jobs.length });
+    for (const job of jobs) {
+      const key = `${job.title.toLowerCase().trim()}|${job.company.toLowerCase().trim()}`;
+      if (!seen.has(key) && (job.title || job.company)) {
+        seen.add(key);
+        deduped.push(job);
+      }
+    }
+  }
+
+  return { jobs: deduped, queryStats };
+}
+
+// ── Cycle employment types across queries ─────────────────────────────────────
+
+function cycleEmploymentTypes(
+  queries: string[],
+  employmentTypes: string[],
+): Array<{ query: string; employmentType: string }> {
+  if (!employmentTypes || employmentTypes.length === 0) {
+    return queries.map((q) => ({ query: q, employmentType: "Full-time" }));
+  }
+  const mapped = employmentTypes.map(
+    (et) => EMPLOYMENT_TYPE_MAP[et] ?? "Full-time",
+  );
+  return queries.map((q, i) => ({
+    query: q,
+    employmentType: mapped[i % mapped.length],
+  }));
+}
+
+// ── POST handler ──────────────────────────────────────────────────────────────
+
+export async function POST(req: NextRequest) {
+  // HYGIENE Rule 27: validateOrigin as boolean if-check, never try/catch
+  if (!validateOrigin(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Rate limit: 10 requests per minute per IP (GS-MKT-10)
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ratelimit = getRatelimit();
+  if (ratelimit) {
+    const { success, reset } = await ratelimit.limit(ip);
+    if (!success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please wait and try again." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil((reset - Date.now()) / 1000)),
+          },
+        },
+      );
+    }
+  }
+
+  const apiKey = process.env.BRIGHTDATA_API_KEY;
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid request body" },
+      { status: 400 },
+    );
+  }
+
+  const action = body.action as string;
+
+  // ── TRIGGER ──────────────────────────────────────────────────────────────
+
+  if (action === "trigger") {
+    // RT-201: auth guard — reject unauthenticated trigger requests
+    const authToken = await getAuthToken();
+    if (!authToken || !verifyJWT(authToken)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check daily budget (GS-MKT-10)
+    const { allowed, used } = await checkAndIncrementBudget();
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          error: `Daily scrape budget exhausted (${used}/${DAILY_BD_BUDGET} requests used today). Try again tomorrow.`,
+        },
+        { status: 429 },
+      );
+    }
+
+    const queries = body.queries as string[] | undefined;
+    const location = (body.location as string) || "United States";
+    const employmentTypes = (body.employmentTypes as string[]) || ["Full-time"];
+
+    if (!queries || !Array.isArray(queries) || queries.length === 0) {
+      return NextResponse.json(
+        { error: "At least one search query is required" },
+        { status: 400 },
+      );
+    }
+
+    // Dev/test mode — no real API key
+    if (!apiKey) {
+      // Return mock snapshot IDs for local development
+      const snapshotIds = queries.map((_, i) => `mock-snapshot-${i}`);
+      const queryMap: Record<string, string> = {};
+      queries.forEach((q, i) => {
+        queryMap[snapshotIds[i]] = q;
+      });
+      return NextResponse.json({ snapshotIds, queryMap });
+    }
+
+    const queryEmploymentPairs = cycleEmploymentTypes(queries, employmentTypes);
+
+    const snapshotIds: string[] = [];
+    const queryMap: Record<string, string> = {};
+    const errors: string[] = [];
+
+    // Trigger one snapshot per query (parallel)
+    await Promise.allSettled(
+      queryEmploymentPairs.map(async ({ query, employmentType }) => {
+        try {
+          const snapshotId = await triggerSnapshot(
+            query,
+            location,
+            employmentType,
+            apiKey,
+          );
+          snapshotIds.push(snapshotId);
+          queryMap[snapshotId] = query;
+        } catch (e) {
+          errors.push(
+            e instanceof Error ? e.message : `Trigger failed for: ${query}`,
+          );
+        }
+      }),
+    );
+
+    if (snapshotIds.length === 0) {
+      return NextResponse.json(
+        { error: `All scrape triggers failed: ${errors.join("; ")}` },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json({
+      snapshotIds,
+      queryMap,
+      warnings: errors.length > 0 ? errors : undefined,
+    });
+  }
+
+  // ── POLL ──────────────────────────────────────────────────────────────────
+
+  if (action === "poll") {
+    const snapshotIds = body.snapshotIds as string[] | undefined;
+    const queryMap = (body.queryMap as Record<string, string>) || {};
+    const force = body.force === true;
+
+    if (
+      !snapshotIds ||
+      !Array.isArray(snapshotIds) ||
+      snapshotIds.length === 0
+    ) {
+      return NextResponse.json(
+        { error: "snapshotIds required for poll" },
+        { status: 400 },
+      );
+    }
+
+    // RT-202: validate snapshot ID format before using in URL construction
+    const snapshotIdRegex = /^[a-zA-Z0-9_-]{8,64}$/;
+    for (const sid of snapshotIds) {
+      if (!snapshotIdRegex.test(sid)) {
+        return NextResponse.json(
+          { error: "Invalid snapshot ID format" },
+          { status: 400 },
+        );
+      }
+    }
+
+    // Dev mock mode
+    if (!apiKey) {
+      // Return mock results
+      const mockJobs: JobListing[] = snapshotIds.flatMap((sid) => {
+        const query = queryMap[sid] ?? "mock query";
+        return [
+          normalizeJob(
+            {
+              title: `Mock Job for ${query}`,
+              company: "Mock Corp",
+              location: "Remote",
+              description: "Mock job description for development testing.",
+              employment_type: "Full-time",
+            },
+            query,
+          ),
+        ];
+      });
+      const queryStats = snapshotIds.map((sid) => ({
+        query: queryMap[sid] ?? sid,
+        resultCount: 1,
+      }));
+      return NextResponse.json({
+        done: true,
+        jobs: mockJobs,
+        total: mockJobs.length,
+        pending: 0,
+        queryStats,
+      });
+    }
+
+    // Check progress for all snapshots in parallel
+    const progressResults = await Promise.allSettled(
+      snapshotIds.map((sid) => checkSnapshot(sid, apiKey)),
+    );
+
+    const readyIds: string[] = [];
+    const pendingIds: string[] = [];
+
+    progressResults.forEach((result, i) => {
+      const sid = snapshotIds[i];
+      if (result.status === "fulfilled") {
+        const { status } = result.value;
+        if (status === "ready") {
+          readyIds.push(sid);
+        } else if (status === "failed") {
+          // Treat failed snapshots as done (skip them)
+        } else {
+          pendingIds.push(sid);
+        }
+      } else {
+        // Error checking progress — treat as pending
+        pendingIds.push(sid);
+      }
+    });
+
+    const allDone = pendingIds.length === 0;
+    const shouldReturn = allDone || force;
+
+    if (!shouldReturn) {
+      return NextResponse.json({
+        done: false,
+        pending: pendingIds.length,
+        total: snapshotIds.length,
+      });
+    }
+
+    // Download ready snapshots
+    const jobsByQuery: Array<{ query: string; jobs: JobListing[] }> = [];
+
+    await Promise.allSettled(
+      readyIds.map(async (sid) => {
+        const query = queryMap[sid] ?? sid;
+        try {
+          const rawJobs = await downloadSnapshot(sid, apiKey);
+          const normalized = rawJobs.map((r) => normalizeJob(r, query));
+          jobsByQuery.push({ query, jobs: normalized });
+        } catch {
+          jobsByQuery.push({ query, jobs: [] });
+        }
+      }),
+    );
+
+    // Add zero-result entries for snapshots that weren't ready (forced partial)
+    for (const sid of pendingIds) {
+      const query = queryMap[sid] ?? sid;
+      const alreadyHasEntry = jobsByQuery.some((jbq) => jbq.query === query);
+      if (!alreadyHasEntry) {
+        jobsByQuery.push({ query, jobs: [] });
+      }
+    }
+
+    const { jobs, queryStats } = deduplicateJobs(jobsByQuery);
+
+    return NextResponse.json({
+      done: true,
+      jobs,
+      total: jobs.length,
+      pending: pendingIds.length,
+      queryStats,
+    });
+  }
+
+  return NextResponse.json(
+    { error: `Unknown action: ${action}` },
+    { status: 400 },
+  );
+}
+
+--- END built file ---
+
+--- BEGIN built file: src/lib/scraper-scripts.ts ---
+// scraper-scripts.ts — BD LinkedIn Jobs scraper dataset constants
+// Feature: market-research
+
+/**
+ * Bright Data dataset ID for LinkedIn Jobs discovery scraper.
+ * Used in /api/jobs trigger and poll requests.
+ */
+export const BD_DATASET_ID = "gd_lpfll7v5hcqtkxl6l";
+
+/**
+ * BD API base URL.
+ */
+export const BD_API_BASE = "https://api.brightdata.com";
+
+/**
+ * Employment type mapping from user preferences to BD job_type param.
+ * BD accepts: "Full-time", "Part-time", "Contract", "Temporary", "Internship", "Other"
+ */
+export const EMPLOYMENT_TYPE_MAP: Record<string, string> = {
+  "Full-time": "Full-time",
+  "Part-time": "Part-time",
+  Contract: "Contract",
+  Temporary: "Temporary",
+  Internship: "Internship",
+  Freelance: "Contract",
+  Other: "Other",
+};
+
+/**
+ * SCRAPER_SCRIPTS — kept for compatibility; extension uses these.
+ * These are not used by the LinkedIn Jobs discovery scraper (keyword-based, not URL-based).
+ */
+export const SCRAPER_SCRIPTS = Object.freeze({
+  SCROLL_LIST: "",
+  EXTRACT_CARDS: "",
+  CLICK_SHOW_MORE: "",
+});
+
+--- END built file ---

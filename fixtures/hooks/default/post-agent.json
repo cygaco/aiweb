@@ -1,0 +1,1 @@
+{"tool_name":"Agent","cwd":".","tool_input":{"subagent_type":"qa","prompt":"feature: fixture\nscopeContract: {\"allowedFiles\":[\"src/lib/types.ts\"],\"forbiddenFiles\":[]}"},"tool_response":"{\"agent\":\"qa\",\"verdict\":\"pass\",\"confidence\":0.9,\"findings\":[],\"requiresHuman\":false}"}

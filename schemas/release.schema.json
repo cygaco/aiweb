@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/release/v1",
+  "title": "WarpOS Release Capsule",
+  "description": "Self-contained snapshot of one WarpOS release — framework manifest, migrations, checksums, changelog. Phase 4A artifact.",
+  "type": "object",
+  "required": [
+    "schema",
+    "version",
+    "createdAt",
+    "commit",
+    "manifestSchema",
+    "pathRegistryVersion",
+    "migrations",
+    "postUpdateChecks"
+  ],
+  "properties": {
+    "schema": { "type": "string", "const": "warpos/release/v1" },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[\\w.-]+)?$"
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "minUpgradeableFrom": {
+      "type": ["string", "null"],
+      "description": "Lowest version from which a clean update path exists. null on the baseline release."
+    },
+    "requiresFreshInstallFromBelow": {
+      "type": ["string", "null"],
+      "description": "Anything below this version must do a fresh install — no migration path. null if none."
+    },
+    "manifestSchema": { "type": "string" },
+    "pathRegistryVersion": { "type": "string" },
+    "migrations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "from", "to", "file"],
+        "properties": {
+          "id": { "type": "string" },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "file": { "type": "string" },
+          "description": { "type": "string" },
+          "destructive": { "type": "boolean" }
+        }
+      }
+    },
+    "postUpdateChecks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Slash commands or scripts that must run successfully after applying the update."
+    },
+    "checksumsFile": {
+      "type": "string",
+      "description": "Relative path to checksums.json inside the capsule."
+    }
+  }
+}
