@@ -279,6 +279,39 @@ Treat WarpOS itself as a product-in-WarpOS with its own `requirements/05-feature
 
 ---
 
+## Phase 5 — AIWeb (Wave 00 pizza) product backlog
+
+Out-of-scope items deferred from the Pizza Order Intake Upgrade plan (`~/.claude/plans/pizza-size-in-inches-snazzy-bunny.md`, 2026-05-02). These are product-side, not framework. Each is a meaningful project in its own right — flagged here so they don't get lost.
+
+### Menu connector enrichment
+- [ ] **Real Domino's API menu adapter** that emits the new `Cart` schema's modifiers, drinks, and deals (today: emits only `pizzas[]` and `sides[]`). Likely 2x the size of the intake-upgrade plan. Touches `src/connectors/dominos.ts`.
+- [ ] **Google Places menu enrichment** — Places returns minimal menu data; need either a vision-based menu OCR layer or a per-restaurant "best-effort modifier estimation" stub. Touches `src/connectors/places.ts`.
+- [ ] **New chain connectors** — Pizza Hut, Papa John's, Little Caesars. Each is a separate connector with its own auth/rate-limit story.
+
+### Deal intelligence
+- [ ] **Deal optimization** — actually compute whether a published deal beats the user's current cart. Phase 1 of the intake upgrade only *surfaces* deals; it does not claim savings. The math is non-trivial: requires per-component pricing comparison, not just total-vs-total. Risk: a wrong "you'd save $X" claim is worse than no claim.
+- [ ] **Multi-restaurant deal awareness** — cross-chain bundles (e.g. "Domino's has the better price for pepperoni, Pizza Hut has the better wing deal — order from both?"). Out of scope for v1.
+
+### Cart depth
+- [ ] **Half / whole topping placement in the intake UI** — schema (`SelectedModifier.half`) supports it; intake flow doesn't surface it yet. Add only when there's user demand; most chain UIs hide this behind an advanced toggle.
+- [ ] **Per-size modifier pricing** — extra cheese typically costs $1 on a small but $3 on a large. Today our `Modifier.priceDelta` is a flat number. Schema upgrade: `priceDelta: number | { sizeId: string; price: number }[]`.
+- [ ] **Tax / fees / tip handling** — Wave 00 quotes "approximate total" via Bland; doesn't capture tax line items, delivery fees, or tip. Real-world commerce needs all three.
+
+### Profile depth
+- [ ] **`UserProfile.preferred_drinks` and `preferred_modifiers`** — flagged in the intake-upgrade plan as an optional future. Once we have N>10 active users, mine their order history to infer defaults; cuts the upsell turn for repeat users.
+- [ ] **Address parsing into structured fields** (street/unit/city/state/zip) — today address is a single opaque string. Structured fields enable better Bland prompts, smarter delivery-radius checks, and address verification at intake time.
+
+### Voice quality
+- [ ] **Per-restaurant pronunciation profile** — some chain names are mispronounced by Bland TTS. Add a `Restaurant.speakable_name` field that overrides `name` in the call prompt. Same pattern as `speakableAddress`, applied to restaurant name.
+- [ ] **Phonetic respelling for unusual menu items** — items like "Calzone", "Stromboli", "Bruschetta" sometimes get mangled. Optional `MenuItem.speakable_name` for the prompt.
+- [ ] **SSML upgrade** — Bland may add SSML support; switch from English-spelled-out abbreviations to actual `<phoneme>` / `<say-as>` tags when available.
+
+### Compliance + commerce
+- [ ] **Credit card flow** — currently cash-only by protected decision. Real commerce requires either (a) a chain-specific payment integration or (b) a tokenized card delegated to the user's chain account. Significant security + compliance scope.
+- [ ] **Allergen surfacing** — `dietary` is a string filter today. Real allergen data needs structured fields (gluten, dairy, nuts, soy, etc.) on every `MenuItem`.
+
+---
+
 ## Notes
 
 - During co-development against a private consumer project, every WarpOS change should also ship to that project (or vice versa). Use `/hooks:sync` pattern (extended to skills too).
