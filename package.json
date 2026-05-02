@@ -9,6 +9,7 @@
     "start:http": "node dist/http.js",
     "dev": "tsx src/stdio.ts",
     "dev:http": "tsx src/http.ts",
+    "test": "tsx --test tests/*.test.ts",
     "audit": "npm audit --audit-level=high"
   },
   "dependencies": {

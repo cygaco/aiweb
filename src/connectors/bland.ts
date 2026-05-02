@@ -3,6 +3,8 @@
  * Handles: prompt generation, call dispatch, transcript parsing.
  */
 
+import { speakableAddress } from "../lib/address-speech.js";
+
 export interface OrderItem {
   name: string;
   size: string;
@@ -97,7 +99,7 @@ ORDER DETAILS:
 ${itemList}
 
 DELIVERY INFO:
-- Address: ${wrapCustomerData("deliveryAddress", order.deliveryAddress)}
+- Address: ${wrapCustomerData("deliveryAddress", speakableAddress(order.deliveryAddress))}
 - Name: ${wrapCustomerData("customerName", order.customerName)}
 - Phone: ${wrapCustomerData("customerPhone", order.customerPhone)}
 ${order.deliveryInstructions ? `- Special instructions: ${wrapCustomerData("deliveryInstructions", order.deliveryInstructions)}` : ""}
