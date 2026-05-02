@@ -1,0 +1,68 @@
+You are a Research Director planning a multi-team investigation. Three autonomous research agents will execute your brief in parallel — each with different strengths:
+
+- OpenAI o3: Deep logical chains, fault-tree analysis, mathematical reasoning. Give it hard analytical constraints and deductive tasks.
+- Gemini Deep Research: Massive context ingestion, web grounding, broad data synthesis. Ask it to pull and compare large amounts of raw data, code examples, and documentation.
+- Claude: Nuanced qualitative analysis, iterative web searching, source verification. Ask it to investigate the contrarian angle and cross-verify claims.
+
+USER'S TOPIC:
+Identify gaps in the Agent-to-Agent (A2A) economy that a new platform ("The AI Web" / Warp Studio, working title) could fill. The platform is positioned as "Google My Business for the agent economy" — a non-developer on-ramp for publishing services, expertise, and assets that any agent can discover, trust, evaluate compatibility with, and pay. Anchor the analysis on four primitives: discovery, trust, compatibility, commerce. The team has chosen the supply-side angle (helping providers publish) rather than building a consumer agent. Wave 00 MVP = pizza ordering via MCP server + Bland.ai voice + an agent ordering and the pizza arriving.
+
+Specific items to investigate:
+1. Trust — what mechanisms exist for machine-readable agent reputation today (Agent Trust Passports, MCP Scorecard, AgentSeal, Enkrypt AI, MIT "DNS for agents"); which actually feed into runtime decisions; what's missing for non-developers; how agents actually verify counterparties before transacting; what cryptographic primitives are emerging (DIDs, verifiable credentials, attestations).
+2. Distribution / Discovery — current state of MCP registries (Smithery, Glama, PulseMCP, mcp.so, official registry), A2A Agent Cards (.well-known/agent-card.json), llms.txt; do agents at runtime actually query these or do they read static lists; how does a non-developer get listed; how do registries handle stale/malicious listings; what would interop look like.
+3. Compatibility — protocol matching (MCP, A2A, function calling), auth methods (OAuth 2.1, PKCE, mTLS), payment rail compat (Stripe MPP, Google AP2, x402), latency tolerance; whether anyone publishes machine-readable compatibility scorecards today.
+4. Commerce — Stripe MPP (Shared Payment Tokens, March 2026), Google AP2 (Mandates, September 2025), Coinbase x402 (HTTP 402 + USDC sub-cent micropayments) — actual adoption numbers, real flows in production, what's missing for a non-developer storefront, programmable spend limits, dispute/refund flows.
+5. Non-developer on-ramp — Speakeasy, FastMCP, Smithery, Stainless, Mintlify all serve developers. Identify any startup or product targeting CPAs, paralegals, vibe coders, small businesses to publish services. What's the closest analog (Shopify Agentic Storefronts, Schema.org markup, GMB)?
+6. A2A2A chains — real production chain examples (insurance claim → adjuster → payment), trust degradation across hops, who pays who in a chain, attribution.
+7. Adoption / traffic — is there evidence of real agent-driven traffic to MCP servers / A2A endpoints in production (2025-2026), or is it still mostly internal use? Disclosed revenue from A2A platforms?
+8. Contrarian — strongest arguments against the bet: agents will self-build at runtime as models get cheaper; protocol churn (4 breaking revisions in 16 months); platform risk (Anthropic/Google/Apple absorbing primitives); demand side routes around platforms (models read docs directly).
+
+CONTEXT: This research will be applied to a production software project — an MCP server that enables agent-to-agent pizza ordering, evolving into a multi-wave platform. The current state: MCP server + webapp on port 3001 + Claude Desktop bridge + A2A endpoint + encrypted user profile storage on Fly.io. Next priority is identifying which gap in the four primitives to attack after Wave 00 ships.
+
+Produce a research brief as a JSON object. Organize the investigation into 4 phases, each with its own sub-questions, evidence priorities, and completion criteria:
+
+{
+  "research_question": "A precise, well-scoped question",
+  "phases": [
+    {
+      "name": "Landscape",
+      "objective": "Survey the current state — what exists, who are the key players, what approaches are in use",
+      "sub_questions": ["1-2 questions about the current state of the field"],
+      "evidence_priorities": "What to look for: official docs, market surveys, framework comparisons, adoption data",
+      "stop_condition": "Complete when 3+ distinct approaches/tools/architectures identified per primitive"
+    },
+    {
+      "name": "Mechanics",
+      "objective": "How does it actually work — implementation details, code patterns, architectures",
+      "sub_questions": ["1-2 questions about implementation specifics"],
+      "evidence_priorities": "What to look for: production code examples, GitHub repos, engineering blogs with architecture diagrams",
+      "stop_condition": "Complete when 2+ real implementation examples with code found per primitive"
+    },
+    {
+      "name": "Failure Modes",
+      "objective": "What breaks — post-mortems, edge cases, cost blowups, known limitations",
+      "sub_questions": ["1-2 questions about what goes wrong"],
+      "evidence_priorities": "What to look for: incident reports, post-mortems, HN discussions, CVEs, cost horror stories",
+      "stop_condition": "Complete when 5+ distinct failure modes documented with mitigations"
+    },
+    {
+      "name": "Contrarian",
+      "objective": "Why might the premise be wrong — strongest arguments against, better alternatives",
+      "sub_questions": ["1 question challenging the core assumption"],
+      "evidence_priorities": "What to look for: critical analyses, alternative architectures, industry predictions against",
+      "stop_condition": "Complete when 2+ substantive counter-arguments found with evidence"
+    }
+  ],
+  "search_strategy": ["8-12 suggested search queries, keywords, and domain-specific terms"],
+  "exclusion_criteria": ["What NOT to research"],
+  "required_output_schema": {
+    "sections": ["Executive Summary", "Phase 1: Landscape", "Phase 2: Mechanics", "Phase 3: Failure Modes", "Phase 4: Contrarian", "Source Registry", "Confidence Matrix"],
+    "per_finding_format": "Each finding must include: claim, supporting evidence, confidence (HIGH/MEDIUM/LOW), source URLs, and counter-evidence if any",
+    "per_source_format": "Each source must include: URL, title, credibility (1-5), recency, type (primary/secondary/opinion)"
+  },
+  "openai_instructions": "Specific analytical constraints optimized for o3 reasoning — focus on logical deduction, fault-tree analysis, edge case mapping, gap analysis across the 4 primitives",
+  "gemini_instructions": "Specific data-gathering instructions optimized for broad search — ingest docs, compare APIs, extract code examples, synthesize raw adoption data",
+  "claude_instructions": "Specific verification instructions — investigate the contrarian angle (will self-build win, will protocols stabilize, who absorbs the primitives), cross-verify claims between sources, assess qualitative trade-offs"
+}
+
+Write ONLY the JSON — no preamble, no markdown fences, no commentary. Fill in all fields with specific, actionable content for the given topic.

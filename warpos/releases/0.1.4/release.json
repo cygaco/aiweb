@@ -1,0 +1,19 @@
+{
+  "schema": "warpos/release/v1",
+  "version": "0.1.4",
+  "createdAt": "2026-05-02T03:07:08.256Z",
+  "commit": null,
+  "minUpgradeableFrom": "0.1.0",
+  "requiresFreshInstallFromBelow": null,
+  "manifestSchema": "warpos/framework-manifest/v2",
+  "pathRegistryVersion": "v4",
+  "hooksRegistrySchema": "warpos/hooks-registry/v1",
+  "migrations": [],
+  "postUpdateChecks": [
+    "node scripts/paths/build.js --check",
+    "node scripts/paths/gate.js",
+    "node scripts/hooks/build.js --check",
+    "node scripts/hooks/test.js"
+  ],
+  "checksumsFile": "checksums.json"
+}
