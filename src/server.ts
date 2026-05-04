@@ -316,6 +316,13 @@ export function createServer(tokenHash?: string): McpServer {
       delivery_address: z.string(),
       customer_name: z.string(),
       customer_phone: z.string(),
+      delivery_instructions: z
+        .string()
+        .max(200)
+        .optional()
+        .describe(
+          "Free-text instructions for the driver (gate code, vehicle to look for, etc.). Bound into the token.",
+        ),
     },
 
     async ({
@@ -325,6 +332,7 @@ export function createServer(tokenHash?: string): McpServer {
       delivery_address,
       customer_name,
       customer_phone,
+      delivery_instructions,
     }) => {
       try {
         if (!cart?.length && !items?.length) {
@@ -349,6 +357,7 @@ export function createServer(tokenHash?: string): McpServer {
           customer_phone,
           delivery_address,
           token_hash: tokenHash,
+          delivery_instructions,
         });
         return {
           content: [
@@ -360,7 +369,7 @@ export function createServer(tokenHash?: string): McpServer {
                   confirmation_token: token,
                   expires_in_seconds: 600,
                   next_step:
-                    "Pass confirmation_token to place_order along with the same restaurant_id + cart/items + customer fields. Modifying any of those will invalidate the token.",
+                    "Pass confirmation_token to place_order along with the same restaurant_id + cart/items + customer fields + delivery_instructions. Modifying any of those will invalidate the token.",
                 },
                 null,
                 2,
@@ -446,6 +455,7 @@ ADAPTIVE CART FLOW:
 - Otherwise: required clarifications first (size if missing, headcount if preset needs it). Then ONE concise upsell turn combining extras + drinks + sides + deals: 'Want extra cheese, a soda, or to bundle with the family deal ($X total)?' — never list as 4 separate prompts.
 - Surface deals only when their components match the cart shape; never claim a savings number unless the math is explicit and verified.
 - Always render the full cart with prices before \`prepare_order\`.
+- Before \`prepare_order\`, ask once: "Any special delivery instructions? (gate code, leave-at-door, vehicle to look for, etc.) — say 'no' if none." Capture verbatim. Pass to \`prepare_order\` and \`place_order\` as \`delivery_instructions\`. Skip if user already volunteered them upstream.
 
 NEW RESPONSE FIELDS (optional, only when present on the restaurant):
   customization_options: per-pizza crusts, toppings, sauce_options, cheese_options, dipping_sauces.
@@ -454,7 +464,7 @@ NEW RESPONSE FIELDS (optional, only when present on the restaurant):
   applicable_deals: surfaced deals; phase 1 does not compute savings.
 
 ORDER FLOW EXTENSION:
-  start_pizza_order → upsell turn → update_order(diff) → show full cart → user confirms → prepare_order → place_order.
+  start_pizza_order → upsell turn → update_order(diff) → ask for special instructions → show full cart → user confirms → prepare_order → place_order.
 
 RESTAURANTS: Show name, ETA. Flag isTest entries clearly.
 
@@ -685,7 +695,10 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           delegate_pick: true,
           note: "Agent-selected order. Present as your recommendation: 'Here's what I'd get you — [item] from [restaurant]. Confirm and I'll call.'",
         };
-        Object.assign(result, buildCustomizationSurface(primaryRestaurant, cart));
+        Object.assign(
+          result,
+          buildCustomizationSurface(primaryRestaurant, cart),
+        );
         if (dietary) {
           (result.suggested_order as Record<string, unknown>).dietary_note =
             `Customer requires ${dietary}. Bland will confirm availability before ordering.`;
@@ -721,7 +734,10 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
               budget_warning: `Estimated $${total.toFixed(2)} exceeds budget of $${max_budget.toFixed(2)}. Suggest a smaller size or fewer items.`,
             }),
         };
-        Object.assign(result, buildCustomizationSurface(primaryRestaurant, cart));
+        Object.assign(
+          result,
+          buildCustomizationSurface(primaryRestaurant, cart),
+        );
       }
       // If occasion preset matches, build from preset
       else if (occasion) {
@@ -813,17 +829,16 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
       modifier: modifierSchema
         .optional()
         .describe("Modifier to add to the target line."),
-      deal_id: z
-        .string()
-        .optional()
-        .describe("Deal id to swap the cart to."),
+      deal_id: z.string().optional().describe("Deal id to swap the cart to."),
       restaurant_id: z
         .string()
         .optional()
         .describe("Restaurant id used to look up deal_id."),
       deal: dealSchema
         .optional()
-        .describe("Inline deal record when restaurant_id lookup is unavailable."),
+        .describe(
+          "Inline deal record when restaurant_id lookup is unavailable.",
+        ),
     },
 
     async ({
@@ -944,6 +959,7 @@ Then call check_order_status with the returned call_id to get the result.`,
         ),
       delivery_instructions: z
         .string()
+        .max(200)
         .optional()
         .describe("Gate code, apt number, 'leave at door', etc."),
       max_total: z
@@ -1098,6 +1114,7 @@ Then call check_order_status with the returned call_id to get the result.`,
           customer_phone: resolvedPhone_,
           delivery_address: resolvedAddress_,
           token_hash: tokenHash,
+          delivery_instructions,
         });
         if (!verdict.ok) {
           return {

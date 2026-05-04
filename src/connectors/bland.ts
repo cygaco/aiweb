@@ -203,9 +203,16 @@ RULES:
 BEFORE HANGING UP:
 1. Read back the complete order to confirm.
 2. Confirm the delivery address.
-3. Confirm the estimated total.
+3. Confirm the estimated total.${
+    order.deliveryInstructions
+      ? `
+4. Confirm the special instructions back: "And just to confirm — ${wrapCustomerData("deliveryInstructionsReadback", order.deliveryInstructions)}, correct?"
+5. Confirm the estimated delivery time.
+6. Say "Thank you!" and end the call.`
+      : `
 4. Confirm the estimated delivery time.
-5. Say "Thank you!" and end the call.
+5. Say "Thank you!" and end the call.`
+  }
 
 If they put you on hold for more than 2 minutes, hang up.
 If you reach a voicemail, hang up.${

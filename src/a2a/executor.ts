@@ -59,7 +59,7 @@ interface OrderInput {
   confirmation_token?: string;
 }
 
-function extractInput(message: Message): OrderInput {
+export function extractInput(message: Message): OrderInput {
   const out: OrderInput = {};
   for (const part of message.parts ?? []) {
     if (part.kind === "data" && part.data) {
@@ -75,6 +75,12 @@ function extractInput(message: Message): OrderInput {
         // structured fields if any survive in metadata
       }
     }
+  }
+  if (
+    typeof out.delivery_instructions === "string" &&
+    out.delivery_instructions.length > 200
+  ) {
+    out.delivery_instructions = out.delivery_instructions.slice(0, 200);
   }
   return out;
 }
@@ -265,6 +271,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
           customer_name: input.name!,
           customer_phone: input.phone!,
           delivery_address: input.address!,
+          delivery_instructions: input.delivery_instructions,
         });
       } catch {
         // PROFILE_ENCRYPTION_SECRET missing — token feature unavailable;
@@ -281,6 +288,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
           delivery_to: input.address,
           customer_name: input.name,
           customer_phone: input.phone,
+          delivery_instructions: input.delivery_instructions ?? null,
           payment: "Cash on delivery",
           confirmation_token: proposedToken,
           confirmation_token_ttl_seconds: proposedToken ? 600 : undefined,
@@ -393,9 +401,9 @@ export class PizzaAgentExecutor implements AgentExecutor {
         : input.occasion
           ? (COLD_PRESETS.find((p) => p.id === input.occasion)?.items(
               restaurant,
-            input.headcount ?? 4,
-          ) ?? [])
-        : [];
+              input.headcount ?? 4,
+            ) ?? [])
+          : [];
     const finalCart = input.cart?.length ? input.cart : undefined;
 
     if (!finalCart?.length && !items.length) {
@@ -424,6 +432,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
         customer_name: input.name!,
         customer_phone: input.phone!,
         delivery_address: input.address!,
+        delivery_instructions: input.delivery_instructions,
       });
       if (!verdict.ok) {
         eventBus.publish(

@@ -12,11 +12,16 @@ export interface TokenArgs {
   customer_phone: string;
   delivery_address: string;
   token_hash?: string;
+  delivery_instructions?: string;
 }
 
-interface TokenPayload extends Omit<TokenArgs, "items" | "cart"> {
+interface TokenPayload extends Omit<
+  TokenArgs,
+  "items" | "cart" | "delivery_instructions"
+> {
   items_hash?: string;
   cart_hash?: string;
+  delivery_instructions_hash?: string;
   ts: number;
 }
 
@@ -65,6 +70,11 @@ function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
+function hashInstructions(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
 export function issueToken(args: TokenArgs): string {
   const payload: TokenPayload = {
     restaurant_id: args.restaurant_id,
@@ -79,6 +89,8 @@ export function issueToken(args: TokenArgs): string {
   } else {
     payload.items_hash = hashItems(args.items);
   }
+  const instrHash = hashInstructions(args.delivery_instructions);
+  if (instrHash) payload.delivery_instructions_hash = instrHash;
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const sig = crypto
     .createHmac("sha256", deriveKey())
@@ -127,5 +139,12 @@ export function verifyToken(token: string, args: TokenArgs): VerifyResult {
     return { ok: false, reason: "delivery_address mismatch" };
   if ((payload.token_hash ?? null) !== (args.token_hash ?? null))
     return { ok: false, reason: "session mismatch" };
+  const expectedInstructionsHash = hashInstructions(args.delivery_instructions);
+  if (
+    (payload.delivery_instructions_hash ?? null) !==
+    (expectedInstructionsHash ?? null)
+  ) {
+    return { ok: false, reason: "delivery_instructions mismatch" };
+  }
   return { ok: true };
 }
