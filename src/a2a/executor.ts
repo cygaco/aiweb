@@ -88,13 +88,7 @@ export function extractInput(message: Message): OrderInput {
 function status(
   taskId: string,
   contextId: string,
-  state:
-    | "submitted"
-    | "working"
-    | "input-required"
-    | "awaiting-customization"
-    | "completed"
-    | "failed",
+  state: "submitted" | "working" | "input-required" | "completed" | "failed",
   text?: string,
   final = false,
 ): TaskStatusUpdateEvent {
@@ -311,7 +305,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
           status(
             taskId,
             contextId,
-            "awaiting-customization",
+            "input-required",
             `Proposed cart from ${restaurant.name}. Apply one concise upsell turn, then re-submit with cart to receive a fresh proposed_cart token.`,
             true,
           ),
