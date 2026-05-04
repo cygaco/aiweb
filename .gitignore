@@ -29,3 +29,6 @@ profiles.db-shm
 .claude/.store-lock
 # <<< WarpOS runtime <<<
 .fly-secrets.tmp
+
+# Local-only test scratchpads
+a2a-test-messages.txt
