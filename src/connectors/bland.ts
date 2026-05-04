@@ -178,6 +178,10 @@ export function buildCallPrompt(order: PlaceOrderRequest): string {
 You are calling ${wrapCustomerData("restaurantName", order.restaurantName)} to place a delivery order.
 Be polite, clear, and concise. You are a customer placing an order.
 
+OPENING LINE — say this first, exactly, before anything else:
+"This is an AI pizza concierge agent calling."
+Then pause briefly for them to respond, and continue placing the order.
+
 ORDER DETAILS:
 ${itemList}
 
