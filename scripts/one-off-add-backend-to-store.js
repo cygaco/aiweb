@@ -8,7 +8,7 @@ const { PATHS } = require("./hooks/lib/paths");
 const storePath = PATHS.oneshotStore;
 const store = JSON.parse(fs.readFileSync(storePath, "utf8"));
 
-// Derived from requirements/05-features/backend/PRD.md §13 Implementation Map.
+// Derived from _requirements/04-features/backend/PRD.md §13 Implementation Map.
 // Filter rule: include files backend CREATES NEW. Exclude files marked as
 // "edit existing" if those files are owned by other features per their
 // store entries (e.g., src/lib/api.ts already touched by frontend features).
@@ -80,7 +80,7 @@ if (store.features.backend) {
     files: backendFiles,
     lockedInterfaces: [],
     fixAttempts: 0,
-    note: "Phase 1.5 — backend service split. Spec authored 2026-04-24; code to be built in run-10. PRD: requirements/05-features/backend/PRD.md (v3, 895 lines, 73 acceptance tests).",
+    note: "Phase 1.5 — backend service split. Spec authored 2026-04-24; code to be built in run-10. PRD: _requirements/04-features/backend/PRD.md (v3, 895 lines, 73 acceptance tests).",
     finalScore: null,
     completedAt: null,
     phase: 1.5,

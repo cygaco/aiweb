@@ -3,7 +3,7 @@
 /**
  * ref-checker.js — Cross-file reference integrity validator
  *
- * Crawls .claude/ and docs/ to find every file path reference,
+ * Crawls .claude/ and _docs/ to find every file path reference,
  * then validates each one resolves to a real file on disk.
  *
  * Reports:
@@ -175,7 +175,7 @@ function extractRefs(filePath, content) {
 function resolveRef(ref, sourceFile) {
   const target = ref.to.replace(/\\/g, "/");
 
-  // Absolute project path (starts with .claude/, docs/, scripts/, src/)
+  // Absolute project path (starts with .claude/, _docs/, scripts/, src/)
   if (/^(\.claude|docs|scripts|src)\//.test(target)) {
     const abs = path.join(PROJECT, target);
     return fs.existsSync(abs)

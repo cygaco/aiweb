@@ -18,7 +18,7 @@
  *
  * Blocks new code that hardcodes an integer step instead of using the
  * `Step` enum from `src/lib/types.ts` (source of truth:
- * docs/00-canonical/STEPS.json).
+ * _requirements/00-canonical/STEPS.json).
  *
  * Blocking by default. Set STEP_REGISTRY_GUARD_STRICT=0 to downgrade to warn-only
  * (emergency only — accumulates tech debt).
@@ -54,7 +54,7 @@ const STEP_PATTERNS = [
   },
   {
     re: /\bcurrentStep\s*:\s*\d+/g,
-    why: "integer literal in object — use `STEP_TO_INT[Step.XYZ]` (source of truth: docs/00-canonical/STEPS.json)",
+    why: "integer literal in object — use `STEP_TO_INT[Step.XYZ]` (source of truth: _requirements/00-canonical/STEPS.json)",
   },
   {
     re: /\bsetCurrentStep\s*\(\s*\d+\s*\)/g,
@@ -84,7 +84,7 @@ const ALLOW_LIST_SUBSTRINGS = [
 const KNOWN_VIOLATIONS_FILES = ["src/app/page.tsx"];
 
 // --- STEPS.json registry schema validation ---------------------------
-// Runs when the user edits docs/00-canonical/STEPS.json. Reconstructs
+// Runs when the user edits _requirements/00-canonical/STEPS.json. Reconstructs
 // the post-edit file body (content for Write; old → new swap for Edit),
 // parses it, and checks invariants. Warns on any violation. In strict
 // mode (STEP_REGISTRY_GUARD_STRICT=1), emits a block decision.
@@ -203,7 +203,7 @@ function emitRegistryFindings(rel, findings) {
   for (const f of findings) lines.push(`  • ${f}`);
   lines.push(
     "",
-    "The registry at docs/00-canonical/STEPS.json is the source of truth",
+    "The registry at _requirements/00-canonical/STEPS.json is the source of truth",
     "for step order + phase membership. Downstream: src/lib/types.ts `Step`",
     "enum, the 3 canonical docs' step tables, scripts/hooks/step-registry-guard.js.",
     "",
@@ -267,7 +267,7 @@ process.stdin.on("end", () => {
   const rel = relPath(filePath).replace(/\\/g, "/");
 
   // Branch A: edits to the STEPS.json registry itself → schema validation.
-  if (rel.endsWith("docs/00-canonical/STEPS.json")) {
+  if (rel.endsWith("_requirements/00-canonical/STEPS.json")) {
     validateStepsRegistry(event, rel);
     process.exit(0);
   }
@@ -326,7 +326,7 @@ process.stdin.on("end", () => {
   }
   lines.push(
     "",
-    "Source of truth: docs/00-canonical/STEPS.json. Use the `Step` enum",
+    "Source of truth: _requirements/00-canonical/STEPS.json. Use the `Step` enum",
     "from src/lib/types.ts (STEP_TO_INT / INT_TO_STEP) instead of raw integers.",
     "",
     STRICT

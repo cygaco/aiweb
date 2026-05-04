@@ -173,9 +173,9 @@ function getSystemState() {
     // events (limit 50). Features whose specs hadn't been touched recently
     // got flagged as orphan code (Step8Skills, Step13Apply in run-12).
     // Now we check the filesystem: a feature has a spec iff its
-    // requirements/05-features/<feature>/PRD.md exists.
+    // _requirements/04-features/<feature>/PRD.md exists.
     let foundationSet = new Set();
-    let specsDir = path.join(PROJECT, "docs", "05-features");
+    let specsDir = path.join(PROJECT, "requirements", "04-features");
     try {
       const manifestPath = path.join(PROJECT, ".claude", "manifest.json");
       if (fs.existsSync(manifestPath)) {

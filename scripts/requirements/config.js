@@ -12,7 +12,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 // PATHS values are already resolved to absolute paths by paths.js; do not
 // re-prefix with REPO_ROOT or you get C:\...\C:\... double-pathing on Windows.
 const SPECS_ROOT =
-  PATHS.specsRoot || path.join(REPO_ROOT, "requirements", "05-features");
+  PATHS.specsRoot || path.join(REPO_ROOT, "requirements", "04-features");
 const REQUIREMENTS_ROOT =
   PATHS.requirementsRoot || path.join(REPO_ROOT, "requirements");
 const INDEX_DIR = path.join(REQUIREMENTS_ROOT, "_index");

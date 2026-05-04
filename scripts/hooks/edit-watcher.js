@@ -15,7 +15,7 @@
  *   3. DRIFT DETECTION — Checks if the edit introduced values that conflict
  *      with FIELD_REGISTRY.json (the canonical value definitions).
  *
- *   4. FILE DISCOVERY — If a new file type appears in requirements/05-features/,
+ *   4. FILE DISCOVERY — If a new file type appears in _requirements/04-features/,
  *      auto-registers it in SPEC_GRAPH.json so future edits propagate.
  *
  * Only fires for files matching SPEC_PATTERNS (docs, hooks, key lib files,
@@ -42,7 +42,7 @@ try {
 // Canonical data files — paths from manifest or sensible defaults
 const canonicalDir = manifest.canonical_dir
   ? path.join(PROJECT, manifest.canonical_dir)
-  : path.join(PROJECT, "docs", "00-canonical");
+  : path.join(PROJECT, "requirements", "00-canonical");
 const SPEC_GRAPH_FILE = path.join(canonicalDir, "SPEC_GRAPH.json");
 const FIELD_REGISTRY_FILE = path.join(canonicalDir, "FIELD_REGISTRY.json");
 const PRECEDENCE_FILE = path.join(canonicalDir, "PRECEDENCE.json");
@@ -231,7 +231,7 @@ function getGroupId(feature) {
 const SPEC_FILE_NAMES = ["STORIES.md", "INPUTS.md", "PRD.md", "COPY.md"];
 const FEATURES_DIR = manifest.features_dir
   ? path.join(PROJECT, manifest.features_dir)
-  : path.join(PROJECT, "requirements", "05-features");
+  : path.join(PROJECT, "requirements", "04-features");
 
 // Cache spec file contents by path+mtime to avoid re-reading
 const _specCache = new Map();
@@ -312,7 +312,7 @@ function stageRequirementDrift(rel, codeFeature, oldStr, newStr, how, why) {
   const specFiles = SPEC_FILE_NAMES.map((name) => ({
     name,
     path: path.join(featureDir, name),
-    rel: `requirements/05-features/${codeFeature}/${name}`,
+    rel: `_requirements/04-features/${codeFeature}/${name}`,
   })).filter((s) => fs.existsSync(s.path));
 
   if (specFiles.length === 0) return;
@@ -566,7 +566,7 @@ function resolveConsumers(rel, graph) {
       if (new RegExp("^" + fromPat + "$").test(rel)) {
         for (const to of edge.to) {
           if (edge.scope === "same-feature" && feature) {
-            consumers.push(`requirements/05-features/${feature}/${to}`);
+            consumers.push(`_requirements/04-features/${feature}/${to}`);
           } else {
             consumers.push(to);
           }

@@ -1,8 +1,8 @@
 /**
- * graph-build.js — Parse the requirements/ tree into a single machine-readable graph.
+ * graph-build.js — Parse the _requirements/ tree into a single machine-readable graph.
  *
- * Output: requirements/_index/requirements.graph.json
- *         requirements/05-features/<feature>/TRACE.md (per-feature, human-readable)
+ * Output: _requirements/_index/requirements.graph.json
+ *         _requirements/04-features/<feature>/TRACE.md (per-feature, human-readable)
  *
  * Phase 3A + 3K artifact. Read from /check:requirements and edit-watcher.
  *

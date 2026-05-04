@@ -59,7 +59,7 @@ function check(name, cond, detail) {
       confidence: "high",
       status: "pending",
       group: "G1",
-      spec_file: "requirements/05-features/feature-x/PRD.md",
+      spec_file: "_requirements/04-features/feature-x/PRD.md",
       suggested_update: "add a story",
     },
   };

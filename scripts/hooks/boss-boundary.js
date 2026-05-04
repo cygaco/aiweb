@@ -9,7 +9,7 @@
 // It detects "Boss mode" by checking store.heartbeat.agent === "boss".
 //
 // Allowed paths for the Boss:
-// - docs/ (specs, retro, agent system docs)
+// - _docs/ (specs, retro, agent system docs)
 // - store.json
 // - tmp/ (compliance output files)
 // - .claude/ (hooks, settings)
@@ -87,7 +87,7 @@ process.stdin.on("end", () => {
       process.stderr.write(
         `[boss-boundary] BLOCKED: Boss Agent cannot read source code (${targetPath}). ` +
           `Dispatch a reviewer, redteam, or fixer agent to analyze code. ` +
-          `The Boss only reads store.json, docs/, and reviewer output.\n`,
+          `The Boss only reads store.json, _docs/, and reviewer output.\n`,
       );
       process.exit(2);
     }

@@ -13,7 +13,7 @@ const INTEGRATIONS = [
     id: 139,
     target: "script:scripts/warp-setup.js#asset-copy-blocks",
     reason:
-      "Installer now has explicit copyDir blocks for requirements/, patterns/, .claude/project/maps/, and scripts/tools/ (commits 378fa92 + cc5b7d8)",
+      "Installer now has explicit copyDir blocks for _requirements/, patterns/, .claude/project/maps/, and scripts/tools/ (commits 378fa92 + cc5b7d8)",
   },
   {
     id: 140,

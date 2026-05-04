@@ -14,7 +14,7 @@
  *   node scripts/generate-framework-manifest.js
  *
  * Run this:
- *   - After adding/removing/renaming any .claude/, scripts/, requirements/,
+ *   - After adding/removing/renaming any .claude/, scripts/, _requirements/,
  *     patterns/ asset
  *   - Before every WarpOS commit that touches assets (enforced by the
  *     framework-manifest-guard hook at commit time)
@@ -163,8 +163,8 @@ const ASSET_DIRS = [
   { src: "scripts/paths", kind: "paths_engine" },
   { src: "schemas", kind: "schema" },
   { src: "migrations", kind: "migration" },
-  { src: "warpos/releases", kind: "release_capsule" },
-  { src: "warpos/paths.registry.json", kind: "paths_registry" },
+  { src: "framework/releases", kind: "release_capsule" },
+  { src: "framework/paths.registry.json", kind: "paths_registry" },
 ];
 
 // Top-level scripts (peers of scripts/hooks/, scripts/tools/).
@@ -274,7 +274,7 @@ function collectAssets() {
     const abs = path.join(ROOT, dir.src);
     if (!fs.existsSync(abs)) continue;
     // Phase 4 fix-forward: ASSET_DIRS may now point at single files (e.g.
-    // warpos/paths.registry.json), not just directories. Handle both.
+    // framework/paths.registry.json), not just directories. Handle both.
     const stat = fs.statSync(abs);
     if (stat.isFile()) {
       if (isExcluded(dir.src)) continue;

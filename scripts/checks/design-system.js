@@ -16,10 +16,10 @@ const JSON_MODE = process.argv.includes("--json");
 
 const SRC_DIRS = ["src/components", "src/app"];
 const DOCS = [
-  "docs/01-design-system/COMPONENT_LIBRARY.md",
-  "docs/01-design-system/COLOR_SEMANTICS.md",
-  "docs/01-design-system/UX_PRINCIPLES.md",
-  "docs/01-design-system/FEEDBACK_PATTERNS.md",
+  "_requirements/01-design-system/COMPONENT_LIBRARY.md",
+  "_requirements/01-design-system/COLOR_SEMANTICS.md",
+  "_requirements/01-design-system/UX_PRINCIPLES.md",
+  "_requirements/01-design-system/FEEDBACK_PATTERNS.md",
 ];
 
 function loadAllowlist() {

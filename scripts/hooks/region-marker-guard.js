@@ -3,7 +3,7 @@
  * region-marker-guard.js — PostToolUse hook for Edit|Write.
  *
  * Detects malformed `<!-- maps:<skill>:START/END (region=<name>) -->` blocks
- * in canonical docs (docs/00-canonical/**\/*.md).
+ * in canonical docs (_requirements/00-canonical/**\/*.md).
  *
  * `/maps:steps` and related regenerators rewrite content between matching
  * START/END markers. If a marker is orphaned, nested, or mis-paired, the
@@ -183,7 +183,7 @@ process.stdin.on("end", () => {
   const rel = relPath(filePath).replace(/\\/g, "/");
 
   // Narrow scope — canonical markdown only
-  if (!rel.startsWith("docs/00-canonical/")) process.exit(0);
+  if (!rel.startsWith("_requirements/00-canonical/")) process.exit(0);
   if (!rel.endsWith(".md")) process.exit(0);
 
   // Read post-edit file from disk (PostToolUse fires after write)

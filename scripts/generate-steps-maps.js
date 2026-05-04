@@ -2,11 +2,11 @@
 /**
  * generate-steps-maps.js — regenerate step tables in canonical docs.
  *
- * Source of truth: docs/00-canonical/STEPS.json
+ * Source of truth: _requirements/00-canonical/STEPS.json
  * Targets:
- *   - docs/00-canonical/PRODUCT_MODEL.md    (10-Step Model section)
- *   - docs/00-canonical/GLOSSARY.md         (Onboarding Steps + Dashboard Activities)
- *   - docs/00-canonical/GOLDEN_PATHS.md     (Flow target-state diagram)
+ *   - _requirements/00-canonical/PRODUCT_MODEL.md    (10-Step Model section)
+ *   - _requirements/00-canonical/GLOSSARY.md         (Onboarding Steps + Dashboard Activities)
+ *   - _requirements/00-canonical/GOLDEN_PATHS.md     (Flow target-state diagram)
  *
  * Each target doc carries a region delimited by:
  *   <!-- maps:steps:START (region=<name>) --- auto-generated; do not edit -->
@@ -21,7 +21,7 @@ const fs = require("fs");
 const path = require("path");
 
 const PROJECT = path.resolve(__dirname, "..");
-const STEPS_PATH = path.join(PROJECT, "docs/00-canonical/STEPS.json");
+const STEPS_PATH = path.join(PROJECT, "_requirements/00-canonical/STEPS.json");
 
 const CHECK = process.argv.includes("--check");
 const VERBOSE = process.argv.includes("--verbose");
@@ -45,7 +45,7 @@ function sortedStepsForPhase(r, phaseName) {
 
 // ── Region replacement primitive ───────────────────────────────────────
 function replaceRegion(body, regionName, newContent) {
-  const start = `<!-- maps:steps:START (region=${regionName}) --- auto-generated from docs/00-canonical/STEPS.json; do not edit manually. Regenerate: /maps:steps or node scripts/generate-steps-maps.js -->`;
+  const start = `<!-- maps:steps:START (region=${regionName}) --- auto-generated from _requirements/00-canonical/STEPS.json; do not edit manually. Regenerate: /maps:steps or node scripts/generate-steps-maps.js -->`;
   const end = `<!-- maps:steps:END (region=${regionName}) -->`;
   const startRe = new RegExp(
     `<!-- maps:steps:START \\(region=${regionName}\\)[^>]*-->[\\s\\S]*?<!-- maps:steps:END \\(region=${regionName}\\) -->`,
@@ -144,21 +144,21 @@ function goldenPathsFlow(r) {
 // ── Targets ────────────────────────────────────────────────────────────
 const TARGETS = [
   {
-    file: "docs/00-canonical/PRODUCT_MODEL.md",
+    file: "_requirements/00-canonical/PRODUCT_MODEL.md",
     regions: [
       { name: "product-model-onboarding", build: productModelOnboardingTable },
       { name: "product-model-dashboard", build: productModelDashboardTable },
     ],
   },
   {
-    file: "docs/00-canonical/GLOSSARY.md",
+    file: "_requirements/00-canonical/GLOSSARY.md",
     regions: [
       { name: "glossary-onboarding", build: glossaryOnboardingTable },
       { name: "glossary-dashboard", build: glossaryDashboardTable },
     ],
   },
   {
-    file: "docs/00-canonical/GOLDEN_PATHS.md",
+    file: "_requirements/00-canonical/GOLDEN_PATHS.md",
     regions: [{ name: "golden-paths-flow", build: goldenPathsFlow }],
   },
 ];

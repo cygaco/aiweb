@@ -8,16 +8,16 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..", "..");
-const REGISTRY = path.join(ROOT, "warpos", "paths.registry.json");
+const REGISTRY = path.join(ROOT, "framework", "paths.registry.json");
 
 const TARGET_KEYS = ["content", "oneshotSystem", "toolsFile", "requirementsFile", "loggerLib"];
 const EXCLUDE = [
-  "warpos/paths.registry.json",
+  "framework/paths.registry.json",
   ".claude/paths.json",
   "scripts/hooks/lib/paths.generated.js",
   "scripts/path-lint.rules.generated.json",
   "schemas/paths.schema.json",
-  "docs/04-architecture/PATH_KEYS.md",
+  "_requirements/03-architecture/PATH_KEYS.md",
   ".claude/framework-manifest.json",
   ".claude/framework-installed.json",
 ];
@@ -27,7 +27,7 @@ function files() {
     .split(/\r?\n/)
     .filter(Boolean)
     .filter((f) => !EXCLUDE.includes(f))
-    .filter((f) => !f.startsWith("warpos/releases/"));
+    .filter((f) => !f.startsWith("framework/releases/"));
 }
 
 function readAll() {

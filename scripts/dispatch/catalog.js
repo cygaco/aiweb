@@ -1,7 +1,7 @@
 /**
  * catalog.js — provider/model/effort source of truth for the dispatch CLI.
  *
- * Mirrors docs/06-integrations/PROVIDER/. When models change, update this file
+ * Mirrors _requirements/09-integrations/PROVIDER/. When models change, update this file
  * AND the corresponding markdown doc together.
  */
 
@@ -88,7 +88,7 @@ const OPENAI = {
 
 // ── Gemini ─────────────────────────────────────────────────────
 // gemini-2.5-pro deliberately excluded per project policy
-// (see docs/06-integrations/PROVIDER/03-google-gemini.md)
+// (see _requirements/09-integrations/PROVIDER/03-google-gemini.md)
 const GEMINI = {
   id: "gemini",
   label: "Google Gemini",

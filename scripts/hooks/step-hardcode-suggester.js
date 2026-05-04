@@ -186,7 +186,7 @@ process.stdin.on("end", () => {
         suggestions.push({
           line,
           pattern: from,
-          suggestion: `\`${from}\` → no Step enum entry for ${n}; consider adding one to docs/00-canonical/STEPS.json`,
+          suggestion: `\`${from}\` → no Step enum entry for ${n}; consider adding one to _requirements/00-canonical/STEPS.json`,
           enumName: null,
           n,
           kind: pat.kind,
@@ -210,7 +210,7 @@ process.stdin.on("end", () => {
     "",
     "These are SUGGESTIONS — the edit has already been applied. Apply any",
     "that make sense; the Pre-hook (step-registry-guard) warned you first.",
-    "Source of truth: docs/00-canonical/STEPS.json + src/lib/types.ts.",
+    "Source of truth: _requirements/00-canonical/STEPS.json + src/lib/types.ts.",
   );
   process.stderr.write(lines.join("\n") + "\n");
 

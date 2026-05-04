@@ -17,7 +17,7 @@ Keep framework paths stable by giving every important path a registry key and ge
 
 ## Example
 
-Use `paths.eventsFile` in prose and `PATHS.eventsFile` in code. Edit `warpos/paths.registry.json`, then run `node scripts/paths/build.js`.
+Use `paths.eventsFile` in prose and `PATHS.eventsFile` in code. Edit `framework/paths.registry.json`, then run `node scripts/paths/build.js`.
 
 ## Failure Modes
 

@@ -1,5 +1,5 @@
 /**
- * status.js — Read/write requirements/_index/requirements.status.json.
+ * status.js — Read/write _requirements/_index/requirements.status.json.
  *
  * Phase 3H + 3I artifact. Tracks which requirements are stale_pending_review
  * and which are verified. Banners in PRD/STORIES files are deprecated by this

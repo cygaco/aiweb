@@ -1,0 +1,578 @@
+{
+  "$schema": "warpos/hooks-registry/v1",
+  "version": 1,
+  "_doc": "Hook identity registry. Source of truth for which hooks WarpOS ships, where they bind, and how they fail. Consumed by scripts/hooks/build.js, which derives: (1) scripts/hooks/hook-manifest.json (programmatic introspection), (2) the hooks block of .claude/settings.json (the canonical distribution copy used by warp-setup.js), (3) _requirements/03-architecture/HOOK_REGISTRY.md (human reference). To add a hook: append an entry here, run scripts/hooks/build.js, commit all generated artifacts together. Tests against the registry are run by scripts/hooks/test.js — registry-enabled hooks must exist, fail-closed hooks must have at least one fixture (unless fixturesRequired=false).",
+  "_field_meaning": {
+    "id": "stable identifier (basename without .js extension)",
+    "script": "project-relative path to the hook script",
+    "owner": "framework (shipped by WarpOS) | project (user-installed extension)",
+    "enabled": "whether warp-setup.js should register this hook in target settings.json",
+    "failMode": "fail-closed (block tool on hook error) | fail-open (silently skip on error)",
+    "fixturesRequired": "true ⇒ scripts/hooks/test.js fails if testFixtures is empty",
+    "registrations": "[{event,matcher}] — direct mapping to .claude/settings.json hooks block",
+    "testFixtures": "fixture JSON paths used by scripts/hooks/test.js",
+    "blocks": "human-readable list of warnings/blocks this hook emits",
+    "purpose": "one-line description"
+  },
+  "hooks": [
+    {
+      "id": "session-start",
+      "script": "scripts/hooks/session-start.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Session boot: print session header, load handoff, log start.",
+      "registrations": [{ "event": "SessionStart", "matcher": "" }],
+      "testFixtures": ["fixtures/hooks/default/session-start.json"]
+    },
+    {
+      "id": "smart-context",
+      "script": "scripts/hooks/smart-context.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "User prompt enrichment via Haiku; selects relevant memory items.",
+      "registrations": [{ "event": "UserPromptSubmit", "matcher": "" }],
+      "testFixtures": ["fixtures/hooks/default/user-prompt.json"]
+    },
+    {
+      "id": "prompt-logger",
+      "script": "scripts/hooks/prompt-logger.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Append user prompts to .claude/.session-prompts.log.",
+      "registrations": [{ "event": "UserPromptSubmit", "matcher": "" }],
+      "testFixtures": ["fixtures/hooks/default/user-prompt.json"]
+    },
+    {
+      "id": "merge-guard",
+      "script": "scripts/hooks/merge-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Block destructive bash + ref deletes that would lose work.",
+      "registrations": [
+        { "event": "PreToolUse", "matcher": "Bash" },
+        { "event": "PostToolUse", "matcher": "Bash" }
+      ],
+      "testFixtures": ["fixtures/hooks/default/bash-safe.json"]
+    },
+    {
+      "id": "memory-guard",
+      "script": "scripts/hooks/memory-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Block direct edits to runtime memory stores; route via logger.",
+      "registrations": [
+        { "event": "PreToolUse", "matcher": "Bash" },
+        { "event": "PreToolUse", "matcher": "Edit|Write" },
+        { "event": "PostToolUse", "matcher": "Edit|Write" }
+      ],
+      "testFixtures": ["fixtures/hooks/default/bash-safe.json"]
+    },
+    {
+      "id": "framework-manifest-guard",
+      "script": "scripts/hooks/framework-manifest-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Block edits to framework-owned files when manifest is stale.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Bash" }],
+      "testFixtures": ["fixtures/hooks/default/bash-safe.json"]
+    },
+    {
+      "id": "path-registry-guard",
+      "script": "scripts/hooks/path-registry-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Block path registry edits without regenerating dependent artifacts.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Bash" }],
+      "testFixtures": ["fixtures/hooks/default/bash-safe.json"]
+    },
+    {
+      "id": "secret-guard",
+      "script": "scripts/hooks/secret-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Block writes containing API keys / private keys / connection strings.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/edit-text.json"]
+    },
+    {
+      "id": "foundation-guard",
+      "script": "scripts/hooks/foundation-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Block edits to foundation files outside foundation feature lock.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/edit-text.json"]
+    },
+    {
+      "id": "ownership-guard",
+      "script": "scripts/hooks/ownership-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Enforce manifest.fileOwnership boundaries on builder edits.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/edit-text.json"]
+    },
+    {
+      "id": "store-validator",
+      "script": "scripts/hooks/store-validator.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Validate .claude/agents/store.json schema before/after writes.",
+      "registrations": [
+        { "event": "PreToolUse", "matcher": "Edit|Write" },
+        { "event": "PostToolUse", "matcher": "Edit|Write" }
+      ],
+      "testFixtures": ["fixtures/hooks/default/edit-text.json"]
+    },
+    {
+      "id": "path-guard",
+      "script": "scripts/hooks/path-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Block edits that introduce hardcoded path literals where a path-key exists.",
+      "registrations": [
+        { "event": "PreToolUse", "matcher": "Edit|Write" },
+        { "event": "PostToolUse", "matcher": "Edit|Write" }
+      ],
+      "testFixtures": ["fixtures/hooks/default/edit-text.json"]
+    },
+    {
+      "id": "step-registry-guard",
+      "script": "scripts/hooks/step-registry-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Validate STEPS.json schema + cross-references on step-file edits.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/edit-text.json"]
+    },
+    {
+      "id": "extension-edit-guard",
+      "script": "scripts/hooks/extension-edit-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Block invalid edits to browser-extension code.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/edit-text.json"]
+    },
+    {
+      "id": "dependency-admission-guard",
+      "script": "scripts/hooks/dependency-admission-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Block new package.json deps without admission policy approval.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/edit-text.json"]
+    },
+    {
+      "id": "self-mod-governance",
+      "script": "scripts/hooks/self-mod-governance.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Log self-modifying edits to framework files.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/edit-text.json"]
+    },
+    {
+      "id": "build-transaction-boundary",
+      "script": "scripts/hooks/build-transaction-boundary.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Mark agent dispatches as transaction boundaries for rollback.",
+      "registrations": [
+        { "event": "PreToolUse", "matcher": "Agent" },
+        { "event": "PostToolUse", "matcher": "Agent" }
+      ],
+      "testFixtures": ["fixtures/hooks/default/agent-scoped.json"]
+    },
+    {
+      "id": "scope-contract-guard",
+      "script": "scripts/hooks/scope-contract-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Validate agent dispatch scope contract before launch.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Agent" }],
+      "testFixtures": ["fixtures/hooks/default/agent-scoped.json"]
+    },
+    {
+      "id": "team-guard",
+      "script": "scripts/hooks/team-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Enforce team composition: only β/γ as teammates in adhoc mode.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Agent" }],
+      "testFixtures": ["fixtures/hooks/default/agent-scoped.json"]
+    },
+    {
+      "id": "worktree-preflight",
+      "script": "scripts/hooks/worktree-preflight.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Verify builder agents enter via isolation worktree.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Agent" }],
+      "testFixtures": [
+        "fixtures/hooks/worktree-preflight/non-builder-agent.json"
+      ]
+    },
+    {
+      "id": "gate-check",
+      "script": "scripts/hooks/gate-check.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Run quality gate checks before agent dispatch.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Agent" }],
+      "testFixtures": ["fixtures/hooks/default/agent-scoped.json"]
+    },
+    {
+      "id": "gauntlet-gate",
+      "script": "scripts/hooks/gauntlet-gate.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Enforce gauntlet step ordering for builder/reviewer/compliance.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Agent" }],
+      "testFixtures": ["fixtures/hooks/default/agent-scoped.json"]
+    },
+    {
+      "id": "cycle-enforcer",
+      "script": "scripts/hooks/cycle-enforcer.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Enforce build cycle phase ordering.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Agent" }],
+      "testFixtures": ["fixtures/hooks/default/agent-scoped.json"]
+    },
+    {
+      "id": "prompt-validator",
+      "script": "scripts/hooks/prompt-validator.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Validate agent dispatch prompt contracts.",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Agent" }],
+      "testFixtures": ["fixtures/hooks/default/agent-scoped.json"]
+    },
+    {
+      "id": "boss-boundary",
+      "script": "scripts/hooks/boss-boundary.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Boundary checks on read-tool sequences (telemetry).",
+      "registrations": [{ "event": "PreToolUse", "matcher": "Read|Grep|Glob" }],
+      "testFixtures": ["fixtures/hooks/default/read.json"]
+    },
+    {
+      "id": "excalidraw-guard",
+      "script": "scripts/hooks/excalidraw-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Audit excalidraw MCP exports.",
+      "registrations": [
+        { "event": "PreToolUse", "matcher": "mcp__claude_ai_Excalidraw__*" }
+      ],
+      "testFixtures": ["fixtures/hooks/default/noop.json"]
+    },
+    {
+      "id": "beta-gate",
+      "script": "scripts/hooks/beta-gate.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-closed",
+      "fixturesRequired": true,
+      "purpose": "Force consultation with Beta before AskUserQuestion in adhoc mode.",
+      "registrations": [
+        { "event": "PreToolUse", "matcher": "AskUserQuestion" }
+      ],
+      "testFixtures": ["fixtures/hooks/default/noop.json"]
+    },
+    {
+      "id": "session-tracker",
+      "script": "scripts/hooks/session-tracker.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Track tool-use telemetry across the session.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "response-size-guard",
+      "script": "scripts/hooks/response-size-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Warn on oversized agent responses.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Agent" }],
+      "blocks": ["oversized build-chain response warnings"],
+      "testFixtures": [
+        "fixtures/hooks/response-size-guard/oversized-agent.json"
+      ]
+    },
+    {
+      "id": "edit-watcher",
+      "script": "scripts/hooks/edit-watcher.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Track edits to read-only framework keys.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "event-contract",
+      "script": "scripts/hooks/event-contract.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Warn on orphan jz:* event listener/dispatcher pairs.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "blocks": ["orphan jz:* listener/dispatcher warnings"],
+      "testFixtures": ["fixtures/hooks/event-contract/orphan-event.json"]
+    },
+    {
+      "id": "format",
+      "script": "scripts/hooks/format.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Run prettier on changed file (self-skips if prettier missing).",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "lint",
+      "script": "scripts/hooks/lint.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Run eslint on changed file (self-skips if eslint missing).",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "typecheck",
+      "script": "scripts/hooks/typecheck.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Run tsc --noEmit on changed file (self-skips if no tsconfig).",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "systems-sync",
+      "script": "scripts/hooks/systems-sync.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Update systems.jsonl when systems-affecting files change.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "save-session-lint",
+      "script": "scripts/hooks/save-session-lint.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Lint session-save artifacts after edits.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "template-fillability",
+      "script": "scripts/hooks/template-fillability.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Verify requirements templates are still fillable after edits.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "learning-validator",
+      "script": "scripts/hooks/learning-validator.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Validate learning entries have required fields.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "ui-lint",
+      "script": "scripts/hooks/ui-lint.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Audit UI edits against design-system docs.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "step-hardcode-suggester",
+      "script": "scripts/hooks/step-hardcode-suggester.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Suggest STEPS.json keys for hardcoded step strings.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "region-marker-guard",
+      "script": "scripts/hooks/region-marker-guard.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Validate ── region ── markers in framework files.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "spec-test-staleness",
+      "script": "scripts/hooks/spec-test-staleness.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Emit test.stale event when feature spec edited without re-running tests.",
+      "registrations": [{ "event": "PostToolUse", "matcher": "Edit|Write" }],
+      "testFixtures": ["fixtures/hooks/default/post-edit.json"]
+    },
+    {
+      "id": "compact-saver",
+      "script": "scripts/hooks/compact-saver.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Save session checkpoint before context compaction.",
+      "registrations": [{ "event": "PostCompact", "matcher": "" }],
+      "testFixtures": ["fixtures/hooks/default/noop.json"]
+    },
+    {
+      "id": "retro-presence-check",
+      "script": "scripts/hooks/retro-presence-check.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Warn if session ended without retro for active oneshot run.",
+      "registrations": [{ "event": "Stop", "matcher": "" }],
+      "blocks": ["missing run retro warning/enforcement"],
+      "testFixtures": ["fixtures/hooks/retro-presence-check/stop.json"]
+    },
+    {
+      "id": "session-stop",
+      "script": "scripts/hooks/session-stop.js",
+      "owner": "framework",
+      "enabled": true,
+      "failMode": "fail-open",
+      "fixturesRequired": true,
+      "purpose": "Final session cleanup: write handoff, summarize, log stop.",
+      "registrations": [
+        { "event": "Stop", "matcher": "" },
+        { "event": "SessionEnd", "matcher": "" },
+        { "event": "StopFailure", "matcher": "" }
+      ],
+      "testFixtures": ["fixtures/hooks/default/stop.json"]
+    },
+    {
+      "id": "create-worktree-from-head",
+      "script": "scripts/hooks/create-worktree-from-head.js",
+      "owner": "framework",
+      "enabled": false,
+      "failMode": "fail-open",
+      "fixturesRequired": false,
+      "purpose": "Create isolation worktree from HEAD (invoked by builder dispatch wrapper, not by event).",
+      "registrations": [],
+      "testFixtures": []
+    },
+    {
+      "id": "pre-commit-steps-check",
+      "script": "scripts/hooks/pre-commit-steps-check.js",
+      "owner": "framework",
+      "enabled": false,
+      "failMode": "fail-closed",
+      "fixturesRequired": false,
+      "purpose": "Pre-commit STEPS.json validator (invoked by git hook, not by event).",
+      "registrations": [],
+      "testFixtures": []
+    },
+    {
+      "id": "ref-checker",
+      "script": "scripts/hooks/ref-checker.js",
+      "owner": "framework",
+      "enabled": false,
+      "failMode": "fail-open",
+      "fixturesRequired": false,
+      "purpose": "Cross-file reference integrity check (invoked by /check:references slash skill).",
+      "registrations": [],
+      "testFixtures": []
+    }
+  ]
+}

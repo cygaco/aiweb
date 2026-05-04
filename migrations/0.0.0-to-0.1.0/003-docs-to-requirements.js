@@ -1,5 +1,5 @@
 /**
- * 003-docs-to-requirements.js — git mv docs/05-features → requirements/05-features
+ * 003-docs-to-requirements.js — git mv _requirements/04-features → _requirements/04-features
  * + codemod 135 hardcoded references.
  *
  * Phase 4B migration. Class C (destructive — requires explicit ack).
@@ -21,12 +21,12 @@ module.exports = {
   from: "0.0.0",
   to: "0.1.0",
   description:
-    "Move docs/05-features → requirements/05-features and codemod 135 hardcoded references. Idempotent.",
+    "Move _requirements/04-features → _requirements/04-features and codemod 135 hardcoded references. Idempotent.",
   destructive: true,
 
   async plan() {
-    const oldDir = path.join(REPO_ROOT, "docs", "05-features");
-    const newDir = path.join(REPO_ROOT, "requirements", "05-features");
+    const oldDir = path.join(REPO_ROOT, "requirements", "04-features");
+    const newDir = path.join(REPO_ROOT, "requirements", "04-features");
     const oldExists = fs.existsSync(oldDir);
     const newExists = fs.existsSync(newDir);
     const ops = [];
@@ -34,32 +34,32 @@ module.exports = {
       ops.push({
         op: "noop",
         reason:
-          "Already migrated — requirements/05-features/ exists, docs/05-features/ gone.",
+          "Already migrated — _requirements/04-features/ exists, _requirements/04-features/ gone.",
       });
     } else if (oldExists && newExists) {
       ops.push({
         op: "merge_required",
         reason:
-          "Both docs/05-features/ AND requirements/05-features/ exist — manual reconciliation needed before migration can proceed.",
+          "Both _requirements/04-features/ AND _requirements/04-features/ exist — manual reconciliation needed before migration can proceed.",
         severity: "block",
       });
     } else if (oldExists) {
       // path-literal-allowed: this migration's entire purpose is to rewrite the legacy specs path; src/dest fields are data, not navigation
       ops.push({
         op: "git_mv",
-        src: "docs/05-features",
-        dest: "requirements/05-features",
+        src: "_requirements/04-features",
+        dest: "_requirements/04-features",
       });
       ops.push({
         op: "git_mv",
-        src: "docs/03-requirement-standards",
-        dest: "requirements/_standards",
+        src: "_docs/03-requirement-standards",
+        dest: "_requirements/_standards",
       });
       // path-literal-allowed: codemod target IS the legacy literal — replacing it is the migration
       ops.push({
         op: "codemod",
-        pattern: "docs/05-features",
-        replacement: "requirements/05-features",
+        pattern: "_requirements/04-features",
+        replacement: "_requirements/04-features",
         scope: "**/*.{md,json,js,ts}",
         reason:
           "Update 135 hardcoded references found across hooks/agents/commands/PRECEDENCE.json/framework-manifest.",
@@ -69,7 +69,7 @@ module.exports = {
       ops.push({
         op: "noop",
         reason:
-          "Neither legacy docs/05-features/ nor requirements/05-features/ found — nothing to migrate.",
+          "Neither legacy _requirements/04-features/ nor _requirements/04-features/ found — nothing to migrate.",
       });
     }
     return ops;

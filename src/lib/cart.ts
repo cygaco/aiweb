@@ -7,7 +7,7 @@
  * this module.
  *
  * Schema is grounded in chain research:
- *   docs/99-resources/01-research/chain-menus/SAMPLES.md
+ *   _docs/research/chain-menus/SAMPLES.md
  *
  * Common ontology across Domino's, Pizza Hut, Papa John's:
  * - Pizza configurator: { size, crust, sauce, cheese, toppings[] }

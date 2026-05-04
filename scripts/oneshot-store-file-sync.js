@@ -12,7 +12,7 @@
  * `scripts/jobzooka-file-sync-v9.js`.
  *
  * Algorithm:
- *   1. For each feature in `requirements/05-features/<feature>/`:
+ *   1. For each feature in `_requirements/04-features/<feature>/`:
  *      - parse PRD Section 13 implementation map → list of files
  *      - find feature's file scope in store.features[<feature>].files
  *      - any file in PRD §13 not in store → add (with log)
@@ -35,7 +35,7 @@ const storePath = path.join(
   ".system",
   "store.json",
 );
-const specsRoot = path.join(projectRoot, "requirements", "05-features");
+const specsRoot = path.join(projectRoot, "requirements", "04-features");
 
 const dryRun = process.argv.includes("--dry");
 

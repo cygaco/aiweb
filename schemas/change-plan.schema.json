@@ -21,7 +21,7 @@
     },
     "feature": {
       "type": "string",
-      "description": "Feature slug under requirements/05-features/<slug>/"
+      "description": "Feature slug under _requirements/04-features/<slug>/"
     },
     "goal": {
       "type": "string",
@@ -58,7 +58,7 @@
           "PERMISSIONS"
         ]
       },
-      "description": "Contracts from requirements/04-architecture/contracts/ that this change MAY modify or depend on."
+      "description": "Contracts from _requirements/03-architecture/contracts/ that this change MAY modify or depend on."
     },
     "humanDecisionNeeded": {
       "type": "boolean",

@@ -4,8 +4,8 @@
  * stale relative to their spec files.
  *
  * Reads:
- *   requirements/05-features/<feature>/*.md  (spec mtime)
- *   requirements/<feature>/tests/*.spec.ts (existence)
+ *   _requirements/04-features/<feature>/*.md  (spec mtime)
+ *   _requirements/<feature>/tests/*.spec.ts (existence)
  *   .claude/runtime/test-runs/<feature>.json (last pass)
  *
  * Outputs a table:
@@ -19,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 
 const PROJECT = path.resolve(__dirname, "..");
-const FEATURES_DIR = path.join(PROJECT, "docs", "05-features");
+const FEATURES_DIR = path.join(PROJECT, "requirements", "04-features");
 const REQUIREMENTS_DIR = path.join(PROJECT, "requirements");
 const TEST_RUNS_DIR = path.join(PROJECT, ".claude", "runtime", "test-runs");
 

@@ -59,8 +59,83 @@
     },
     {
       "match": "docs\\/05-features\\/",
-      "suggestion": "requirements/05-features/ (or paths.specsRoot)",
-      "why": "Phase 1 final-A: docs/05-features → requirements/05-features"
+      "suggestion": "requirements/04-features/ (or paths.specsRoot)",
+      "why": "Phase 1 final-A: requirements/04-features → requirements/04-features (now requirements/04-features after Track C 2026-05-03 renumber)"
+    },
+    {
+      "match": "requirements\\/05-features\\/",
+      "suggestion": "requirements/04-features/ (or paths.specsRoot)",
+      "why": "Track C 2026-05-03 renumbered chapters: 05-features → 04-features"
+    },
+    {
+      "match": "requirements\\/04-architecture\\/",
+      "suggestion": "requirements/03-architecture/",
+      "why": "Track C 2026-05-03 renumbered chapters: 04-architecture → 03-architecture"
+    },
+    {
+      "match": "requirements\\/06-operations\\/",
+      "suggestion": "requirements/05-operations/",
+      "why": "Track C 2026-05-03 renumbered chapters: 06 → 05"
+    },
+    {
+      "match": "requirements\\/07-security\\/",
+      "suggestion": "requirements/06-security/",
+      "why": "Track C 2026-05-03 renumbered chapters: 07 → 06"
+    },
+    {
+      "match": "requirements\\/08-testing\\/",
+      "suggestion": "requirements/07-testing/",
+      "why": "Track C 2026-05-03 renumbered chapters: 08 → 07"
+    },
+    {
+      "match": "requirements\\/09-automation\\/",
+      "suggestion": "requirements/08-automation/",
+      "why": "Track C 2026-05-03 renumbered chapters: 09 → 08"
+    },
+    {
+      "match": "requirements\\/99-audits\\/",
+      "suggestion": "requirements/_audits/",
+      "why": "Track C 2026-05-03 collapsed 99-audits → _audits (underscore-meta)"
+    },
+    {
+      "match": "requirements\\/03-requirement-standards\\/",
+      "suggestion": "requirements/_standards/",
+      "why": "Track C 2026-05-03 deleted requirements/_standards/ (duplicate of _standards/)"
+    },
+    {
+      "match": "docs\\/00-canonical\\/",
+      "suggestion": "requirements/00-canonical/",
+      "why": "Track C 2026-05-03 merged docs back into requirements"
+    },
+    {
+      "match": "docs\\/01-design-system\\/",
+      "suggestion": "requirements/01-design-system/",
+      "why": "Track C 2026-05-03 merged docs back into requirements"
+    },
+    {
+      "match": "docs\\/02-copy-system\\/",
+      "suggestion": "requirements/02-copy-system/",
+      "why": "Track C 2026-05-03 merged docs back into requirements"
+    },
+    {
+      "match": "docs\\/04-architecture\\/",
+      "suggestion": "requirements/03-architecture/",
+      "why": "Track C 2026-05-03 merged docs back into requirements"
+    },
+    {
+      "match": "docs\\/06-integrations\\/",
+      "suggestion": "requirements/09-integrations/",
+      "why": "Track C 2026-05-03 merged requirements/09-integrations into NEW requirements/09-integrations/"
+    },
+    {
+      "match": "docs\\/audit-reports\\/",
+      "suggestion": "requirements/_audits/",
+      "why": "Track C 2026-05-03 collapsed audit reports under _audits/"
+    },
+    {
+      "match": "docs\\/99-resources\\/",
+      "suggestion": "docs/{user-communication,research,karpathy-auto-research}/",
+      "why": "Track C 2026-05-03 flattened docs/ — three carve-outs lifted to docs/ root"
     },
     {
       "match": "docs\\/03-requirement-standards\\/",
@@ -164,8 +239,8 @@
     ".claude/project/decisions/",
     ".claude/project/memory/",
     ".claude/project/maps/",
-    "requirements/99-audits/",
-    "docs/99-resources/",
+    "requirements/_audits/",
+    "docs/",
     ".claude/paths.json",
     "scripts/path-lint.js",
     "scripts/hooks/path-guard.js",
@@ -178,7 +253,7 @@
     "warpos-system-updates",
     "warpos-roadmap.md",
     "ROADMAP.md",
-    "warpos/paths.registry.json",
+    "framework/paths.registry.json",
     "scripts/path-lint.rules.generated.json",
     "scripts/hooks/lib/paths.generated.js"
   ],

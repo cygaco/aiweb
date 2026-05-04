@@ -39,7 +39,7 @@ const learnings = [
   },
   {
     intent: "spec_hotspot",
-    tip: "WHEN deciding which spec to lock or freeze: `requirements/05-features/backend/PRD.md` is the single most-edited file in 7d — 37 spec events, 35 Edits, all marked `propagated:false`. That's both the most-churned spec AND the worst propagation backlog. Either freeze the PRD pending Phase-1 backend stabilization, or split it into smaller per-subsystem PRDs so churn doesn't fan into one giant pending-propagation queue.",
+    tip: "WHEN deciding which spec to lock or freeze: `_requirements/04-features/backend/PRD.md` is the single most-edited file in 7d — 37 spec events, 35 Edits, all marked `propagated:false`. That's both the most-churned spec AND the worst propagation backlog. Either freeze the PRD pending Phase-1 backend stabilization, or split it into smaller per-subsystem PRDs so churn doesn't fan into one giant pending-propagation queue.",
     conditions: {
       scope: "spec governance",
       trigger:

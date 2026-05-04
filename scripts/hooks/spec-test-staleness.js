@@ -3,8 +3,8 @@
  * spec-test-staleness.js — PostToolUse hook (Edit|Write).
  *
  * When a feature spec is edited (PRD.md, STORIES.md, COPY.md, INPUTS.md,
- * HL-STORIES.md inside requirements/05-features/<feature>/), check whether the
- * matching tests at requirements/<feature>/tests/*.spec.ts have been
+ * HL-STORIES.md inside _requirements/04-features/<feature>/), check whether the
+ * matching tests at _requirements/<feature>/tests/*.spec.ts have been
  * validated SINCE this edit. If not, emit a `test.stale` event.
  *
  * Last-pass timestamps live at:
@@ -21,11 +21,29 @@ const fs = require("fs");
 const path = require("path");
 
 const PROJECT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const FEATURES_DIR = path.join(PROJECT, "docs", "05-features");
+
+// Resolve specsRoot from paths registry. Phase 1 final-A renamed the spec
+// home (the deprecated alias is recorded in the path registry — path-literal-allowed)
+// to _requirements/04-features; this hook used to hardcode the old path
+// (still flagged stale even after the rename) and silently no-op'd against
+// current edits.
+const { PATHS } = (() => {
+  try {
+    return require("./lib/paths");
+  } catch {
+    return { PATHS: null };
+  }
+})();
+const SPECS_ROOT_REL = (
+  PATHS && PATHS.specsRoot
+    ? path.relative(PROJECT, PATHS.specsRoot)
+    : "_requirements/04-features"
+).replace(/\\/g, "/");
+const SPECS_DIR = path.join(PROJECT, SPECS_ROOT_REL);
 const REQUIREMENTS_DIR = path.join(PROJECT, "requirements");
 const TEST_RUNS_DIR = path.join(PROJECT, ".claude", "runtime", "test-runs");
 
-// Feature ID → feature folder under requirements/05-features/. The same alternate
+// Feature ID → feature folder under <specsRoot>/. The same alternate
 // mapping the orchestrator uses (rockets ↔ rockets-economy).
 const FEATURE_DIR_OVERRIDES = {
   rockets: "rockets-economy",
@@ -43,7 +61,9 @@ function readToolPayload() {
 function detectFeatureFromPath(filePath) {
   if (!filePath) return null;
   const norm = filePath.replace(/\\/g, "/");
-  const m = norm.match(/docs\/05-features\/([^/]+)\/[A-Z][A-Z-]*\.md$/);
+  const escapedRoot = SPECS_ROOT_REL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`${escapedRoot}/([^/]+)/[A-Z][A-Z-]*\\.md$`);
+  const m = norm.match(re);
   if (!m) return null;
   const featureDir = m[1];
   // Reverse the alternate mapping

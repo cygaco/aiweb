@@ -410,7 +410,7 @@ if (!DRY_RUN) {
 
 // ── 4. Copy framework files via ship-manifest ──────────
 // Previously: hand-coded copyDir calls per asset category. Missing a category
-// (like requirements/ or patterns/) meant silent install gaps. Now: the
+// (like _requirements/ or patterns/) meant silent install gaps. Now: the
 // installer iterates .claude/framework-manifest.json (built by
 // scripts/generate-framework-manifest.js). Adding new assets = regenerate
 // manifest; no installer code change.
@@ -1182,7 +1182,7 @@ const missing = [];
 if (!hookTools.prettier) missing.push("prettier");
 if (!hookTools.tsc) missing.push("tsc (TypeScript)");
 if (!hookTools.eslint) missing.push("eslint");
-if (!fs.existsSync(path.join(TARGET, "requirements/01-design-system")))
+if (!fs.existsSync(path.join(TARGET, "_requirements/01-design-system")))
   missing.push("design-system docs (for ui-lint)");
 if (missing.length > 0) {
   log(
@@ -1439,7 +1439,7 @@ is the step you haven't run yet.
 
 - Type \`/mode:solo\` to stay solo for your first hour
 - Try \`/fix:fast "any error message"\` for a quick fix
-- Try "Help me write a product brief for this project" — Alex will guide you through \`requirements/\`
+- Try "Help me write a product brief for this project" — Alex will guide you through \`_requirements/\`
 
 ## Read
 

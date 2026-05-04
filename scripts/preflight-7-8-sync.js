@@ -15,7 +15,7 @@ const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
 const STORE = path.join(ROOT, ".claude/agents/02-oneshot/.system/store.json");
-const FEATURES_DIR = path.join(ROOT, "requirements/05-features");
+const FEATURES_DIR = path.join(ROOT, "_requirements/04-features");
 
 const APPLY = process.argv.includes("--apply");
 

@@ -41,7 +41,7 @@
  *
  * Skips:
  *   - Markdown files in `.claude/runtime/handoffs/` (historical handoffs)
- *   - Markdown files under `docs/99-resources/` or `requirements/99-audits/` (archives)
+ *   - Markdown files under `_docs/` or `_requirements/_audits/` (archives)
  *   - Any line containing "STALE" or "deprecated" marker
  *   - Lines inside fenced code blocks that are clearly examples (comment `// STALE example`)
  *
@@ -109,13 +109,13 @@ const ALLOW_LIST_SUBSTRINGS = [
   ".claude/project/memory/",
   ".claude/agents/.system/dispatch-backups/",
   ".claude/agents/02-oneshot/.system/retros/",
-  "requirements/99-audits/",
-  "docs/99-resources/",
+  "_requirements/_audits/",
+  "_docs/",
   "/check/references.md", // the rename catalog lives here intentionally
   "/path-guard.js", // this file
   "/scripts/paths/gate.js", // gate documents the patterns
   "/scripts/path-lint.js", // path-lint documents the patterns
-  "/warpos/paths.registry.json", // registry holds the regex strings as data
+  "/framework/paths.registry.json", // registry holds the regex strings as data
 ];
 
 // Phase 2B: per-line allow markers only.
@@ -157,7 +157,7 @@ process.stdin.on("end", () => {
 
     const rel = relPath(filePath);
     // Anchored prefix match: substring containment let crafted paths like
-    // ".../docs/99-resources/.../scripts/hooks/foo.js" bypass framework-owned
+    // ".../docs/.../scripts/hooks/foo.js" bypass framework-owned
     // enforcement. Each entry now matches as a top-level prefix.
     for (const allow of ALLOW_LIST_SUBSTRINGS) {
       const norm = allow.startsWith("/") ? allow.slice(1) : allow;

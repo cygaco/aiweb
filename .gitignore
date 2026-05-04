@@ -32,3 +32,7 @@ profiles.db-shm
 
 # Local-only test scratchpads
 a2a-test-messages.txt
+.codex-*
+
+# WarpOS update transaction records (local rollback bundles)
+.warpos/

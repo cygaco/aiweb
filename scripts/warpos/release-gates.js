@@ -86,15 +86,18 @@ const GATES = [
   }),
 
   // 3. Reference Integrity
+  // 0.1.2 honesty fix: this gate cannot run automatically (it needs a running
+  // Claude Code agent to invoke /check:references). Pre-0.1.2 it returned
+  // severity=green unconditionally — a lie that release-gates inherited.
+  // Now it returns severity=manual: not blocking, but also not pretending to
+  // pass. The runner counts manual the same as skipped for the overall PASS
+  // tally; critical-by-default gates may upgrade manual to a soft-block.
   gate("reference_integrity", () => {
-    // Heuristic: spawn an existing /check:references-equivalent if one exists.
-    // For 0.1.0 baseline, defer to a path-lint pass since /check:references
-    // requires a running Claude Code agent.
     return {
       ok: true,
-      severity: "green",
+      severity: "manual",
       message:
-        "Reference integrity check skipped (requires /check:references slash skill — run manually before /warp:release).",
+        "Reference integrity check requires the /check:references slash skill (no headless equivalent yet) — run manually before /warp:release. Tracked separately, not auto-passed.",
     };
   }),
 
@@ -440,7 +443,8 @@ const GATES = [
       return {
         ok: true,
         severity: "green",
-        message: "Production, accessibility, analytics, DR, readiness, and deprecation docs are present.",
+        message:
+          "Production, accessibility, analytics, DR, readiness, and deprecation docs are present.",
       };
     }
     return {
@@ -474,16 +478,23 @@ const GATES = [
     const admission = path.join(REPO_ROOT, "patterns", "ADMISSION.md");
     const dir = path.join(REPO_ROOT, "patterns");
     if (!fs.existsSync(admission)) {
-      return { ok: false, severity: "red", message: "patterns/ADMISSION.md missing." };
+      return {
+        ok: false,
+        severity: "red",
+        message: "patterns/ADMISSION.md missing.",
+      };
     }
     const content = fs
       .readdirSync(dir)
-      .filter((f) => f.endsWith(".md") && !["README.md", "ADMISSION.md"].includes(f));
+      .filter(
+        (f) => f.endsWith(".md") && !["README.md", "ADMISSION.md"].includes(f),
+      );
     if (content.length < 3) {
       return {
         ok: false,
         severity: "red",
-        message: "Pattern library needs at least 3 canonical patterns or pruned references.",
+        message:
+          "Pattern library needs at least 3 canonical patterns or pruned references.",
       };
     }
     return {
@@ -500,7 +511,8 @@ const GATES = [
       return {
         ok: true,
         severity: "green",
-        message: "Phase 6 path-usage audit found active consumers for previously flagged keys.",
+        message:
+          "Phase 6 path-usage audit found active consumers for previously flagged keys.",
       };
     }
     return {
@@ -517,6 +529,8 @@ function run(opts) {
   const results = [];
   let red = 0;
   let yellow = 0;
+  let manual = 0;
+  let degraded = 0;
   for (const g of GATES) {
     if (skip.has(g.name)) {
       results.push({
@@ -539,11 +553,15 @@ function run(opts) {
     results.push({ name: g.name, ...r });
     if (r.severity === "red") red += 1;
     else if (r.severity === "yellow") yellow += 1;
+    else if (r.severity === "manual") manual += 1;
+    else if (r.severity === "degraded") degraded += 1;
   }
   return {
     ok: red === 0,
     red,
     yellow,
+    manual,
+    degraded,
     green: results.filter((r) => r.severity === "green").length,
     skipped: results.filter((r) => r.severity === "skipped").length,
     results,
@@ -572,7 +590,11 @@ if (require.main === module) {
             ? "YEL  "
             : r.severity === "skipped"
               ? "SKIP "
-              : "GRN  ";
+              : r.severity === "manual"
+                ? "MAN  "
+                : r.severity === "degraded"
+                  ? "DEGR "
+                  : "GRN  ";
       console.log(`[${tag}] ${r.name}: ${r.message}`);
       if (r.details) {
         for (const d of (Array.isArray(r.details)
@@ -586,7 +608,7 @@ if (require.main === module) {
       }
     }
     console.log(
-      `\n${summary.green} green · ${summary.yellow} yellow · ${summary.red} red · ${summary.skipped} skipped — overall ${summary.ok ? "PASS" : "FAIL"}`,
+      `\n${summary.green} green · ${summary.yellow} yellow · ${summary.red} red · ${summary.manual || 0} manual · ${summary.degraded || 0} degraded · ${summary.skipped} skipped — overall ${summary.ok ? "PASS" : "FAIL"}`,
     );
   }
   process.exit(summary.red > 0 ? 2 : summary.yellow > 0 ? 1 : 0);

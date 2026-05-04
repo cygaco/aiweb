@@ -139,28 +139,58 @@
     },
     "requirements": {
       "type": "string",
-      "const": "requirements",
+      "const": "_requirements",
       "description": "dir (project) — paths.requirements"
     },
     "requirementsRoot": {
       "type": "string",
-      "const": "requirements",
+      "const": "_requirements",
       "description": "dir (project) — paths.requirementsRoot"
     },
     "specsRoot": {
       "type": "string",
-      "const": "requirements/05-features",
+      "const": "_requirements/04-features",
       "description": "dir (project) — paths.specsRoot"
     },
     "research": {
       "type": "string",
-      "const": "docs/99-resources/01-research",
+      "const": "_docs/research",
       "description": "dir (project) — paths.research"
     },
     "karpathyRuns": {
       "type": "string",
-      "const": "docs/99-resources/02-karpathy-autoresearch",
+      "const": "_docs/karpathy-auto-research",
       "description": "dir (runtime) — paths.karpathyRuns"
+    },
+    "architectureRoot": {
+      "type": "string",
+      "const": "_requirements/03-architecture",
+      "description": "dir (framework) — paths.architectureRoot"
+    },
+    "designSystemRoot": {
+      "type": "string",
+      "const": "_requirements/01-design-system",
+      "description": "dir (framework) — paths.designSystemRoot"
+    },
+    "auditsRoot": {
+      "type": "string",
+      "const": "_requirements/_audits",
+      "description": "dir (framework) — paths.auditsRoot"
+    },
+    "integrationsRoot": {
+      "type": "string",
+      "const": "_requirements/09-integrations",
+      "description": "dir (project) — paths.integrationsRoot"
+    },
+    "docsRoot": {
+      "type": "string",
+      "const": "_docs",
+      "description": "dir (project) — paths.docsRoot"
+    },
+    "frameworkRoot": {
+      "type": "string",
+      "const": "framework",
+      "description": "dir (framework) — paths.frameworkRoot"
     },
     "manifest": {
       "type": "string",
@@ -201,6 +231,11 @@
       "type": "string",
       "const": ".claude/project/events/tools.jsonl",
       "description": "jsonl (runtime) — paths.toolsFile"
+    },
+    "skillUsageFile": {
+      "type": "string",
+      "const": ".claude/project/events/skill-usage.jsonl",
+      "description": "jsonl (runtime) — paths.skillUsageFile"
     },
     "requirementsFile": {
       "type": "string",

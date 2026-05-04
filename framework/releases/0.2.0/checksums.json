@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "generatedAt": "2026-05-03T20:18:43.862Z",
+  "commit": "318971ffb7578a959f9978e6db2a7a0742a83f40",
+  "entries": {
+    "changelog.md": "36415981e46f12495a62d08353fc9ed1486c34b822e92df7d470fe0a377a231a",
+    "framework-manifest.json": "51219d1d3dae3a27310a0b765e6d5968a6e64ea537a391cea7983609499e4a6e",
+    "release.json": "ccc0f07175fabb143c0e26366f96e4d24c6ce6df6f22087ca43a30e2fb10391a",
+    "upgrade-notes.md": "6437e0cc0db2779ad07bb4957b3aebb7829b7b34b872aad8e9d57551ce5830bf",
+    "../../../migrations/0.1.x-to-0.2.0/001-rename-warpos-to-framework.js": "c537b6c53786de86ede7075fa79e961ca659adfc019ef4753b883e36bcfccd5f",
+    "../../../migrations/0.1.x-to-0.2.0/002-rename-requirements-to-_requirements.js": "9a96e09386482ae199d04184009260f4583d6d3215bdf5f70926e4f504b8d298",
+    "../../../migrations/0.1.x-to-0.2.0/003-rename-docs-to-_docs.js": "ffd32baf7e2bae459ef645eb96b090f80718627cf23023e7ef73a2088d7c3efd",
+    "../../../migrations/0.1.x-to-0.2.0/004-paths-schema-v4-to-v5.js": "00f06158e910a76225f1d675b34a2832e53e18eb5e64016cfca7da694e405f7e"
+  }
+}

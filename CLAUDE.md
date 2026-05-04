@@ -1,122 +1,3 @@
-# The AI Web — Wave 00
-
-## What This Is
-
-MCP server for pizza ordering — the "time to pizza" proof for The AI Web platform. An agent says "order me a pizza," a Bland.ai voice agent calls the restaurant, a real pizza gets ordered. Cash on delivery.
-
-Part of **Warp Studio** — an AI-native venture studio. This product proves the four primitives: discovery, trust, compatibility, commerce.
-
-## Architecture
-
-```
-src/
-├── server.ts              # MCP server, 3 tool definitions (the product's brain)
-├── connectors/
-│   └── bland.ts           # Bland.ai voice call: prompt builder + dispatch + transcript parser
-├── data/
-│   └── restaurants.ts     # Hardcoded restaurant data (placeholder phones — replace before testing)
-└── lib/
-    └── presets.ts          # Research-backed order presets + smart defaults (3/8 rule, 70/30 kids, etc.)
-```
-
-**Tools → Connectors → Intelligence.** Adding a restaurant = editing `restaurants.ts`. Adding a connector = new file in `connectors/`. Tool definitions rarely change.
-
-## The Three MCP Tools
-
-| Tool | Purpose | When called |
-|---|---|---|
-| `start_pizza_order` | Find restaurants, show presets, build suggested order | First — on any pizza intent |
-| `place_order` | Generate Bland prompt, fire voice call to restaurant | After explicit user confirmation |
-| `check_order_status` | Poll Bland call status, parse transcript | After place_order, to get result |
-
-## Stack
-
-- TypeScript (ES2022, NodeNext modules)
-- `@modelcontextprotocol/sdk` — MCP server
-- `zod` — parameter validation
-- `bland.ai` — voice API for restaurant calls
-- No framework, no database yet (Wave 00 MVP)
-
-## Protected Decisions
-
-These are locked. Do not change without explicit discussion:
-
-1. **Mandatory confirmation on every order.** No path bypasses showing full cart (items, price, restaurant, ETA, address, name, phone) and getting explicit "yes" before `place_order`.
-2. **Parse intent before asking.** If the user said "meat lovers," don't ask what they want. Extract intent_signals from the prompt.
-3. **Cash on delivery only (Wave 00).** No credit card handling, no checkout sessions, no bot detection.
-4. **Pre-built > self-build.** Runtime generation costs minutes + 50K tokens. Pre-built: milliseconds + 160x cheaper.
-5. **Supply-side focus.** We build for providers. We don't know which consumer agent wins.
-6. **Protocol-agnostic.** Output whatever agents consume. Protocols change; primitives don't.
-
-## Conversation Flow
-
-8-step UX rhythm: Parse Intent → Recognize User → Show Presets → User Picks Path → Search → Results → Confirm → Place Order. See `ai-web-flow-reference.md` for the full matrix.
-
-Key UX principles:
-- Agent leads, user reacts (show what you know, suggest what's best)
-- Selection > conversation > form (tappable presets kill 9 min of indecision)
-- Never a bare spinner ("Checking 4 restaurants near you" not "Loading...")
-- Tradeoffs are narrated (don't list — explain price vs speed vs match)
-- Checkout info woven in naturally (not a form dump at the end)
-
-## Commands
-
-```bash
-npm install          # install deps
-npm run build        # tsc → dist/
-npm run dev          # tsx watch mode
-npm start            # run built server
-```
-
-## Environment
-
-Copy `.env.example` to `.env` and set:
-- `BLAND_API_KEY` — from bland.ai
-- `BLAND_FROM_NUMBER` — optional Bland phone number
-
-## WarpOS Integration
-
-This project runs on WarpOS — pulled directly from `https://github.com/cygaco/WarpOS.git`. Current installed version is in `version.json`; install marker at `.claude/framework-installed.json`.
-
-WarpOS provides:
-- `WarpOS.md` — technical backbone (stack, products table, decisions log, validated patterns)
-- Claude Code hooks (`scripts/hooks/`) and slash commands (`.claude/commands/`)
-- TypeScript schemas (`schemas/`) — Deus Mechanicus, Warp Profiles
-- Implementation patterns (`patterns/`) — encrypted storage, rate limiting, Bright Data, UI component kit
-- Requirements engine (`requirements/`, `scripts/requirements/`)
-- Update engine (`scripts/warpos/update.js`) and release capsules (`warpos/releases/`)
-
-To upgrade: run `/warp:update` (dry-run by default) or `/warp:update --apply` once a newer capsule lands. Use `/warp:doctor` for full diagnostic.
-
-## Warp Studio Context
-
-- **Warp Drive** = Notion workspace (knowledge, decisions, process)
-- **WarpOS** = GitHub repo (code-adjacent artifacts Claude Code touches)
-- Rule: Notion holds knowledge. GitHub holds code. Neither duplicates the other.
-- All products integrate **Deus Mechanicus** for dev/test tooling (post-MVP).
-
-## Notion Pages (Warp Drive)
-
-Key pages for this product:
-- The AI Web (product brief): `3394b2201a1781318292f4776f0db394`
-- MCP Server Spec — Wave 00: `33a4b2201a1781669136d55745238c31`
-- Conversation Flow Reference: `33a4b2201a17813cbe84f2bfa0c20d0a`
-- Session Handoff 2026-04-05: `33a4b2201a17814d8dd2ca737a6dc2b4`
-- Ideas — v5 Brief Candidates: `33a4b2201a178184ab71c81ae45140b2`
-- Warp (studio overview): `3174b2201a17812fb9eecfdfa952b1dd`
-- Shared Rules: `3184b2201a178107accef1458292042b`
-
-## Shared Rules (from Warp)
-
-- Diffs only for code edits unless initial build
-- No inline comments unless logic is non-obvious
-- No new dependencies without flagging: name + reason + ask
-- Every spinner/loader must have contextual text
-- Prefer `str_replace` over full-file rewrites
-- Flag session cost when getting heavy
-
----
-
 # Alex Framework — CLAUDE.md
 
 ## Identity
@@ -156,15 +37,16 @@ See `.claude/project/reference/operational-loop.md` for the 10-step cycle, sessi
 | Sign up for services / make purchases | Not allowed |
 | Delete backup branches | Not allowed |
 
-### Alex β Consultation
+### Decision Authority
 
-Before using AskUserQuestion, consult **Alex β** (`.claude/agents/00-alex/beta.md`) via SendMessage.
+The single source of truth for decision rights, escalation red lines, scoring rubric, and the tech-introduction rule is `paths.decisionPolicy` (`.claude/agents/00-alex/.system/policy/decision-policy.md`). Current product stage and stage-specific priorities live at `paths.currentStage`. Beta loads both on every invocation; in solo mode, Alpha consults them directly.
 
-**β handles:** Product scope, priority, quality eval, process, architecture, triage, tool/model selection, naming.
+**Three decision classes:**
+- **Class A** — implementation, reversible. Decide directly.
+- **Class B** — meaningful technical. Score against the rubric, decide. Flag `OPEN_ADR: true` if the call affects architecture, dependencies, data model, security, or deployment.
+- **Class C** — strategic, irreversible, or business. Escalate with one recommendation, not a menu.
 
-**Direct to user (skip β):** UX decisions, spec semantics, irreversible decisions, spend >$5, external actions, β returned ESCALATE, credentials, contradicts CLAUDE.md.
-
-**Protocol:** β responds DECIDE (proceed) | DIRECTIVE (act on it) | ESCALATE (ask user with "ESCALATE:" prefix). Log to `.claude/agents/00-alex/.system/beta/events.jsonl`.
+**β consultation protocol:** before using AskUserQuestion in adhoc mode, consult **Alex β** (`.claude/agents/00-alex/beta.md`) via SendMessage. β responds DECIDE | DIRECTIVE | ESCALATE; log to `paths.betaEvents`. Only surface to the user with `ESCALATE:` prefix when β returns ESCALATE.
 
 ### Build Modes
 
@@ -199,6 +81,16 @@ The path-guard hook warns when stale literals appear; path-lint exits 1 on criti
 ### Prompt Pipeline
 
 `scripts/hooks/smart-context.js` runs on every prompt. Sends prompt + memory stores to Haiku, which enriches the prompt and selects relevant memory items as `additionalContext`. Fail-open.
+
+## Refactor & Rename Hygiene
+
+Three rules with bug-class evidence — all validated multiple times across runs.
+
+**Before deleting a file referenced across the project:** grep for the basename across all `.md`/`.json`/`.js` files. The deletion-time scan once caught direct refs in 9 files; a separate `/check:all` pass surfaced 11 more in canonical docs, SPEC_GRAPH, and audit maps. Wire ref-checker on any `D` (delete) status file via the merge-guard or framework-manifest-guard hook before commit. Source: LRN L-2026-04-22-fix-deep-run09-cleanup.
+
+**Before completing a rename of an identifier across files:** grep for ALL occurrences of the OLD literal across the entire codebase, not just the file you remember. The rename of provider id `anthropic` → `claude` missed two checks in `scripts/dispatch/state.js` (lines 96, 103); reads silently fell through to defaults, masquerading as a "save not working" bug for hours of debugging. The fix on each file is trivial; the missed file is the entire bug class. Source: LRN-2026-04-29-conv-stale-anthropic-checks.
+
+**Lib-only fixes don't protect against bypassing callers.** A fix that lives only inside a helper module (`lib/X#fn`) re-introduces its bug whenever any caller goes around the helper and calls the underlying CLI/API raw. The Windows-stdin fix for codex (LRN-2026-04-17-n) lived only inside `runProvider`; phase-1 + phase-2 review agents called `cat <file> | codex exec ...` from Bash directly and re-hit the original cmd.exe stdin bug 13 days later — both phases lost ~5 min/agent to "0 bytes output" timeouts before discovering the route bypass. Pair every transport-level fix with (a) a guard hook that flags the raw pattern at write-time, **and** (b) a dispatch-contract rule referenced from the agents who'd call it — not just the lib internals. Source: 2026-04-30 binding-gap learning + cross-provider-dispatch.md.
 
 ## Project Context
 

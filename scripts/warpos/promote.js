@@ -56,15 +56,22 @@ const FRAMEWORK_PREFIXES = [
   ".claude/paths.json",
   "scripts/",
   "schemas/",
-  "warpos/",
+  "framework/", // 2026-05-03: renamed from warpos/ in Track B.1
   "migrations/",
   "patterns/",
   "fixtures/",
-  "version.json",
+  // version.json is canonical-owned. Product repos carry their own
+  // installed-at-version stamp (.claude/framework-installed.json#installedVersion);
+  // promoting product/version.json clobbered canonical 0.2.0 -> 0.1.2 in
+  // 2026-05-04, then release-canonical bumped from the wrong base. Keep it out.
   "install.ps1",
   "AGENTS.md",
   "CLAUDE.md",
   "PROJECT.md",
+  // 2026-05-03 Track D: requirements + docs are in scope so structural
+  // changes (chapter renumber, _shared/_standards/_audits skeleton) propagate
+  "_requirements/",
+  "_docs/",
 ];
 
 // Always-exclude prefixes (runtime, per-project, generated, secrets).
@@ -73,6 +80,7 @@ const EXCLUDE_PREFIXES = [
   ".claude/project/events/",
   ".claude/project/memory/",
   ".claude/project/maps/", // generated
+  ".claude/project/builds/", // per-run build state
   ".claude/agents/.system/dispatch-backups/",
   ".claude/agents/02-oneshot/.system/retros/",
   ".claude/agents/02-oneshot/.system/store.json",
@@ -81,11 +89,19 @@ const EXCLUDE_PREFIXES = [
   ".claude/.agent-result-hashes.json",
   ".claude/.last-checkpoint",
   ".claude/.session-checkpoint.json",
+  ".claude/.session-start-commit",
   ".claude/scheduled_tasks.lock",
   ".claude/manifest.json", // per-project filled
   ".claude/framework-installed.json", // per-install snapshot
-  "requirements/05-features/", // project specs (jobzooka-specific)
-  "requirements/_index/", // generated graph
+  // 2026-05-03 Track D: project-specific subtrees inside the new framework dirs
+  "_requirements/04-features/", // project feature specs
+  "_requirements/_index/", // generated requirements graph
+  "_requirements/_shared/", // project-specific test fixtures + helpers
+  "_requirements/09-integrations/brightdata/", // project-specific integration
+  "_docs/research/", // project research artifacts
+  "_docs/user-communication/", // project copy/comms
+  "_docs/karpathy-auto-research/", // per-run autoresearch logs
+  ".warpos/", // per-install transactional state
   ".env",
   "node_modules/",
 ];
@@ -213,7 +229,7 @@ function classify(sourceRoot, targetRoot) {
       });
       continue;
     }
-    if (rel.startsWith("requirements/05-features/")) {
+    if (rel.startsWith("_requirements/04-features/")) {
       decisions.push({
         rel,
         category: "PROJECT_IGNORE",
@@ -223,7 +239,7 @@ function classify(sourceRoot, targetRoot) {
     }
     if (
       rel.startsWith(".claude/project/maps/") ||
-      rel.startsWith("requirements/_index/")
+      rel.startsWith("_requirements/_index/")
     ) {
       decisions.push({
         rel,
@@ -390,7 +406,12 @@ async function run(opts) {
     JSON.stringify(stamp, null, 2) + "\n",
   );
 
-  const commitMessage = buildCommitMessage(sourceVersion, applyResult);
+  const sourceLabel = detectSourceLabel(REPO_ROOT);
+  const commitMessage = buildCommitMessage(
+    sourceVersion,
+    applyResult,
+    sourceLabel,
+  );
   fs.writeFileSync(
     path.join(targetRoot, ".warpos-sync-commit-msg.txt"),
     commitMessage,
@@ -402,6 +423,7 @@ async function run(opts) {
     report,
     apply: applyResult,
     sourceVersion,
+    sourceLabel,
     commitMessage,
   };
 }
@@ -487,11 +509,38 @@ function applyDecisions(sourceRoot, targetRoot, decisions, opts) {
   return { ok: counts.errors === 0, counts, errors };
 }
 
-function buildCommitMessage(sourceVersion, applyResult) {
+function detectSourceLabel(repoRoot) {
+  // Prefer .claude/manifest.json#project.slug, then package.json#name, then
+  // the directory basename. Avoids hardcoded "jobhunter" — promote.js is
+  // framework-canonical and must work from any source repo.
+  try {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, ".claude", "manifest.json"), "utf8"),
+    );
+    const slug =
+      manifest?.project?.slug ||
+      (manifest?.project?.name || "").toLowerCase().replace(/\s+/g, "-");
+    if (slug) return slug;
+  } catch {
+    /* fall through */
+  }
+  try {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
+    );
+    if (pkg?.name) return pkg.name;
+  } catch {
+    /* fall through */
+  }
+  return path.basename(repoRoot) || "product-repo";
+}
+
+function buildCommitMessage(sourceVersion, applyResult, sourceLabel) {
   const v = sourceVersion || "unknown";
   const c = applyResult.counts;
+  const label = sourceLabel || "product-repo";
   const lines = [
-    `sync(from-jobhunter): warpos@${v}`,
+    `sync(from-${label}): warpos@${v}`,
     "",
     "Promotion via scripts/warpos/promote.js --apply.",
     "",
@@ -588,7 +637,7 @@ if (require.main === module) {
               ? "Review the .warpos-sync-commit-msg.txt and target diff, then commit + push."
               : "None for dry-run.",
         recommendedNextAction: isApply
-          ? `cd ${r.report.targetRoot} && git add -A && git commit -F .warpos-sync-commit-msg.txt && git push origin main`
+          ? `cd "${r.report.targetRoot}" && git status, then git add only the framework paths you want to promote, commit using .warpos-sync-commit-msg.txt as the message body, and push when reviewed. Do NOT auto-push from a promote run.`
           : "Review Class B/C entries before promoting to the canonical WarpOS clone.",
       });
       if (!r.ok) {

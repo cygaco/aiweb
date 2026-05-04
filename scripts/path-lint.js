@@ -56,7 +56,7 @@ const { PATHS } = (() => {
 // Phase 1B — augment hardcoded rules with the generator's output
 // (scripts/path-lint.rules.generated.json). When present, its rules layer on
 // top of the embedded ones below; this is how new rules added to the registry
-// (e.g. the docs/05-features → requirements/05-features CRITICAL added in
+// (e.g. the _requirements/04-features → _requirements/04-features CRITICAL added in
 // Phase 1) take effect without editing this script.
 const GENERATED_RULES = (() => {
   try {
@@ -232,7 +232,29 @@ if (GENERATED_RULES) {
   }
 }
 
-const EXTENSIONS = new Set([".md", ".js", ".json"]);
+// 0.1.2: extended coverage from {md,js,json} to also include the file types
+// that ship product/framework wiring — TS/TSX, shell, powershell, YAML.
+// Hardcoded paths in `.ts` config or a `.ps1` install script were silently
+// invisible to path-lint pre-0.1.2; framework-owned files in those formats
+// could drift behind the registry.
+const EXTENSIONS = new Set([
+  ".md",
+  ".js",
+  ".cjs",
+  ".mjs",
+  ".json",
+  ".ts",
+  ".tsx",
+  ".sh",
+  ".ps1",
+  ".yml",
+  ".yaml",
+]);
+
+// Per-line escape: any line containing this marker is excluded from lint
+// rules. Use sparingly in framework-owned files (history, examples, the
+// rule definitions themselves). Documented in PATH_KEYS.md.
+const ALLOW_MARKER = "path-literal-allowed";
 const SKIP_DIRS = new Set([
   "node_modules",
   ".git",
@@ -247,8 +269,8 @@ const SKIP_SUBSTRINGS = [
   ".claude/project/events/",
   ".claude/project/memory/",
   ".claude/project/maps/",
-  "requirements/99-audits/",
-  "docs/99-resources/",
+  "_requirements/_audits/",
+  "_docs/",
   ".claude/paths.json",
   "scripts/path-lint.js",
   "scripts/hooks/path-guard.js", // holds the patterns by design
@@ -269,13 +291,16 @@ const SKIP_SUBSTRINGS = [
   "BACKLOG.md", // backlog references work history and archived framework planning
   "scripts/append-trace-rt013.js", // RT-013 incident documentation
   "scripts/hooks/team-guard.js", // documents RT-013 fix in comment
-  "warpos/paths.registry.json", // registry holds the regex strings as data
+  "framework/paths.registry.json", // registry holds the regex strings as data
   "scripts/path-lint.rules.generated.json", // generated mirror of registry
   "schemas/paths.schema.json", // generated schema
-  "docs/04-architecture/PATH_KEYS.md", // generated reference doc
+  "_requirements/03-architecture/PATH_KEYS.md", // generated reference doc
   // Phase 4 — capsule + migration historical references
-  "warpos/releases/", // changelogs / upgrade-notes name the renamed paths
+  "framework/releases/", // changelogs / upgrade-notes name the renamed paths
   "migrations/0.0.0-to-0.1.0/003-docs-to-requirements.js", // semantic purpose IS the rewrite
+  ".warpos/", // per-install transactional state (audit log)
+  "scripts/one-off/codemod-track-b5.js", // Track C codemod encodes paths as data
+  "runtime/canonical-skeleton/", // Track A.2 preserved templates pre-overwrite for canonical mirror
 ];
 
 const critical = [];
@@ -289,6 +314,8 @@ function shouldSkip(rel) {
 function lintContent(rel, content) {
   const lines = content.split("\n");
   lines.forEach((line, i) => {
+    // Skip lines that explicitly opted out (rare; for legitimate examples).
+    if (line.includes(ALLOW_MARKER)) return;
     // Skip lines marked as historical / example in the nearby 3 lines
     for (const rule of CRITICAL) {
       const m = line.match(rule.re);

@@ -11,7 +11,7 @@ const FRAMEWORK_SURFACES = [
   "scripts/agents/",
   "install.ps1",
   "version.json",
-  "warpos/paths.registry.json",
+  "framework/paths.registry.json",
 ];
 
 function isFrameworkPath(rel) {

@@ -10,7 +10,7 @@
  *   node scripts/truth-compiler.js onboarding
  *   node scripts/truth-compiler.js skills-curation
  *   node scripts/truth-compiler.js --all
- *   node scripts/truth-compiler.js --file requirements/05-features/onboarding/PRD.md
+ *   node scripts/truth-compiler.js --file _requirements/04-features/onboarding/PRD.md
  *
  * Callable from code:
  *   const { compileFeatureTruth, compileTruth } = require("./truth-compiler");
@@ -21,7 +21,7 @@ const path = require("path");
 const { query } = require("./hooks/lib/logger");
 
 const PROJECT = path.resolve(__dirname, "..");
-const FEATURES_DIR = path.join(PROJECT, "docs", "05-features");
+const FEATURES_DIR = path.join(PROJECT, "requirements", "04-features");
 
 const SPEC_LAYERS = [
   "PRD.md",
@@ -37,7 +37,7 @@ const PRECEDENCE = (() => {
   try {
     return JSON.parse(
       fs.readFileSync(
-        path.join(PROJECT, "docs", "00-canonical", "PRECEDENCE.json"),
+        path.join(PROJECT, "requirements", "00-canonical", "PRECEDENCE.json"),
         "utf8",
       ),
     );
@@ -150,7 +150,7 @@ function hashFile(absPath) {
 }
 
 function checkFixtureDrift() {
-  const fixturesDir = path.join(PROJECT, "docs", "00-canonical", "fixtures");
+  const fixturesDir = path.join(PROJECT, "requirements", "00-canonical", "fixtures");
   if (!fs.existsSync(fixturesDir)) return [];
 
   const fixtureFiles = fs
@@ -286,7 +286,7 @@ function compileFeatureTruth(feature) {
   if (!fs.existsSync(featureDir)) return null;
 
   // Gather all spec events mentioning this feature's files
-  const featurePrefix = `requirements/05-features/${feature}/`;
+  const featurePrefix = `_requirements/04-features/${feature}/`;
   const allSpecEvents = query({ cat: "spec", limit: 500 });
 
   const featureEvents = allSpecEvents.filter((e) => {
@@ -298,7 +298,7 @@ function compileFeatureTruth(feature) {
   const layers = {};
   for (const layer of SPEC_LAYERS) {
     const filePath = path.join(featureDir, layer);
-    const rel = `requirements/05-features/${feature}/${layer}`;
+    const rel = `_requirements/04-features/${feature}/${layer}`;
     const exists = fs.existsSync(filePath);
     const staleMarkers = exists ? parseStaleMarkers(filePath) : [];
     const events = featureEvents.filter((e) => (e.data?.file || "") === rel);
@@ -336,7 +336,7 @@ function compileFeatureTruth(feature) {
         sourceEvents.length > 0 ? sourceEvents[sourceEvents.length - 1] : null;
 
       gaps.push({
-        file: `requirements/05-features/${feature}/${layer}`,
+        file: `_requirements/04-features/${feature}/${layer}`,
         staleFrom: marker.source,
         changedAt: marker.changedAt,
         resolvedByEvent: layerEvents.length > 0,

@@ -50,12 +50,12 @@ const builtFileContents = files
   })
   .join("\n\n");
 
-const prd = readFile(PROJ, "requirements/05-features/" + featureDir + "/PRD.md");
+const prd = readFile(PROJ, "_requirements/04-features/" + featureDir + "/PRD.md");
 const stories = readFile(
   PROJ,
-  "requirements/05-features/" + featureDir + "/STORIES.md",
+  "_requirements/04-features/" + featureDir + "/STORIES.md",
 );
-const inputs = readFile(PROJ, "requirements/05-features/" + featureDir + "/INPUTS.md");
+const inputs = readFile(PROJ, "_requirements/04-features/" + featureDir + "/INPUTS.md");
 const integrationMap = readFile(
   PROJ,
   ".claude/agents/02-oneshot/.system/integration-map.md",

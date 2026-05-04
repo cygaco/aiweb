@@ -1,6 +1,6 @@
 /**
  * 001-path-registry-v4.js — Regenerate .claude/paths.json from
- * warpos/paths.registry.json. Idempotent regenerator.
+ * framework/paths.registry.json. Idempotent regenerator.
  *
  * Phase 4B migration. Class A (mechanical regenerate).
  */
@@ -15,7 +15,7 @@ module.exports = {
   from: "0.0.0",
   to: "0.1.0",
   description:
-    "Rebuild .claude/paths.json from warpos/paths.registry.json with $schema warpos/paths/v4.",
+    "Rebuild .claude/paths.json from framework/paths.registry.json with $schema warpos/paths/v4.",
   destructive: false,
 
   async plan() {
@@ -47,7 +47,7 @@ module.exports = {
       },
       {
         op: "regenerate",
-        target: "docs/04-architecture/PATH_KEYS.md",
+        target: "_requirements/03-architecture/PATH_KEYS.md",
         via: "scripts/paths/build.js",
         reason: "Human-readable reference — derived.",
       },

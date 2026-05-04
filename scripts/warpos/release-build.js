@@ -15,7 +15,7 @@ const { execSync } = require("child_process");
 const { printHumanReport } = require("./report-format");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const RELEASES_DIR = path.join(REPO_ROOT, "warpos", "releases");
+const RELEASES_DIR = path.join(REPO_ROOT, "framework", "releases");
 const FRAMEWORK_MANIFEST = path.join(
   REPO_ROOT,
   ".claude",

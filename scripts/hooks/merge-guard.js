@@ -7,7 +7,7 @@
  * - git reset --hard (destructive)
  * - git checkout agent/* (prevents branch switching to agent branches)
  * - node -e with fs.writeFileSync (bypasses Edit hooks)
- * - rm on src/ or docs/ files (destructive)
+ * - rm on src/ or _docs/ files (destructive)
  *
  * Allowlist-first for performance — read-only commands exit immediately.
  * Fail-closed: parse errors or missing store → BLOCK.
@@ -397,7 +397,7 @@ process.stdin.on("end", () => {
       );
     }
 
-    // 5. rm on src/ or docs/ — block destructive deletes.
+    // 5. rm on src/ or _docs/ — block destructive deletes.
     // Scoped per-segment so `cd src/ && rm /tmp/x` doesn't false-positive
     // (BACKLOG.md issue #9 / merge-guard regex overmatch). `git rm` is
     // allowed because git tracks the deletion and it's recoverable.
@@ -407,11 +407,11 @@ process.stdin.on("end", () => {
         const s = seg.trim();
         if (!/\brm\b/.test(s)) continue;
         if (/\bgit\s+rm\b/.test(s)) continue;
-        // Only block when the rm command itself targets src/ or docs/ —
-        // a path token starting with src/ or docs/ in the same segment.
+        // Only block when the rm command itself targets src/ or _docs/ —
+        // a path token starting with src/ or _docs/ in the same segment.
         if (/\b(?:src|docs)\//.test(s)) {
           block(
-            "rm on src/ or docs/ blocked: use `git rm` to manage file lifecycle.",
+            "rm on src/ or _docs/ blocked: use `git rm` to manage file lifecycle.",
           );
         }
       }

@@ -8,12 +8,12 @@
  * /preflight:run, /warp:release, and CI.
  *
  * Runs (in order, fail-fast):
- *   1. Registry schema validates (warpos/paths.registry.json $schema + shape).
+ *   1. Registry schema validates (framework/paths.registry.json $schema + shape).
  *   2. Generated artifacts are current (delegate to `build.js --check`).
  *   3. No framework-owned file uses unregistered literal paths
  *      (delegate to scripts/path-lint.js — CRITICAL=0 unless --strict adds WARN).
  *   4. No deprecated alias appears outside marked migrations (allow markers).
- *   5. Every `paths.X` token in docs/agents/skills resolves to a registry key.
+ *   5. Every `paths.X` token in _docs/agents/skills resolves to a registry key.
  *
  * Exit code: 0 = green, 1 = at least one check failed.
  *
@@ -37,7 +37,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..", "..");
-const REGISTRY_FILE = path.join(ROOT, "warpos", "paths.registry.json");
+const REGISTRY_FILE = path.join(ROOT, "framework", "paths.registry.json");
 const argv = process.argv.slice(2);
 const FLAGS = {
   json: argv.includes("--json"),
@@ -262,26 +262,44 @@ function checkDeprecatedAliases() {
     "scripts/paths/gate.js",
     "scripts/path-lint.js",
     "scripts/hooks/path-guard.js",
-    "warpos/paths.registry.json",
+    "framework/paths.registry.json",
     "scripts/path-lint.rules.generated.json",
     "schemas/paths.schema.json",
-    "docs/04-architecture/PATH_KEYS.md",
+    "_requirements/03-architecture/PATH_KEYS.md",
     ".claude/runtime/",
     ".claude/project/events/",
     ".claude/project/memory/",
     ".claude/project/maps/",
     ".claude/agents/.system/dispatch-backups/",
     ".claude/agents/02-oneshot/.system/retros/",
-    "requirements/99-audits/",
-    "docs/99-resources/",
+    "_requirements/_audits/",
+    "_docs/",
     "BACKLOG.md",
     "CHANGELOG.md",
     "CHANGELOG-test-system.md",
     "backups/",
+    // Transaction records describe what we did, including naming the
+    // deprecated path. Append-only event logs, not framework code.
+    ".warpos/transactions/",
+    ".warpos/",
     "scripts/warpos/codemod-docs-to-requirements.js",
     // Phase 4B migration: this script's semantic purpose IS to rewrite the
     // legacy path; the literal is data, not navigation.
     "migrations/0.0.0-to-0.1.0/003-docs-to-requirements.js",
+    // Historical release capsules — manifests inside name pre-rename paths
+    "framework/releases/",
+    // Track B.5 codemod itself encodes pre/post strings as data
+    "scripts/one-off/codemod-track-b5.js",
+    // Track A.2 saved snapshot of pre-rename templates for canonical mirror
+    "runtime/canonical-skeleton/",
+    // Historical migration docs: legitimate references to pre-rename paths
+    "warpos-system-updates",
+    "warpos-roadmap.md",
+    "ROADMAP.md",
+    // Per-session runtime checkpoint (snapshot of past prompts; not framework code)
+    ".claude/.session-checkpoint.json",
+    ".claude/.last-checkpoint",
+    ".claude/.session-prompts.log",
   ];
   const accept = (f) => {
     const rel = path.relative(ROOT, f).replace(/\\/g, "/");
@@ -302,6 +320,11 @@ function checkDeprecatedAliases() {
       const line = lines[i];
       for (const { alias, key } of deprecated) {
         if (!line.includes(alias)) continue;
+        // Word-boundary check: the alias must not be preceded by [a-zA-Z0-9_/.]
+        // (so "_requirements/09-integrations" does NOT match "requirements/09-integrations" alias)
+        const aliasIdx = line.indexOf(alias);
+        const before = aliasIdx > 0 ? line[aliasIdx - 1] : "";
+        if (before && /[a-zA-Z0-9_./]/.test(before)) continue;
         if (ALLOW_MARKER_RE.test(line)) continue;
         const ctxStart = Math.max(0, i - 1);
         const ctxEnd = Math.min(lines.length, i + 2);
@@ -344,17 +367,17 @@ function checkDocsTokens() {
     "node_modules/",
     ".git/",
     ".next/",
-    "warpos/paths.registry.json",
+    "framework/paths.registry.json",
     "scripts/paths/gate.js",
-    "docs/04-architecture/PATH_KEYS.md",
+    "_requirements/03-architecture/PATH_KEYS.md",
     "scripts/path-lint.js",
     "scripts/hooks/lib/paths.js",
     "scripts/hooks/lib/paths.generated.js",
     "schemas/paths.schema.json",
     "scripts/path-lint.rules.generated.json",
     "scripts/paths/build.js",
-    "requirements/99-audits/",
-    "docs/99-resources/",
+    "_requirements/_audits/",
+    "_docs/",
     "BACKLOG.md",
     "CHANGELOG.md",
     "CHANGELOG-test-system.md",

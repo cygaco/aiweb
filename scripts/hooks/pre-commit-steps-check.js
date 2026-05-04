@@ -4,7 +4,7 @@
  *
  * Runs from `.git/hooks/pre-commit`. Exits 1 (blocking the commit) if:
  *
- *   (a) docs/00-canonical/STEPS.json is staged AND its post-stage body
+ *   (a) _requirements/00-canonical/STEPS.json is staged AND its post-stage body
  *       violates the registry schema (same invariants step-registry-guard
  *       checks at Edit/Write time), OR
  *   (b) STEPS.json OR any of the 3 canonical step-table docs are staged
@@ -28,11 +28,11 @@ const { execFileSync, spawnSync } = require("child_process");
 
 // Resolve project root — pre-commit runs from repo root, but be robust
 const PROJECT = path.resolve(__dirname, "..", "..");
-const STEPS_JSON_REL = "docs/00-canonical/STEPS.json";
+const STEPS_JSON_REL = "_requirements/00-canonical/STEPS.json";
 const CANONICAL_DOC_RELS = [
-  "docs/00-canonical/PRODUCT_MODEL.md",
-  "docs/00-canonical/GLOSSARY.md",
-  "docs/00-canonical/GOLDEN_PATHS.md",
+  "_requirements/00-canonical/PRODUCT_MODEL.md",
+  "_requirements/00-canonical/GLOSSARY.md",
+  "_requirements/00-canonical/GOLDEN_PATHS.md",
 ];
 
 // ── Staged file discovery ───────────────────────────────────────────────
@@ -195,7 +195,7 @@ function main() {
     const body = stagedBlob(STEPS_JSON_REL);
     if (body == null) {
       banner("pre-commit-steps-check: could not read staged STEPS.json", [
-        "  `git show :docs/00-canonical/STEPS.json` failed.",
+        "  `git show :_requirements/00-canonical/STEPS.json` failed.",
         "  The commit cannot proceed until git can resolve the staged blob.",
       ]);
       process.exit(1);
@@ -203,7 +203,7 @@ function main() {
     const findings = validateStepsRegistry(body);
     if (findings.length) {
       const lines = [
-        `${findings.length} schema violation(s) in staged docs/00-canonical/STEPS.json:`,
+        `${findings.length} schema violation(s) in staged _requirements/00-canonical/STEPS.json:`,
         "",
         ...findings.map((f) => `  • ${f}`),
         "",

@@ -2,7 +2,7 @@
  * Cart schema fidelity tests.
  *
  * Validates that src/lib/cart.ts can losslessly represent the real chain
- * carts captured in docs/99-resources/01-research/chain-menus/SAMPLES.md.
+ * carts captured in _docs/research/chain-menus/SAMPLES.md.
  *
  * Run: npm test  OR  npx tsx --test tests/cart-schema.test.ts
  */

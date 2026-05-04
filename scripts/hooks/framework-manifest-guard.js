@@ -47,7 +47,7 @@ const TRACKED_PREFIXES = [
   ".claude/project/maps/",
   "scripts/hooks/",
   "scripts/tools/",
-  "requirements/",
+  "_requirements/",
   "patterns/",
 ];
 const TRACKED_TOP_LEVEL = [
@@ -63,12 +63,12 @@ const TRACKED_TOP_LEVEL = [
 // scripts/paths/gate.js to pass. Reuses the same fail-closed semantics as
 // the manifest staging check.
 const PATHS_RELATED = [
-  "warpos/paths.registry.json",
+  "framework/paths.registry.json",
   ".claude/paths.json",
   "scripts/hooks/lib/paths.generated.js",
   "scripts/path-lint.rules.generated.json",
   "schemas/paths.schema.json",
-  "docs/04-architecture/PATH_KEYS.md",
+  "_requirements/03-architecture/PATH_KEYS.md",
   "scripts/paths/build.js",
   "scripts/paths/gate.js",
 ];

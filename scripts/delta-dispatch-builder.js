@@ -153,15 +153,15 @@ then halt without modifying it. Foundation list (partial): ${foundationFiles
 ## Specs to Read (in this order)
 0. ${hygienePath.replace(ROOT + path.sep, "").replace(/\\/g, "/")} — cumulative HYGIENE rules, hard-fail on violation
 1. AGENTS.md
-2. requirements/05-features/${featureDir}/PRD.md
-3. requirements/05-features/${featureDir}/STORIES.md
-4. requirements/05-features/${featureDir}/COPY.md (if exists)
-5. requirements/05-features/${featureDir}/INPUTS.md (if exists)
-6. docs/04-architecture/FLOW_SPEC.md — find your feature's section
-7. docs/04-architecture/DATA-CONTRACTS.md
-8. docs/04-architecture/VALIDATION_RULES.md (if feature has user inputs)
-9. docs/04-architecture/AUTH_SCHEMAS.md (if feature involves auth)
-10. docs/04-architecture/PROMPT_TEMPLATES.md (if feature calls Claude API)
+2. _requirements/04-features/${featureDir}/PRD.md
+3. _requirements/04-features/${featureDir}/STORIES.md
+4. _requirements/04-features/${featureDir}/COPY.md (if exists)
+5. _requirements/04-features/${featureDir}/INPUTS.md (if exists)
+6. _requirements/03-architecture/FLOW_SPEC.md — find your feature's section
+7. _requirements/03-architecture/DATA-CONTRACTS.md
+8. _requirements/03-architecture/VALIDATION_RULES.md (if feature has user inputs)
+9. _requirements/03-architecture/AUTH_SCHEMAS.md (if feature involves auth)
+10. _requirements/03-architecture/PROMPT_TEMPLATES.md (if feature calls Claude API)
 11. CLAUDE.md
 
 ## Build Verification (before commit)

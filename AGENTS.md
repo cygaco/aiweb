@@ -1,7 +1,7 @@
 # Alex Agent System
 
 > Router and table of contents for the multi-agent build system.
-> For the full operational specification, see [agent-system.md](.claude/agents/.system/agent-system.md).
+> For the full operational specification, see [.system.md](.claude/agents/.system.md).
 
 ---
 
@@ -16,22 +16,22 @@
 
 ## Build Agents
 
-| Agent | Role | Spec |
-|-------|------|------|
-| **Builder** | Code writer (scoped) | [adhoc](01-adhoc/builder/) / [oneshot](02-oneshot/builder/) |
-| **Evaluator** | Code reviewer (pass/fail) | [adhoc](01-adhoc/evaluator/) / [oneshot](02-oneshot/evaluator/) |
-| **Security** | Vulnerability scanner | [adhoc](01-adhoc/redteam/) / [oneshot](02-oneshot/redteam/) |
-| **Compliance** | Process auditor (cross-provider) | [adhoc](01-adhoc/compliance/) / [oneshot](02-oneshot/compliance/) |
-| **Auditor** | Pattern analyst, environment evolver | [oneshot](02-oneshot/auditor/) |
-| **QA** | Failure scanner (self-orchestrating) | [adhoc](01-adhoc/qa/) / [oneshot](02-oneshot/qa/) |
-| **Fix Agent** | Bug fixer (scoped) | [adhoc](01-adhoc/fixer/) / [oneshot](02-oneshot/fixer/) |
+| Agent | Role | Adhoc | Oneshot |
+|-------|------|-------|---------|
+| **Builder** | Code writer (scoped) | [adhoc](.claude/agents/01-adhoc/builder/) | [oneshot](.claude/agents/02-oneshot/builder/) |
+| **Evaluator** | Code reviewer (pass/fail) | [adhoc](.claude/agents/01-adhoc/evaluator/) | [oneshot](.claude/agents/02-oneshot/evaluator/) |
+| **Compliance** | Process auditor (cross-provider) | [adhoc](.claude/agents/01-adhoc/compliance/) | [oneshot](.claude/agents/02-oneshot/compliance/) |
+| **Auditor** | Pattern analyst, environment evolver | — | [oneshot](.claude/agents/02-oneshot/auditor/) |
+| **QA** | Failure scanner (self-orchestrating) | [adhoc](.claude/agents/01-adhoc/qa/) | [oneshot](.claude/agents/02-oneshot/qa/) |
+| **Red Team** | Security + vuln scanner (self-orchestrating) | [adhoc](.claude/agents/01-adhoc/redteam/) | [oneshot](.claude/agents/02-oneshot/redteam/) |
+| **Fixer** | Bug fixer (scoped) | [adhoc](.claude/agents/01-adhoc/fixer/) | [oneshot](.claude/agents/02-oneshot/fixer/) |
 
 ## Build Modes
 
 | Mode | Purpose | Protocol |
 |------|---------|----------|
-| **Oneshot** | Full skeleton builds | [protocol.md](.claude/agents/.system/oneshot/protocol.md) |
-| **Adhoc** | Single feature builds | [protocol.md](.claude/agents/.system/adhoc/protocol.md) |
+| **Oneshot** | Full skeleton builds | [protocol.md](.claude/agents/02-oneshot/.system/protocol.md) |
+| **Adhoc** | Single feature builds | [protocol.md](.claude/agents/01-adhoc/.system/protocol.md) |
 
 **Adhoc team** (α + β + γ) is the default for development. **Oneshot** is a standalone Delta session (no team — Delta IS the session). **Solo** (Alpha alone) is rare.
 
@@ -41,16 +41,16 @@
 |----------|---------|
 | [CLAUDE.md](CLAUDE.md) | Framework config, identity pointer, memory system |
 | [PROJECT.md](PROJECT.md) | Project-specific context (product, architecture, env) |
-| [agent-system.md](.claude/agents/.system/agent-system.md) | Full operational specification |
-| [project-config.json](.claude/agents/.system/project-config.json) | Project-specific feature/phase/ownership config |
+| [.system.md](.claude/agents/.system.md) | Full operational specification |
+| [manifest.json](.claude/manifest.json) | WarpOS identity card — project metadata, features, phases, providers |
+| [paths.json](.claude/paths.json) | Centralized path registry — all hooks/scripts read paths from here |
 
-## Persona Templates
+## Dispatch Templates (per mode)
 
-| File | Purpose |
-|------|---------|
-| [base-personas.md](.claude/agents/.system/base-personas.md) | Shared agent prompt templates (generic) |
-| [oneshot/personas.md](.claude/agents/.system/oneshot/personas.md) | Oneshot mode overlay |
-| [adhoc/personas.md](.claude/agents/.system/adhoc/personas.md) | Adhoc mode overlay |
+| Directory | Purpose |
+|-----------|---------|
+| [01-adhoc/](.claude/agents/01-adhoc/) | Adhoc mode agents (builder, evaluator, fixer, compliance, qa/, redteam/) |
+| [02-oneshot/](.claude/agents/02-oneshot/) | Oneshot mode agents (builder, evaluator, fixer, compliance, auditor, qa/, redteam/) |
 
 ## Hard Rules (all agents)
 
@@ -60,6 +60,7 @@
 4. **Do not fix forward.** If your change breaks the build and you cannot fix it within scope, revert and report.
 5. **Three attempts maximum.** If you fail 3 times on the same issue, stop and report.
 6. **Cross-provider diversity required.** At least one gauntlet agent must run on a different provider.
+7. **Decision authority.** Class A/B/C taxonomy, escalation red lines, and scoring rubric live at `paths.decisionPolicy`. Current product stage at `paths.currentStage`. Apply both before requesting a user decision.
 
 ## Review Protocol
 
@@ -75,6 +76,6 @@ Every builder output is reviewed by a 4-agent parallel gauntlet:
 2. **AGENTS.md** (this file) — router to all agent docs
 3. **PROJECT.md** — project-specific context
 4. **alpha.md / beta.md / gamma.md** — individual agent identities
-5. **agent-system.md** — detailed operational spec
+5. **.system.md** — detailed operational spec
 6. **{mode}/protocol.md** — mode-specific orchestration
 7. **project-config.json** — project-specific data

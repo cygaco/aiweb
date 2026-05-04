@@ -10,7 +10,7 @@ const ROOT = path.resolve(__dirname, "..", "..");
 
 const DOCS = [
   {
-    rel: "requirements/04-architecture/PRODUCTION_BASELINE.md",
+    rel: "_requirements/03-architecture/PRODUCTION_BASELINE.md",
     terms: [
       "Auth and sessions",
       "Authorization",
@@ -29,7 +29,7 @@ const DOCS = [
     ],
   },
   {
-    rel: "requirements/04-architecture/ACCESSIBILITY_BASELINE.md",
+    rel: "_requirements/03-architecture/ACCESSIBILITY_BASELINE.md",
     terms: [
       "Keyboard navigation",
       "Focus states",
@@ -40,7 +40,7 @@ const DOCS = [
     ],
   },
   {
-    rel: "requirements/04-architecture/ANALYTICS.md",
+    rel: "_requirements/03-architecture/ANALYTICS.md",
     terms: [
       "user_signed_up",
       "workspace_created",
@@ -51,15 +51,15 @@ const DOCS = [
     ],
   },
   {
-    rel: "requirements/04-architecture/DISASTER_RECOVERY.md",
+    rel: "_requirements/03-architecture/DISASTER_RECOVERY.md",
     terms: ["Backup scope", "Restore procedure", "RPO", "RTO", "Data deletion", "Incident contact"],
   },
   {
-    rel: "requirements/04-architecture/RELEASE_READINESS.md",
+    rel: "_requirements/03-architecture/RELEASE_READINESS.md",
     terms: ["Tests pass", "Security pass", "Requirements fresh", "Rollback available"],
   },
   {
-    rel: "requirements/04-architecture/DEPRECATION_POLICY.md",
+    rel: "_requirements/03-architecture/DEPRECATION_POLICY.md",
     terms: ["Deprecated", "Sunset pending", "Removed", "Minimum Deprecation Record"],
   },
 ];

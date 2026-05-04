@@ -3,14 +3,14 @@
  * path-registry-guard.js — PreToolUse Bash hook (Phase 2C).
  *
  * Mirror of framework-manifest-guard.js for the path registry. Fires on
- * `git commit`. If `warpos/paths.registry.json` is staged, the generated
+ * `git commit`. If `framework/paths.registry.json` is staged, the generated
  * artifacts must also be staged in the same commit:
  *
  *   - .claude/paths.json
  *   - scripts/hooks/lib/paths.generated.js
  *   - scripts/path-lint.rules.generated.json
  *   - schemas/paths.schema.json
- *   - docs/04-architecture/PATH_KEYS.md
+ *   - _requirements/03-architecture/PATH_KEYS.md
  *
  * Goal: prevent the registry and its derived artifacts from drifting
  * out of sync. The build is fast and idempotent; running it before
@@ -27,13 +27,13 @@ const path = require("path");
 const { execSync, spawnSync } = require("child_process");
 
 const PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const REGISTRY_FILE = "warpos/paths.registry.json";
+const REGISTRY_FILE = "framework/paths.registry.json";
 const GENERATED_FILES = [
   ".claude/paths.json",
   "scripts/hooks/lib/paths.generated.js",
   "scripts/path-lint.rules.generated.json",
   "schemas/paths.schema.json",
-  "docs/04-architecture/PATH_KEYS.md",
+  "_requirements/03-architecture/PATH_KEYS.md",
 ];
 
 if (process.env.PATH_REGISTRY_GUARD === "off") process.exit(0);
@@ -95,7 +95,7 @@ process.stdin.on("end", () => {
         if (result.status !== 0) {
           block(
             [
-              "path-registry-guard: warpos/paths.registry.json is staged,",
+              "path-registry-guard: framework/paths.registry.json is staged,",
               "but generated artifacts are stale. Run:",
               "",
               "  node scripts/paths/build.js",
@@ -127,13 +127,13 @@ process.stdin.on("end", () => {
         block(
           [
             "path-registry-guard: generated path artifacts staged without",
-            "warpos/paths.registry.json, AND they don't match what build.js",
+            "framework/paths.registry.json, AND they don't match what build.js",
             "would produce — looks like a hand-edit.",
             "",
             "Edit the registry, then run:",
             "",
             "  node scripts/paths/build.js",
-            "  git add warpos/paths.registry.json " +
+            "  git add framework/paths.registry.json " +
               GENERATED_FILES.join(" \\\n          "),
             "",
             "Staged generated files:",

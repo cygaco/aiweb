@@ -16,7 +16,7 @@ Ship WarpOS changes as versioned release capsules with manifests, migrations, ch
 
 ## Example
 
-`/warp:release <version>` builds `warpos/releases/<version>/` and verifies checksums with `scripts/warpos/release-build.js`.
+`/warp:release <version>` builds `framework/releases/<version>/` and verifies checksums with `scripts/warpos/release-build.js`.
 
 ## Failure Modes
 

@@ -572,7 +572,7 @@ ${c.bold("on save:")}
   - .claude/agents/.system/dispatch-backups/<ts>/  (backup ring, last 50)
 
 ${c.bold("docs:")}
-  docs/06-integrations/PROVIDER/             (model lists per provider)
+  _requirements/09-integrations/PROVIDER/             (model lists per provider)
   .claude/agents/.system/frontmatter-guide.md (frontmatter reference)
 `);
 }

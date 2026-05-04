@@ -112,7 +112,7 @@ Stages: `USER_INPUT`, `QUERY_GEN`, `BD_TRIGGER`, `BD_POLL`, `BD_RESULTS`, `MARKE
 Specs top-down: PRDs, HL Stories, Granular Stories, COPY. All 13 features at each layer.
 
 ```
-requirements/05-features/{feature-slug}/
+_requirements/04-features/{feature-slug}/
   PRD.md, HL-STORIES.md, STORIES.md, COPY.md  — all 13 features complete
 ```
 
@@ -122,7 +122,7 @@ requirements/05-features/{feature-slug}/
 
 **Agentic Story Metadata:** Every granular story has `Depends on:`, `Data:`, `Entry state:`, `Verifiable by:`, `Inherits:`, and optional `<!-- parallel-safe -->`.
 
-**Regen Gap Docs** (`docs/04-architecture/`): PROMPT_TEMPLATES, DESIGN_TOKENS, VALIDATION_RULES, AUTH_SCHEMAS, EXTENSION_SPEC, ERROR_RECOVERY, FLOW_SPEC, AGENT_GUIDE.
+**Regen Gap Docs** (`_requirements/03-architecture/`): PROMPT_TEMPLATES, DESIGN_TOKENS, VALIDATION_RULES, AUTH_SCHEMAS, EXTENSION_SPEC, ERROR_RECOVERY, FLOW_SPEC, AGENT_GUIDE.
 
 ### Agent System
 

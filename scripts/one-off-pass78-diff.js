@@ -59,7 +59,7 @@ for (const [feat, fdef] of Object.entries(store.features)) {
     log.push({ feat, status: "no-mapping" });
     continue;
   }
-  const prdPath = path.join(ROOT, "requirements/05-features", docsDir, "PRD.md");
+  const prdPath = path.join(ROOT, "_requirements/04-features", docsDir, "PRD.md");
   const prdFiles = extractSection13Files(prdPath);
   if (prdFiles === null) {
     log.push({ feat, prdPath, status: "no-section-13" });

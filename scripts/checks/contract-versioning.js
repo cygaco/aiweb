@@ -8,7 +8,12 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..", "..");
-const CONTRACT_DIR = path.join(ROOT, "requirements", "04-architecture", "contracts");
+const CONTRACT_DIR = path.join(
+  ROOT,
+  "_requirements",
+  "03-architecture",
+  "contracts",
+);
 
 function rel(abs) {
   return path.relative(ROOT, abs).replace(/\\/g, "/");
@@ -24,7 +29,9 @@ function listContracts() {
 
 function parseMeta(body) {
   const pick = (name) => {
-    const m = body.match(new RegExp(`- \\*\\*${name}:\\*\\*\\s*([^\\n]+)`, "i"));
+    const m = body.match(
+      new RegExp(`- \\*\\*${name}:\\*\\*\\s*([^\\n]+)`, "i"),
+    );
     return m ? m[1].trim() : null;
   };
   const usedBy = pick("used by");
@@ -32,7 +39,12 @@ function parseMeta(body) {
     id: pick("id"),
     version: pick("version"),
     changeType: pick("changeType"),
-    usedBy: usedBy ? usedBy.split(",").map((s) => s.trim()).filter(Boolean) : [],
+    usedBy: usedBy
+      ? usedBy
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
   };
 }
 
@@ -62,34 +74,66 @@ function check() {
   const notifications = [];
   const files = listContracts();
   if (files.length === 0) {
-    return { ok: false, checked: 0, findings: [{ severity: "red", message: "no contract files found" }], notifications };
+    return {
+      ok: false,
+      checked: 0,
+      findings: [{ severity: "red", message: "no contract files found" }],
+      notifications,
+    };
   }
 
   for (const file of files) {
     const fileRel = rel(file);
     const body = fs.readFileSync(file, "utf8");
     const meta = parseMeta(body);
-    if (!meta.id) findings.push({ severity: "red", file: fileRel, message: "missing id metadata" });
+    if (!meta.id)
+      findings.push({
+        severity: "red",
+        file: fileRel,
+        message: "missing id metadata",
+      });
     if (!meta.version || !/^\d+\.\d+\.\d+$/.test(meta.version)) {
-      findings.push({ severity: "red", file: fileRel, message: "missing semver version metadata" });
+      findings.push({
+        severity: "red",
+        file: fileRel,
+        message: "missing semver version metadata",
+      });
     }
-    if (!meta.changeType || !/^(none|patch|minor|major)$/i.test(meta.changeType)) {
-      findings.push({ severity: "red", file: fileRel, message: "missing changeType metadata" });
+    if (
+      !meta.changeType ||
+      !/^(none|patch|minor|major)$/i.test(meta.changeType)
+    ) {
+      findings.push({
+        severity: "red",
+        file: fileRel,
+        message: "missing changeType metadata",
+      });
     }
     if (!/## 7\. Versioning and compatibility/.test(body)) {
-      findings.push({ severity: "red", file: fileRel, message: "missing Versioning and compatibility section" });
+      findings.push({
+        severity: "red",
+        file: fileRel,
+        message: "missing Versioning and compatibility section",
+      });
     }
 
     const previous = gitShowHead(fileRel);
     if (previous) {
       const before = parseMeta(previous);
-      const shapeChanged = section(previous, "1. Shape") !== section(body, "1. Shape");
-      const breakingChanged = section(previous, "4. Breaking changes") !== section(body, "4. Breaking changes");
-      if ((shapeChanged || breakingChanged) && before.version === meta.version) {
+      const shapeChanged =
+        section(previous, "1. Shape") !== section(body, "1. Shape");
+      const breakingChanged =
+        section(previous, "4. Breaking changes") !==
+        section(body, "4. Breaking changes");
+      if (
+        (shapeChanged || breakingChanged) &&
+        before.version === meta.version
+      ) {
         findings.push({
           severity: "red",
           file: fileRel,
-          message: "contract shape or breaking-change text changed without a version bump",
+          message:
+            "contract shape or breaking-change text changed without a version bump",
         });
       }
       if (before.version && meta.version && before.version !== meta.version) {
@@ -103,7 +147,12 @@ function check() {
     }
   }
 
-  return { ok: findings.length === 0, checked: files.length, findings, notifications };
+  return {
+    ok: findings.length === 0,
+    checked: files.length,
+    findings,
+    notifications,
+  };
 }
 
 if (require.main === module) {
@@ -113,11 +162,14 @@ if (require.main === module) {
   } else if (result.ok) {
     console.log(`contract-versioning: ok (${result.checked} contracts)`);
     for (const n of result.notifications) {
-      console.log(`  notify ${n.contract}: ${n.from} -> ${n.to} (${n.notify.join(", ") || "no consumers listed"})`);
+      console.log(
+        `  notify ${n.contract}: ${n.from} -> ${n.to} (${n.notify.join(", ") || "no consumers listed"})`,
+      );
     }
   } else {
     console.log(`contract-versioning: ${result.findings.length} finding(s)`);
-    for (const f of result.findings) console.log(`  [${f.severity}] ${f.file || ""}: ${f.message}`);
+    for (const f of result.findings)
+      console.log(`  [${f.severity}] ${f.file || ""}: ${f.message}`);
   }
   process.exit(result.ok ? 0 : 2);
 }

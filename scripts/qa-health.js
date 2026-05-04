@@ -143,8 +143,8 @@ async function checkEditWatcher() {
     const lastSpecEvent = specEvents[specEvents.length - 1];
     const lastSpecTs = new Date(lastSpecEvent.ts).getTime();
 
-    // Find most recently modified .md in requirements/05-features/
-    const docsDir = path.join(PROJECT, "docs", "05-features");
+    // Find most recently modified .md in _requirements/04-features/
+    const docsDir = path.join(PROJECT, "requirements", "04-features");
     let latestMtime = 0;
     let latestFile = null;
 
@@ -177,7 +177,7 @@ async function checkEditWatcher() {
     }
 
     if (!latestFile) {
-      report("warn", "edit-watcher: no .md files found in requirements/05-features/");
+      report("warn", "edit-watcher: no .md files found in _requirements/04-features/");
       return;
     }
 
@@ -387,7 +387,7 @@ async function checkStaleMarkers() {
   try {
     const docsDir = path.join(PROJECT, "docs");
     if (!fs.existsSync(docsDir)) {
-      report("warn", "STALE markers: docs/ directory not found");
+      report("warn", "STALE markers: _docs/ directory not found");
       return;
     }
 
@@ -419,11 +419,11 @@ async function checkStaleMarkers() {
     walkDocs(docsDir);
 
     if (staleCount === 0) {
-      report("ok", "STALE markers: 0 found in docs/");
+      report("ok", "STALE markers: 0 found in _docs/");
     } else if (staleCount <= 20) {
-      report("warn", `STALE markers: ${staleCount} found in docs/`);
+      report("warn", `STALE markers: ${staleCount} found in _docs/`);
     } else {
-      report("fail", `STALE markers: ${staleCount} found in docs/ (>20)`);
+      report("fail", `STALE markers: ${staleCount} found in _docs/ (>20)`);
     }
   } catch (err) {
     report("fail", `STALE marker check failed: ${err.message}`);

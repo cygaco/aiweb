@@ -5,7 +5,7 @@
 # Enforces per-feature (max 3 source files) to stay under token budget.
 #
 # Usage: scripts/run-compliance.sh <feature> <file1> <file2> ... -- <spec-path>
-# Example: scripts/run-compliance.sh profile components/ProfileEditor.tsx components/ProfilePage.tsx -- ../requirements/05-features/profile/STORIES.md
+# Example: scripts/run-compliance.sh profile components/ProfileEditor.tsx components/ProfilePage.tsx -- ../requirements/04-features/profile/STORIES.md
 #
 # Output: /tmp/compliance-<feature>.txt
 #
@@ -31,7 +31,7 @@ done
 if [[ -z "$FEATURE" || ${#FILES[@]} -eq 0 || -z "$SPEC" ]]; then
   echo "Usage: scripts/run-compliance.sh <feature> <file1> [file2...] -- <spec-path>"
   echo "  Files are relative to src/ (e.g., components/ProfileEditor.tsx)"
-  echo "  Spec is relative to src/ (e.g., ../requirements/05-features/profile/STORIES.md)"
+  echo "  Spec is relative to src/ (e.g., ../requirements/04-features/profile/STORIES.md)"
   exit 1
 fi
 

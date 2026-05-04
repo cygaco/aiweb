@@ -129,32 +129,32 @@ ${hygieneContent}
 
 ## Feature Spec: PRD
 
---- BEGIN file: requirements/05-features/${featureDir}/PRD.md ---
-${readFile(`requirements/05-features/${featureDir}/PRD.md`)}
+--- BEGIN file: _requirements/04-features/${featureDir}/PRD.md ---
+${readFile(`_requirements/04-features/${featureDir}/PRD.md`)}
 --- END file ---
 
 ---
 
 ## Feature Spec: STORIES
 
---- BEGIN file: requirements/05-features/${featureDir}/STORIES.md ---
-${readFile(`requirements/05-features/${featureDir}/STORIES.md`)}
+--- BEGIN file: _requirements/04-features/${featureDir}/STORIES.md ---
+${readFile(`_requirements/04-features/${featureDir}/STORIES.md`)}
 --- END file ---
 
 ---
 
 ## Feature Spec: COPY
 
---- BEGIN file: requirements/05-features/${featureDir}/COPY.md ---
-${readFile(`requirements/05-features/${featureDir}/COPY.md`)}
+--- BEGIN file: _requirements/04-features/${featureDir}/COPY.md ---
+${readFile(`_requirements/04-features/${featureDir}/COPY.md`)}
 --- END file ---
 
 ---
 
 ## Feature Spec: INPUTS
 
---- BEGIN file: requirements/05-features/${featureDir}/INPUTS.md ---
-${readFile(`requirements/05-features/${featureDir}/INPUTS.md`)}
+--- BEGIN file: _requirements/04-features/${featureDir}/INPUTS.md ---
+${readFile(`_requirements/04-features/${featureDir}/INPUTS.md`)}
 --- END file ---
 
 ---
