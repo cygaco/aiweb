@@ -11,8 +11,8 @@ export const agentCard: AgentCard = {
   preferredTransport: "JSONRPC",
   version: "0.1.0",
   provider: {
-    organization: "Warp Studio",
-    url: "https://warp.studio",
+    organization: "Agents for All",
+    url: "https://agentsforall.co",
   },
   documentationUrl: `${PUBLIC_BASE}/`,
   defaultInputModes: ["text/plain", "application/json"],
