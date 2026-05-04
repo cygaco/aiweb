@@ -140,11 +140,17 @@ export function verifyToken(token: string, args: TokenArgs): VerifyResult {
   if ((payload.token_hash ?? null) !== (args.token_hash ?? null))
     return { ok: false, reason: "session mismatch" };
   const expectedInstructionsHash = hashInstructions(args.delivery_instructions);
-  if (
-    (payload.delivery_instructions_hash ?? null) !==
-    (expectedInstructionsHash ?? null)
-  ) {
-    return { ok: false, reason: "delivery_instructions mismatch" };
+  const payloadInstructionsHash = payload.delivery_instructions_hash;
+  // Backward-compat: legacy tokens (no hash field) match when args carry no
+  // instructions either; null-collapse keeps undefined/missing/null aligned.
+  // When BOTH sides have a hash, compare via safeEqual per PRD §6.6.
+  if (payloadInstructionsHash || expectedInstructionsHash) {
+    if (!payloadInstructionsHash || !expectedInstructionsHash) {
+      return { ok: false, reason: "delivery_instructions mismatch" };
+    }
+    if (!safeEqual(payloadInstructionsHash, expectedInstructionsHash)) {
+      return { ok: false, reason: "delivery_instructions mismatch" };
+    }
   }
   return { ok: true };
 }

@@ -304,7 +304,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
             ...customizationSurface,
             upsell_turn_rules: UPSELL_TURN_RULES,
             order_flow:
-              "start_pizza_order → upsell turn → update_order(diff) → show full cart → user confirms → prepare_order → place_order",
+              "start_pizza_order → upsell turn → update_order(diff) → ask for special instructions → show full cart → user confirms → prepare_order → place_order",
           }),
         );
         eventBus.publish(

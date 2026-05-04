@@ -127,6 +127,12 @@ const dealSchema = z
   })
   .passthrough();
 
+// Shared schema for delivery_instructions — reused on prepare_order and
+// place_order (PRD §11 hard 200-char cap). Also imported by tests so the
+// length-cap contract is asserted against the same Zod object the tools
+// register, not a re-declared copy that could drift.
+export const deliveryInstructionsSchema = z.string().max(200).optional();
+
 function cartLineSummary(item: CartItem): string {
   if (item.kind === "deal") {
     return `${item.quantity}x ${item.name}`;
@@ -316,13 +322,9 @@ export function createServer(tokenHash?: string): McpServer {
       delivery_address: z.string(),
       customer_name: z.string(),
       customer_phone: z.string(),
-      delivery_instructions: z
-        .string()
-        .max(200)
-        .optional()
-        .describe(
-          "Free-text instructions for the driver (gate code, vehicle to look for, etc.). Bound into the token.",
-        ),
+      delivery_instructions: deliveryInstructionsSchema.describe(
+        "Free-text instructions for the driver (gate code, vehicle to look for, etc.). Bound into the token.",
+      ),
     },
 
     async ({
@@ -957,11 +959,9 @@ Then call check_order_status with the returned call_id to get the result.`,
         .describe(
           "Phone for delivery updates. If omitted, falls back to saved profile phone.",
         ),
-      delivery_instructions: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("Gate code, apt number, 'leave at door', etc."),
+      delivery_instructions: deliveryInstructionsSchema.describe(
+        "Gate code, apt number, 'leave at door', etc.",
+      ),
       max_total: z
         .number()
         .optional()
@@ -1125,6 +1125,7 @@ Then call check_order_status with the returned call_id to get the result.`,
                   {
                     status: "error",
                     error_code: "confirmation_token_invalid",
+                    reason: verdict.reason,
                     message: `Confirmation token rejected: ${verdict.reason}. Re-run prepare_order with the final cart and pass the new token to place_order.`,
                   },
                   null,

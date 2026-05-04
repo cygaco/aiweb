@@ -1,11 +1,11 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { z } from "zod";
 import {
   buildCallPrompt,
   type PlaceOrderRequest,
 } from "../src/connectors/bland.js";
 import { extractInput } from "../src/a2a/executor.js";
+import { deliveryInstructionsSchema } from "../src/server.js";
 import type { Message } from "@a2a-js/sdk";
 
 const baseOrder: PlaceOrderRequest = {
@@ -82,11 +82,23 @@ describe("special-instructions — bland prompt rendering", () => {
 });
 
 describe("special-instructions — Zod length cap", () => {
-  // Case 6: Zod .max(200) rejects 201-char string
+  // Case 6: the SAME schema object registered on prepare_order and
+  // place_order rejects 201-char strings. Importing the shared
+  // deliveryInstructionsSchema means a regression that drops .max(200)
+  // from the MCP tool registration would fail this test too.
   test("delivery_instructions schema rejects strings over 200 chars", () => {
-    const schema = z.string().max(200).optional();
-    const result = schema.safeParse("x".repeat(201));
+    const result = deliveryInstructionsSchema.safeParse("x".repeat(201));
     assert.equal(result.success, false);
+  });
+
+  test("delivery_instructions schema accepts 200-char string", () => {
+    const result = deliveryInstructionsSchema.safeParse("x".repeat(200));
+    assert.equal(result.success, true);
+  });
+
+  test("delivery_instructions schema accepts undefined (optional)", () => {
+    const result = deliveryInstructionsSchema.safeParse(undefined);
+    assert.equal(result.success, true);
   });
 });
 

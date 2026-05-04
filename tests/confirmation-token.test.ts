@@ -112,10 +112,19 @@ describe("confirmation-token delivery_instructions binding", () => {
 
   // Case 7: backward compat — token issued without delivery_instructions
   //         (no delivery_instructions_hash in payload) verifies when
-  //         args.delivery_instructions is also absent
+  //         args.delivery_instructions is also absent. Decode the payload to
+  //         prove the hash field is genuinely omitted (byte-shape compat for
+  //         tokens issued by code older than this change).
   test("legacy token (no instructions hash) verifies with no instructions on verify", () => {
     // baseArgs has no delivery_instructions — payload will have no hash field
     const token = issueToken(baseArgs);
+    const body = token.slice(0, token.indexOf("."));
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString());
+    assert.equal(
+      "delivery_instructions_hash" in payload,
+      false,
+      "payload must omit delivery_instructions_hash when no instructions present",
+    );
     assert.deepEqual(verifyToken(token, baseArgs), { ok: true });
   });
 });
