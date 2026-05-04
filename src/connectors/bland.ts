@@ -4,6 +4,13 @@
  */
 
 import { speakableAddress } from "../lib/address-speech.js";
+import {
+  cartTotal,
+  lineTotal,
+  type Cart,
+  type CartItem,
+  type SelectedModifier,
+} from "../lib/cart.js";
 
 export interface OrderItem {
   name: string;
@@ -16,7 +23,8 @@ export interface OrderItem {
 export interface PlaceOrderRequest {
   restaurantName: string;
   restaurantPhone: string;
-  items: OrderItem[];
+  items?: OrderItem[];
+  cart?: Cart;
   deliveryAddress: string;
   customerName: string;
   customerPhone: string;
@@ -68,25 +76,100 @@ function wrapCustomerData(field: string, value: string): string {
   );
 }
 
+function modifierLabel(modifier: SelectedModifier): string {
+  const details = [
+    modifier.amount && modifier.amount !== "normal"
+      ? modifier.amount
+      : undefined,
+    modifier.placement && modifier.placement !== "whole"
+      ? `${modifier.placement} half`
+      : undefined,
+    modifier.quantity && modifier.quantity > 1
+      ? `qty ${modifier.quantity}`
+      : undefined,
+  ].filter(Boolean);
+  return `${modifier.name}${details.length ? ` (${details.join(", ")})` : ""}`;
+}
+
+function renderCartLine(item: CartItem): string {
+  const size = item.sizeLabel
+    ? `${wrapCustomerData("itemSize", item.sizeLabel)} `
+    : "";
+  const each = lineTotal(item) / Math.max(1, item.quantity);
+  let line = `- ${item.quantity}x ${size}${wrapCustomerData("itemName", item.name)} ($${each.toFixed(2)} each)`;
+  if (item.modifiers?.length) {
+    line +=
+      "\n  Modifiers: " +
+      item.modifiers
+        .map((m) => wrapCustomerData("itemModifier", modifierLabel(m)))
+        .join(", ");
+  }
+  if (item.kind === "deal" && item.components?.length) {
+    line +=
+      "\n  Deal includes: " +
+      item.components
+        .map((c) => wrapCustomerData("dealComponent", c.name))
+        .join(", ");
+  }
+  if (item.substitution) {
+    line += `\n  → If unavailable, substitute with: ${wrapCustomerData("itemSubstitution", item.substitution)}`;
+  }
+  if (item.notes) {
+    line += `\n  Notes: ${wrapCustomerData("itemNotes", item.notes)}`;
+  }
+  return line;
+}
+
+function renderLegacyLine(item: OrderItem): string {
+  let line = `- ${item.quantity}x ${wrapCustomerData("itemSize", item.size)} ${wrapCustomerData("itemName", item.name)} ($${item.price.toFixed(2)} each)`;
+  if (item.substitution) {
+    line += `\n  → If unavailable, substitute with: ${wrapCustomerData("itemSubstitution", item.substitution)}`;
+  }
+  return line;
+}
+
+function orderItemLines(order: PlaceOrderRequest): string {
+  if (order.cart) return order.cart.map(renderCartLine).join("\n");
+  return (order.items ?? []).map(renderLegacyLine).join("\n");
+}
+
+function orderTotal(order: PlaceOrderRequest): number {
+  if (order.cart) return cartTotal(order.cart);
+  return (order.items ?? []).reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0,
+  );
+}
+
+function orderKeywords(order: PlaceOrderRequest): string[] {
+  if (order.cart) {
+    return order.cart.flatMap((item) => [
+      item.name,
+      ...(item.modifiers ?? []).map((m) => m.name),
+      ...(item.components ?? []).map((c) => c.name),
+    ]);
+  }
+  return (order.items ?? []).map((i) => i.name);
+}
+
+function transcriptItems(order: PlaceOrderRequest): string {
+  if (order.cart) {
+    return order.cart
+      .map((i) => `${i.quantity} ${i.sizeLabel ?? ""} ${i.name}`.trim())
+      .join(" and ");
+  }
+  return (order.items ?? [])
+    .map((i) => `${i.quantity} ${i.size} ${i.name}`)
+    .join(" and ");
+}
+
 /**
  * Build the Bland prompt from an order request.
  * This is the "brain" of the phone call.
  */
 export function buildCallPrompt(order: PlaceOrderRequest): string {
-  const itemList = order.items
-    .map((item) => {
-      let line = `- ${item.quantity}x ${wrapCustomerData("itemSize", item.size)} ${wrapCustomerData("itemName", item.name)} ($${item.price.toFixed(2)} each)`;
-      if (item.substitution) {
-        line += `\n  → If unavailable, substitute with: ${wrapCustomerData("itemSubstitution", item.substitution)}`;
-      }
-      return line;
-    })
-    .join("\n");
-
-  const estimatedTotal = order.items.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0,
-  );
+  const itemList = orderItemLines(order);
+  const estimatedTotal = orderTotal(order);
   const maxTotal = order.maxTotal ?? estimatedTotal * 1.3; // 30% buffer
   const maxWait = order.maxWaitMinutes ?? 60;
 
@@ -159,8 +242,8 @@ function buildKeywords(order: PlaceOrderRequest): string[] {
     "small",
     "extra",
   ];
-  const fromItems = order.items.flatMap((i) =>
-    i.name
+  const fromItems = orderKeywords(order).flatMap((name) =>
+    name
       .toLowerCase()
       .split(/\s+/)
       .filter((w) => w.length > 3),
@@ -173,9 +256,7 @@ function buildSimTranscript(
   total: number,
   eta: number,
 ): string {
-  const items = order.items
-    .map((i) => `${i.quantity} ${i.size} ${i.name}`)
-    .join(" and ");
+  const items = transcriptItems(order);
   return [
     `Domino's Pizza: Thank you for calling Domino's, how can I help you today?`,
     `Agent: Hi, I'd like to place a delivery order please.`,
@@ -232,7 +313,7 @@ export async function dispatchCall(
       restaurantName: order.restaurantName,
       restaurantPhone: order.restaurantPhone,
       customerName: order.customerName,
-      itemCount: order.items.length,
+      itemCount: order.cart?.length ?? order.items?.length ?? 0,
     },
   };
   if (process.env.BLAND_FROM_NUMBER) {
@@ -276,10 +357,7 @@ export async function getCallStatus(callId: string): Promise<BlandCallStatus> {
       return { callId, status: "in_progress" };
     }
 
-    const total = sim.order.items.reduce(
-      (sum, i) => sum + i.price * i.quantity,
-      0,
-    );
+    const total = orderTotal(sim.order);
     const eta = 30;
     const transcript = buildSimTranscript(sim.order, total, eta);
 

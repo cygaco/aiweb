@@ -23,9 +23,21 @@ import {
   type PlaceOrderRequest,
 } from "../connectors/bland.js";
 import { issueToken, verifyToken } from "../lib/confirmation-token.js";
+import { cartTotal, type Cart } from "../lib/cart.js";
+import {
+  buildCustomizationSurface,
+  hasCustomizationOpportunities,
+  legacyItemsToCart,
+} from "../lib/cart-flow.js";
 
 const POLL_INTERVAL_MS = 15_000;
 const POLL_TIMEOUT_MS = 5 * 60_000;
+const UPSELL_TURN_RULES = [
+  "If the user already specified everything (style, size, modifiers, drink, deal) → skip to confirmation. Do not ask follow-up questions.",
+  "Otherwise: required clarifications first (size if missing, headcount if preset needs it). Then ONE concise upsell turn combining extras + drinks + sides + deals: 'Want extra cheese, a soda, or to bundle with the family deal ($X total)?' — never list as 4 separate prompts.",
+  "Surface deals only when their components match the cart shape; never claim a savings number unless the math is explicit and verified.",
+  "Always render the full cart with prices before `prepare_order`.",
+];
 
 interface OrderInput {
   address?: string;
@@ -39,6 +51,7 @@ interface OrderInput {
   restaurant_id?: string;
   restaurant_hint?: string;
   items?: OrderItem[];
+  cart?: Cart;
   dietary?: string;
   delivery_instructions?: string;
   max_total?: number;
@@ -69,7 +82,13 @@ function extractInput(message: Message): OrderInput {
 function status(
   taskId: string,
   contextId: string,
-  state: "submitted" | "working" | "input-required" | "completed" | "failed",
+  state:
+    | "submitted"
+    | "working"
+    | "input-required"
+    | "awaiting-customization"
+    | "completed"
+    | "failed",
   text?: string,
   final = false,
 ): TaskStatusUpdateEvent {
@@ -87,7 +106,11 @@ function status(
     kind: "status-update",
     taskId,
     contextId,
-    status: { state, message, timestamp: new Date().toISOString() },
+    status: {
+      state: state as TaskStatusUpdateEvent["status"]["state"],
+      message,
+      timestamp: new Date().toISOString(),
+    },
     final,
   };
 }
@@ -149,8 +172,13 @@ export class PizzaAgentExecutor implements AgentExecutor {
     if (!input.address) missing.push("address");
     if (!input.name) missing.push("name");
     if (!input.phone) missing.push("phone");
-    if (!input.items?.length && !input.intent_style && !input.occasion)
-      missing.push("intent_style|occasion|items");
+    if (
+      !input.items?.length &&
+      !input.cart?.length &&
+      !input.intent_style &&
+      !input.occasion
+    )
+      missing.push("intent_style|occasion|items|cart");
 
     if (missing.length > 0) {
       eventBus.publish(
@@ -158,7 +186,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
           taskId,
           contextId,
           "input-required",
-          `Missing required fields: ${missing.join(", ")}. Send a JSON message with at minimum {address, name, phone, intent_style or occasion or items, confirmed:true}.`,
+          `Missing required fields: ${missing.join(", ")}. Send a JSON message with at minimum {address, name, phone, intent_style or occasion or items or cart, confirmed:true}.`,
           true,
         ),
       );
@@ -224,15 +252,16 @@ export class PizzaAgentExecutor implements AgentExecutor {
                 input.headcount ?? 4,
               ) ?? [])
             : [];
-      const estimatedTotal = items.reduce(
-        (s: number, i: OrderItem) => s + i.price * i.quantity,
-        0,
-      );
+      const cart = input.cart?.length
+        ? input.cart
+        : legacyItemsToCart(items, restaurant);
+      const estimatedTotal = cartTotal(cart);
       let proposedToken: string | undefined;
       try {
         proposedToken = issueToken({
           restaurant_id: restaurant.id,
-          items,
+          items: input.cart?.length ? undefined : items,
+          cart: input.cart?.length ? cart : undefined,
           customer_name: input.name!,
           customer_phone: input.phone!,
           delivery_address: input.address!,
@@ -247,6 +276,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
           restaurant_name: restaurant.name,
           restaurant_phone: restaurant.phone,
           items,
+          cart,
           estimated_total: estimatedTotal,
           delivery_to: input.address,
           customer_name: input.name,
@@ -256,6 +286,30 @@ export class PizzaAgentExecutor implements AgentExecutor {
           confirmation_token_ttl_seconds: proposedToken ? 600 : undefined,
         }),
       );
+      const customizationSurface = buildCustomizationSurface(restaurant, cart);
+      if (
+        !input.cart?.length &&
+        hasCustomizationOpportunities(customizationSurface)
+      ) {
+        eventBus.publish(
+          artifact(taskId, contextId, "customization_options", {
+            ...customizationSurface,
+            upsell_turn_rules: UPSELL_TURN_RULES,
+            order_flow:
+              "start_pizza_order → upsell turn → update_order(diff) → show full cart → user confirms → prepare_order → place_order",
+          }),
+        );
+        eventBus.publish(
+          status(
+            taskId,
+            contextId,
+            "awaiting-customization",
+            `Proposed cart from ${restaurant.name}. Apply one concise upsell turn, then re-submit with cart to receive a fresh proposed_cart token.`,
+            true,
+          ),
+        );
+        return;
+      }
       eventBus.publish(
         status(
           taskId,
@@ -339,11 +393,12 @@ export class PizzaAgentExecutor implements AgentExecutor {
         : input.occasion
           ? (COLD_PRESETS.find((p) => p.id === input.occasion)?.items(
               restaurant,
-              input.headcount ?? 4,
-            ) ?? [])
-          : [];
+            input.headcount ?? 4,
+          ) ?? [])
+        : [];
+    const finalCart = input.cart?.length ? input.cart : undefined;
 
-    if (!items.length) {
+    if (!finalCart?.length && !items.length) {
       eventBus.publish(
         status(
           taskId,
@@ -365,6 +420,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
       const verdict = verifyToken(input.confirmation_token, {
         restaurant_id: restaurant.id,
         items,
+        cart: finalCart,
         customer_name: input.name!,
         customer_phone: input.phone!,
         delivery_address: input.address!,
@@ -397,7 +453,8 @@ export class PizzaAgentExecutor implements AgentExecutor {
     const orderRequest: PlaceOrderRequest = {
       restaurantName: restaurant.name,
       restaurantPhone,
-      items,
+      items: items.length ? items : undefined,
+      cart: finalCart,
       deliveryAddress: input.address!,
       customerName: input.name!,
       customerPhone: input.phone!,
@@ -428,6 +485,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
         call_id: callId,
         restaurant: restaurant.name,
         items,
+        cart: finalCart,
       }),
     );
     eventBus.publish(

@@ -360,6 +360,16 @@ export function getRestaurantPhone(id: string): string | null {
   return null;
 }
 
+export function getRestaurantById(id: string): Restaurant | null {
+  const test = TEST_RESTAURANTS.find((r) => r.id === id);
+  if (test) return test;
+  for (const entry of restaurantCache.values()) {
+    const found = entry.results.find((r) => r.id === id);
+    if (found) return found;
+  }
+  return null;
+}
+
 /**
  * Find restaurants near an address.
  * - Checks in-memory cache first (5-min TTL)

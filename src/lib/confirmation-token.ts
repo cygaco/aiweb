@@ -1,19 +1,22 @@
 import crypto from "node:crypto";
+import { canonicalizeCart, type Cart } from "./cart.js";
 
 const HMAC_KEY_INFO = "aiweb:confirmation-token:v1";
 const TOKEN_TTL_MS = 10 * 60 * 1000;
 
 export interface TokenArgs {
   restaurant_id: string;
-  items: { name: string; size: string; quantity: number; price: number }[];
+  items?: { name: string; size: string; quantity: number; price: number }[];
+  cart?: Cart;
   customer_name: string;
   customer_phone: string;
   delivery_address: string;
   token_hash?: string;
 }
 
-interface TokenPayload extends Omit<TokenArgs, "items"> {
-  items_hash: string;
+interface TokenPayload extends Omit<TokenArgs, "items" | "cart"> {
+  items_hash?: string;
+  cart_hash?: string;
   ts: number;
 }
 
@@ -36,7 +39,7 @@ function deriveKey(): Buffer {
 }
 
 function hashItems(items: TokenArgs["items"]): string {
-  const canon = items
+  const canon = (items ?? [])
     .map((i) => ({
       name: i.name,
       size: i.size,
@@ -50,6 +53,13 @@ function hashItems(items: TokenArgs["items"]): string {
     .digest("hex");
 }
 
+export function hashCart(cart: Cart): string {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(canonicalizeCart(cart)))
+    .digest("hex");
+}
+
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -58,13 +68,17 @@ function safeEqual(a: string, b: string): boolean {
 export function issueToken(args: TokenArgs): string {
   const payload: TokenPayload = {
     restaurant_id: args.restaurant_id,
-    items_hash: hashItems(args.items),
     customer_name: args.customer_name,
     customer_phone: args.customer_phone,
     delivery_address: args.delivery_address,
     token_hash: args.token_hash,
     ts: Date.now(),
   };
+  if (args.cart) {
+    payload.cart_hash = hashCart(args.cart);
+  } else {
+    payload.items_hash = hashItems(args.items);
+  }
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const sig = crypto
     .createHmac("sha256", deriveKey())
@@ -96,8 +110,15 @@ export function verifyToken(token: string, args: TokenArgs): VerifyResult {
     return { ok: false, reason: "token expired" };
   if (payload.restaurant_id !== args.restaurant_id)
     return { ok: false, reason: "restaurant_id mismatch" };
-  if (payload.items_hash !== hashItems(args.items))
-    return { ok: false, reason: "items mismatch" };
+  if (payload.cart_hash) {
+    if (!args.cart) return { ok: false, reason: "cart missing" };
+    if (payload.cart_hash !== hashCart(args.cart))
+      return { ok: false, reason: "cart mismatch" };
+  } else {
+    if (!payload.items_hash) return { ok: false, reason: "items missing" };
+    if (payload.items_hash !== hashItems(args.items))
+      return { ok: false, reason: "items mismatch" };
+  }
   if (payload.customer_name !== args.customer_name)
     return { ok: false, reason: "customer_name mismatch" };
   if (payload.customer_phone !== args.customer_phone)

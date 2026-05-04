@@ -18,6 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   findNearbyRestaurants,
+  getRestaurantById,
   getRestaurantPhone,
 } from "./data/restaurants.js";
 import { COLD_PRESETS, orderFromIntent, pizzasNeeded } from "./lib/presets.js";
@@ -29,6 +30,109 @@ import {
 } from "./connectors/bland.js";
 import { getProfile, updateProfile, E164_REGEX } from "./lib/profile-store.js";
 import { issueToken, verifyToken } from "./lib/confirmation-token.js";
+import { cartTotal, type Cart, type CartItem } from "./lib/cart.js";
+import {
+  applyCartDiff,
+  buildCustomizationSurface,
+  legacyItemsToCart,
+  type CartDiff,
+} from "./lib/cart-flow.js";
+
+const modifierSchema = z
+  .object({
+    groupId: z.string(),
+    optionId: z.string(),
+    name: z.string(),
+    priceDelta: z.number(),
+    placement: z.enum(["whole", "left", "right"]).optional(),
+    amount: z.enum(["normal", "extra", "double", "light"]).optional(),
+    quantity: z.number().optional(),
+  })
+  .passthrough();
+
+const cartComponentSchema = z
+  .object({
+    kind: z.enum(["pizza", "drink", "side"]),
+    itemId: z.string(),
+    name: z.string(),
+    sizeId: z.string().optional(),
+    sizeLabel: z.string().optional(),
+    modifiers: z.array(modifierSchema).optional(),
+  })
+  .passthrough();
+
+const cartItemSchema = z
+  .object({
+    kind: z.enum(["pizza", "drink", "side", "deal"]),
+    itemId: z.string(),
+    name: z.string(),
+    sizeId: z.string().optional(),
+    sizeLabel: z.string().optional(),
+    quantity: z.number(),
+    basePrice: z.number(),
+    modifiers: z.array(modifierSchema).optional(),
+    substitution: z.string().optional(),
+    notes: z.string().optional(),
+    components: z.array(cartComponentSchema).optional(),
+  })
+  .passthrough();
+
+const cartSchema = z.array(cartItemSchema);
+
+const orderItemSchema = z.object({
+  name: z.string(),
+  size: z.string(),
+  quantity: z.number(),
+  price: z.number(),
+  substitution: z.string().optional(),
+});
+
+const dealComponentSchema = z
+  .object({
+    kind: z.enum(["pizza", "drink", "side"]),
+    constraints: z.record(z.unknown()),
+  })
+  .passthrough();
+
+const dealSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string(),
+    code: z.string().optional(),
+    type: z.enum(["mix_match", "bundle", "discount"]),
+    components: z.array(dealComponentSchema),
+    priceRule: z
+      .union([
+        z.object({
+          kind: z.literal("per_item_fixed"),
+          perItemPrice: z.number(),
+          minItems: z.number().optional(),
+        }),
+        z.object({ kind: z.literal("total_fixed"), totalPrice: z.number() }),
+        z.object({
+          kind: z.literal("percent_off"),
+          percent: z.number(),
+          appliesTo: z.enum(["item", "order"]),
+        }),
+        z.object({
+          kind: z.literal("dollar_off"),
+          amount: z.number(),
+          appliesTo: z.enum(["item", "order"]),
+        }),
+      ])
+      .describe("Deal pricing rule."),
+    applies_to_restaurant_ids: z.array(z.string()).optional(),
+    expires_at: z.string().optional(),
+  })
+  .passthrough();
+
+function cartLineSummary(item: CartItem): string {
+  if (item.kind === "deal") {
+    return `${item.quantity}x ${item.name}`;
+  }
+  return `${item.quantity}x ${item.sizeLabel ?? ""} ${item.name}`.trim();
+}
 
 export function createServer(tokenHash?: string): McpServer {
   const server = new McpServer({
@@ -199,16 +303,16 @@ export function createServer(tokenHash?: string): McpServer {
         .string()
         .describe("Restaurant ID from start_pizza_order."),
       items: z
-        .array(
-          z.object({
-            name: z.string(),
-            size: z.string(),
-            quantity: z.number(),
-            price: z.number(),
-            substitution: z.string().optional(),
-          }),
-        )
-        .describe("The exact items the user has confirmed."),
+        .array(orderItemSchema)
+        .optional()
+        .describe(
+          "Legacy single-line-pizza items the user has confirmed. Prefer cart for new calls.",
+        ),
+      cart: cartSchema
+        .optional()
+        .describe(
+          "Preferred full cart shape, including modifiers, drinks, sides, and deals.",
+        ),
       delivery_address: z.string(),
       customer_name: z.string(),
       customer_phone: z.string(),
@@ -217,14 +321,30 @@ export function createServer(tokenHash?: string): McpServer {
     async ({
       restaurant_id,
       items,
+      cart,
       delivery_address,
       customer_name,
       customer_phone,
     }) => {
       try {
+        if (!cart?.length && !items?.length) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  status: "error",
+                  message:
+                    "prepare_order requires either cart or legacy items.",
+                }),
+              },
+            ],
+          };
+        }
         const token = issueToken({
           restaurant_id,
-          items,
+          items: items as OrderItem[] | undefined,
+          cart: cart as Cart | undefined,
           customer_name,
           customer_phone,
           delivery_address,
@@ -240,7 +360,7 @@ export function createServer(tokenHash?: string): McpServer {
                   confirmation_token: token,
                   expires_in_seconds: 600,
                   next_step:
-                    "Pass confirmation_token to place_order along with the same restaurant_id + items + customer fields. Modifying any of those will invalidate the token.",
+                    "Pass confirmation_token to place_order along with the same restaurant_id + cart/items + customer fields. Modifying any of those will invalidate the token.",
                 },
                 null,
                 2,
@@ -320,6 +440,21 @@ FIRST — IDENTIFY THE ENTRY POINT, then follow the right path:
   Call tool with constraints. Surface budget_warning or dietary_note if returned.
 
 AFTER THE TOOL RETURNS:
+
+ADAPTIVE CART FLOW:
+- If the user already specified everything (style, size, modifiers, drink, deal) → skip to confirmation. Do not ask follow-up questions.
+- Otherwise: required clarifications first (size if missing, headcount if preset needs it). Then ONE concise upsell turn combining extras + drinks + sides + deals: 'Want extra cheese, a soda, or to bundle with the family deal ($X total)?' — never list as 4 separate prompts.
+- Surface deals only when their components match the cart shape; never claim a savings number unless the math is explicit and verified.
+- Always render the full cart with prices before \`prepare_order\`.
+
+NEW RESPONSE FIELDS (optional, only when present on the restaurant):
+  customization_options: per-pizza crusts, toppings, sauce_options, cheese_options, dipping_sauces.
+  drink_options: available drinks and sizes.
+  side_options: available sides.
+  applicable_deals: surfaced deals; phase 1 does not compute savings.
+
+ORDER FLOW EXTENSION:
+  start_pizza_order → upsell turn → update_order(diff) → show full cart → user confirms → prepare_order → place_order.
 
 RESTAURANTS: Show name, ETA. Flag isTest entries clearly.
 
@@ -540,14 +675,17 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           size: "large",
           quantity: 1,
         });
+        const cart = legacyItemsToCart(items, primaryRestaurant);
         const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
         result.suggested_order = {
           items,
+          cart,
           estimatedTotal: total,
           menu_confidence: menuConfidence,
           delegate_pick: true,
           note: "Agent-selected order. Present as your recommendation: 'Here's what I'd get you — [item] from [restaurant]. Confirm and I'll call.'",
         };
+        Object.assign(result, buildCustomizationSurface(primaryRestaurant, cart));
         if (dietary) {
           (result.suggested_order as Record<string, unknown>).dietary_note =
             `Customer requires ${dietary}. Bland will confirm availability before ordering.`;
@@ -567,9 +705,11 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           size: intent_size,
           quantity: intent_quantity,
         });
+        const cart = legacyItemsToCart(items, primaryRestaurant);
         const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
         result.suggested_order = {
           items,
+          cart,
           estimatedTotal: total,
           menu_confidence: menuConfidence,
           note: "User specified what they want — skip presets, go to confirmation.",
@@ -581,6 +721,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
               budget_warning: `Estimated $${total.toFixed(2)} exceeds budget of $${max_budget.toFixed(2)}. Suggest a smaller size or fewer items.`,
             }),
         };
+        Object.assign(result, buildCustomizationSurface(primaryRestaurant, cart));
       }
       // If occasion preset matches, build from preset
       else if (occasion) {
@@ -589,9 +730,14 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           const items = preset.items(primaryRestaurant, headcount);
           const sides =
             preset.suggestedSides?.(primaryRestaurant, headcount) ?? [];
+          const cart = legacyItemsToCart(
+            [...items, ...sides],
+            primaryRestaurant,
+          );
           const total = preset.estimateTotal(primaryRestaurant, headcount);
           result.suggested_order = {
             items: [...items, ...sides],
+            cart,
             estimatedTotal: total,
             preset: preset.label,
             menu_confidence: menuConfidence,
@@ -609,6 +755,10 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           if (preset.needsHeadcount && !headcount) {
             result.needs_info = "Ask how many people are eating.";
           }
+          Object.assign(
+            result,
+            buildCustomizationSurface(primaryRestaurant, cart),
+          );
         }
       }
       // Otherwise return presets — these are user preference options, not restaurant menu items
@@ -643,6 +793,96 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
   );
 
   // ─────────────────────────────────────────────
+  // TOOL: update_order
+
+  server.tool(
+    "update_order",
+
+    "Apply a typed diff to a working cart. Use when the user adds/removes items, adds modifiers, or swaps to a deal. Returns the updated cart. Pure function: no order is placed and nothing is persisted.",
+
+    {
+      op: z
+        .enum(["add", "remove", "add_modifier", "swap_to_deal"])
+        .describe("One operation per call."),
+      cart: cartSchema.describe("Current working cart."),
+      line_index: z
+        .number()
+        .optional()
+        .describe("Target line for remove or add_modifier."),
+      item: cartItemSchema.optional().describe("Cart line to add."),
+      modifier: modifierSchema
+        .optional()
+        .describe("Modifier to add to the target line."),
+      deal_id: z
+        .string()
+        .optional()
+        .describe("Deal id to swap the cart to."),
+      restaurant_id: z
+        .string()
+        .optional()
+        .describe("Restaurant id used to look up deal_id."),
+      deal: dealSchema
+        .optional()
+        .describe("Inline deal record when restaurant_id lookup is unavailable."),
+    },
+
+    async ({
+      op,
+      cart,
+      line_index,
+      item,
+      modifier,
+      deal_id,
+      restaurant_id,
+      deal,
+    }) => {
+      try {
+        const restaurant = restaurant_id
+          ? getRestaurantById(restaurant_id)
+          : null;
+        const updated = applyCartDiff(
+          {
+            op,
+            cart: cart as Cart,
+            line_index,
+            item: item as CartItem | undefined,
+            modifier,
+            deal_id,
+            deal,
+          } as CartDiff,
+          (id) => restaurant?.menu.deals?.find((d) => d.id === id),
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ cart: updated }, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  status: "error",
+                  message:
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to update cart.",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
   // TOOL 2: place_order
   // ─────────────────────────────────────────────
 
@@ -658,6 +898,8 @@ You MUST have shown them: items, price, restaurant, ETA, address, name,
 phone, and gotten explicit approval. This triggers a real phone call
 to a real restaurant.
 
+Prefer cart for new calls; items is the legacy single-line-pizza shape kept for back-compat. When cart is present, the voice connector renders cart lines with modifiers, drinks, sides, and deals.
+
 The call takes 2-3 minutes. After calling this, tell the user:
 "I'm calling [restaurant] now to place your order. This takes a couple
  minutes — I'll let you know as soon as it's confirmed."
@@ -672,19 +914,16 @@ Then call check_order_status with the returned call_id to get the result.`,
           "Restaurant ID from start_pizza_order results. Phone is resolved server-side.",
         ),
       items: z
-        .array(
-          z.object({
-            name: z.string(),
-            size: z.string(),
-            quantity: z.number(),
-            price: z.number(),
-            substitution: z
-              .string()
-              .optional()
-              .describe("What to get if this item is unavailable."),
-          }),
-        )
-        .describe("The items to order."),
+        .array(orderItemSchema)
+        .optional()
+        .describe(
+          "Legacy single-line-pizza items to order. Prefer cart for new calls.",
+        ),
+      cart: cartSchema
+        .optional()
+        .describe(
+          "Preferred full cart shape, including modifiers, drinks, sides, and deals.",
+        ),
       delivery_address: z
         .string()
         .optional()
@@ -731,6 +970,7 @@ Then call check_order_status with the returned call_id to get the result.`,
       restaurant_name,
       restaurant_id,
       items,
+      cart,
       delivery_address,
       customer_name,
       customer_phone,
@@ -783,6 +1023,26 @@ Then call check_order_status with the returned call_id to get the result.`,
       const resolvedPhone_ = resolvedPhone!;
       const resolvedName_ = resolvedName!;
       const resolvedAddress_ = resolvedAddress!;
+      const finalItems = items as OrderItem[] | undefined;
+      const finalCart = cart as Cart | undefined;
+
+      if (!finalCart?.length && !finalItems?.length) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  status: "error",
+                  message: "place_order requires either cart or legacy items.",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
 
       const resolvedRestaurantPhone = getRestaurantPhone(restaurant_id);
       if (!resolvedRestaurantPhone) {
@@ -832,7 +1092,8 @@ Then call check_order_status with the returned call_id to get the result.`,
       if (confirmation_token) {
         const verdict = verifyToken(confirmation_token, {
           restaurant_id,
-          items: items as OrderItem[],
+          items: finalItems,
+          cart: finalCart,
           customer_name: resolvedName_,
           customer_phone: resolvedPhone_,
           delivery_address: resolvedAddress_,
@@ -866,7 +1127,7 @@ Then call check_order_status with the returned call_id to get the result.`,
                   status: "error",
                   error_code: "confirmation_token_required",
                   message:
-                    "place_order requires a confirmation_token. Call prepare_order first with the same restaurant_id + items + customer fields and include the returned token here.",
+                    "place_order requires a confirmation_token. Call prepare_order first with the same restaurant_id + cart/items + customer fields and include the returned token here.",
                 },
                 null,
                 2,
@@ -879,7 +1140,8 @@ Then call check_order_status with the returned call_id to get the result.`,
       const orderRequest: PlaceOrderRequest = {
         restaurantName: restaurant_name,
         restaurantPhone: resolvedRestaurantPhone,
-        items: items as OrderItem[],
+        items: finalItems,
+        cart: finalCart,
         deliveryAddress: resolvedAddress_,
         customerName: resolvedName_,
         customerPhone: resolvedPhone_,
@@ -891,10 +1153,15 @@ Then call check_order_status with the returned call_id to get the result.`,
       try {
         const callResult = await dispatchCall(orderRequest);
 
-        const estimatedTotal = items.reduce(
-          (sum, i) => sum + i.price * i.quantity,
-          0,
-        );
+        const estimatedTotal = finalCart
+          ? cartTotal(finalCart)
+          : (finalItems ?? []).reduce(
+              (sum, i) => sum + i.price * i.quantity,
+              0,
+            );
+        const itemSummary = finalCart
+          ? finalCart.map(cartLineSummary)
+          : (finalItems ?? []).map((i) => `${i.quantity}x ${i.size} ${i.name}`);
 
         return {
           content: [
@@ -906,9 +1173,7 @@ Then call check_order_status with the returned call_id to get the result.`,
                   call_id: callResult.callId,
                   message: `Calling ${restaurant_name} now. The AI is placing the order for ${resolvedName_}. This typically takes 2-3 minutes.`,
                   order_summary: {
-                    items: items.map(
-                      (i) => `${i.quantity}x ${i.size} ${i.name}`,
-                    ),
+                    items: itemSummary,
                     estimated_total: estimatedTotal,
                     delivery_to: resolvedAddress_,
                     payment: "Cash on delivery",
