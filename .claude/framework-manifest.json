@@ -4,7 +4,7 @@
   "generated_by": "scripts/generate-framework-manifest.js",
   "counts": {
     "agent": 57,
-    "skill": 116,
+    "skill": 117,
     "reference": 17,
     "maps_baseline": 23,
     "hook": 53,
@@ -35,7 +35,7 @@
     "installer_script": 1,
     "framework_doc": 2
   },
-  "total": 416,
+  "total": 417,
   "assets": {
     "agent": [
       {
@@ -115,7 +115,7 @@
         "src": ".claude/agents/00-alex/.system/beta/events.jsonl",
         "dest": ".claude/agents/00-alex/.system/beta/events.jsonl",
         "kind": "agent",
-        "sha256": "45cd4863e069",
+        "sha256": "bdb0171a8f87",
         "owner": "framework",
         "mergeStrategy": "three_way_markdown",
         "introducedIn": "0.0.0",
@@ -127,7 +127,7 @@
         "src": ".claude/agents/00-alex/.system/beta/judgement-model-recommendations-archive.md",
         "dest": ".claude/agents/00-alex/.system/beta/judgement-model-recommendations-archive.md",
         "kind": "agent",
-        "sha256": "cf19abb9983b",
+        "sha256": "a1caad1a8ac9",
         "owner": "framework",
         "mergeStrategy": "three_way_markdown",
         "introducedIn": "0.0.0",
@@ -139,7 +139,7 @@
         "src": ".claude/agents/00-alex/.system/beta/judgement-model-recommendations.md",
         "dest": ".claude/agents/00-alex/.system/beta/judgement-model-recommendations.md",
         "kind": "agent",
-        "sha256": "6c42d73d9def",
+        "sha256": "726b8cea45d9",
         "owner": "framework",
         "mergeStrategy": "three_way_markdown",
         "introducedIn": "0.0.0",
@@ -151,7 +151,7 @@
         "src": ".claude/agents/00-alex/.system/beta/judgement-model.md",
         "dest": ".claude/agents/00-alex/.system/beta/judgement-model.md",
         "kind": "agent",
-        "sha256": "5e758de5a1b5",
+        "sha256": "c94f5eabee6d",
         "owner": "framework",
         "mergeStrategy": "three_way_markdown",
         "introducedIn": "0.0.0",
@@ -1834,6 +1834,18 @@
         "dest": ".claude/commands/session/history.md",
         "kind": "skill",
         "sha256": "af1313bc6f76",
+        "owner": "framework",
+        "mergeStrategy": "three_way_markdown",
+        "introducedIn": "0.0.0",
+        "removedIn": null,
+        "replaces": null
+      },
+      {
+        "id": "skill.session.print.md",
+        "src": ".claude/commands/session/print.md",
+        "dest": ".claude/commands/session/print.md",
+        "kind": "skill",
+        "sha256": "ff2faeaf6789",
         "owner": "framework",
         "mergeStrategy": "three_way_markdown",
         "introducedIn": "0.0.0",
