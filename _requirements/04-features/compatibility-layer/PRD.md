@@ -41,6 +41,20 @@ The agent never places a Bland call when a cheap compatibility check would tell 
 
 ## 5. Acceptance Criteria
 
+> **Requirements registry IDs** (for graph indexing):
+> - REQ-compat-types-001 → §6.1 module types + exports (AC1)
+> - REQ-compat-delivery-001 → delivery availability check (AC2)
+> - REQ-compat-coverage-001 → delivery coverage check (AC3)
+> - REQ-compat-item-001 → item availability check (AC4)
+> - REQ-compat-combiner-001 → assess + verdict rules (AC5)
+> - REQ-compat-server-001 → start_pizza_order embed + sort + recommended flag (AC6)
+> - REQ-compat-tooldesc-001 → start_pizza_order description with reproduce-verbatim (AC7)
+> - REQ-compat-block-001 → place_order hard-blocks no_go (AC8)
+> - REQ-compat-a2a-001 → A2A proposed_cart artifact embeds compatibility (AC9)
+> - REQ-compat-bland-001 → Bland prompt ITEM-CONFIRM step (AC10)
+> - REQ-compat-logging-001 → structured EVT-compatibility events (AC11)
+> - REQ-compat-truth-001 → no fabricated confidence; deliveryRadius:null for places (AC12)
+
 1. **A1 — `compatibility.ts` exports three named checks + one combined assess.** Each check returns a `CompatibilityCheckResult` with `state` (enum), `confidence` (0..1), `source` (string tag), `reason` (string), `nextStep` (string or null). `assessCompatibility(restaurant, userAddress, intent)` returns `{ delivery, coverage, item, overall, nextStep }` where `overall` is `'go' | 'caution' | 'no_go'`.
 
 2. **A2 — Delivery availability check derives from real data when present, UNKNOWN otherwise.** `restaurant.serviceType === 'delivery'` → state `available`, confidence 0.95, source `restaurant.fields`. `serviceType === 'pickup_only'` → state `pickup_only`, confidence 0.95. `serviceType === 'unknown'` → state `unknown`, confidence 0.4, source `places_api`, nextStep `"Confirm on call or ask user."`. No restaurant ever gets `available` without explicit data backing it.

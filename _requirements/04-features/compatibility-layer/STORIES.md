@@ -4,7 +4,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-1 — Define types and module skeleton
+### GS-COMPAT-01: Define types and module skeleton
 
 **File:** `src/lib/compatibility.ts` (new)
 
@@ -18,7 +18,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-2 — Extend Restaurant type
+### GS-COMPAT-02: Extend Restaurant type
 
 **File:** `src/data/restaurants.ts`
 
@@ -34,7 +34,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-3 — Domino's serviceType
+### GS-COMPAT-03: Domino's serviceType
 
 **File:** `src/connectors/dominos.ts`
 
@@ -46,7 +46,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-4 — Places: stop fabricating delivery data
+### GS-COMPAT-04: Places: stop fabricating delivery data
 
 **File:** `src/connectors/places.ts`
 
@@ -58,7 +58,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-5 — Implement `checkDeliveryAvailability`
+### GS-COMPAT-05: Implement `checkDeliveryAvailability`
 
 **File:** `src/lib/compatibility.ts`
 
@@ -70,7 +70,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-6 — Implement `checkDeliveryCoverage`
+### GS-COMPAT-06: Implement `checkDeliveryCoverage`
 
 **File:** `src/lib/compatibility.ts`
 
@@ -82,7 +82,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-7 — Implement `checkItemAvailability`
+### GS-COMPAT-07: Implement `checkItemAvailability`
 
 **File:** `src/lib/compatibility.ts`
 
@@ -94,7 +94,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-8 — Implement `assessCompatibility` combiner
+### GS-COMPAT-08: Implement `assessCompatibility` combiner
 
 **File:** `src/lib/compatibility.ts`
 
@@ -106,7 +106,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-9 — Compatibility logging hook
+### GS-COMPAT-09: Compatibility logging hook
 
 **File:** `src/lib/compatibility.ts`
 
@@ -118,7 +118,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-10 — `start_pizza_order` integration
+### GS-COMPAT-10: `start_pizza_order` integration
 
 **File:** `src/server.ts`
 
@@ -136,7 +136,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-11 — `place_order` block
+### GS-COMPAT-11: `place_order` block
 
 **File:** `src/server.ts`
 
@@ -151,7 +151,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-12 — A2A `proposed_cart` artifact embeds compatibility
+### GS-COMPAT-12: A2A `proposed_cart` artifact embeds compatibility
 
 **File:** `src/a2a/executor.ts`
 
@@ -163,7 +163,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-13 — Bland prompt ITEM-CONFIRM step
+### GS-COMPAT-13: Bland prompt ITEM-CONFIRM step
 
 **File:** `src/connectors/bland.ts`
 
@@ -179,7 +179,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-14 — Update tool descriptions
+### GS-COMPAT-14: Update tool descriptions
 
 **File:** `src/server.ts`
 
@@ -191,7 +191,7 @@ Implementation-level stories. Each is verifiable in isolation. Each has dependen
 
 ---
 
-## S-15 — Unit tests
+### GS-COMPAT-15: Unit tests
 
 **File:** `src/lib/compatibility.test.ts` (new)
 
