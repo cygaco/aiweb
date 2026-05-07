@@ -38,6 +38,7 @@ import {
   type CartDiff,
 } from "./lib/cart-flow.js";
 import { assessCompatibility } from "./lib/compatibility.js";
+import { enrichEvidence, ENRICH_COUNT } from "./lib/menu-discovery.js";
 import { logCompatibilityOverride } from "./lib/event-log.js";
 import { geocodeAddress } from "./lib/geo.js";
 
@@ -654,6 +655,37 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
       const compatibilityById = new Map(
         annotated.map((a) => [a.restaurant.id, a.compatibility]),
       );
+
+      // Enrich top-N caution restaurants with real menu/delivery evidence.
+      // Only fires when the initial assessment left item or coverage unknown.
+      // Fail-open: if enrichment errors or times out, original caution stands.
+      const cautionRestaurants = annotated
+        .filter(
+          (a) =>
+            a.compatibility.overall === "caution" &&
+            (a.compatibility.item.state === "unknown" ||
+              a.compatibility.coverage.state === "unknown"),
+        )
+        .slice(0, ENRICH_COUNT);
+      for (const { restaurant } of cautionRestaurants) {
+        try {
+          const { enriched } = await enrichEvidence(restaurant, intent_style);
+          if (enriched !== restaurant) {
+            const reAssessed = assessCompatibility(
+              enriched,
+              userLat,
+              userLng,
+              intent_style,
+            );
+            compatibilityById.set(restaurant.id, reAssessed);
+            // Replace in restaurants array with enriched version
+            const idx = restaurants.indexOf(restaurant);
+            if (idx !== -1) restaurants[idx] = enriched;
+          }
+        } catch {
+          /* fail-open — enrichment is additive, never blocks order flow */
+        }
+      }
 
       // Build response — every restaurant entry now carries `compatibility`.
       const result: Record<string, unknown> = {

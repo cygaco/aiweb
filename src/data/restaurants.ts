@@ -64,6 +64,7 @@ export interface Restaurant {
     deals?: Deal[];
   };
   hours: string;
+  website?: string;
   isTest?: boolean; // always included in results, labeled for the agent
 }
 

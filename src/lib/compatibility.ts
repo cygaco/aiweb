@@ -266,20 +266,15 @@ export function checkItemAvailability(
   const match = findPizzaMatch(restaurant, intentStyle);
 
   if (isPlaces) {
-    if (match) {
-      return {
-        state: "likely_available",
-        confidence: 0.6,
-        source: "places_generic_menu",
-        reason: `Generic Places menu matches "${match.matched}" — real menu not verified.`,
-        nextStep: `Confirm on call: 'Do you carry ${intentStyle}?'`,
-      };
-    }
+    // Generic template is not evidence — never produce likely_available from it.
+    // Both match and no-match land at unknown; enrichment may upgrade this later.
     return {
       state: "unknown",
       confidence: 0.4,
       source: "places_generic_menu",
-      reason: `"${intentStyle}" not in generic 3-item menu; real menu unknown.`,
+      reason: match
+        ? `Generic Places menu template matched "${match.matched}" — not real evidence; real menu unknown.`
+        : `"${intentStyle}" not in generic 3-item template; real menu unknown.`,
       nextStep: `Confirm on call: 'Do you carry ${intentStyle}?'`,
     };
   }

@@ -18,6 +18,7 @@ const FIELD_MASK = [
   "places.regularOpeningHours",
   "places.businessStatus",
   "places.types",
+  "places.websiteUri",
 ].join(",");
 
 // Generic menu — Bland confirms actual offerings on the call.
@@ -66,6 +67,7 @@ type RawPlace = {
   nationalPhoneNumber?: string;
   regularOpeningHours?: { openNow?: boolean; weekdayDescriptions?: string[] };
   businessStatus?: string;
+  websiteUri?: string;
 };
 
 // Haversine distance in miles
@@ -126,6 +128,7 @@ function mapToRestaurant(
     serviceType: "unknown",
     menu: GENERIC_PIZZA_MENU,
     hours,
+    ...(place.websiteUri ? { website: place.websiteUri } : {}),
   };
 }
 

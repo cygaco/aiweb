@@ -30,6 +30,7 @@ import {
   legacyItemsToCart,
 } from "../lib/cart-flow.js";
 import { assessCompatibility } from "../lib/compatibility.js";
+import { enrichEvidence } from "../lib/menu-discovery.js";
 import { logCompatibilityOverride } from "../lib/event-log.js";
 import { geocodeAddress } from "../lib/geo.js";
 
@@ -279,12 +280,38 @@ export class PizzaAgentExecutor implements AgentExecutor {
       // Address is geocoded best-effort; null falls through to coverage
       // `requires_address`.
       const userGeo = await geocodeAddress(input.address!);
-      const compatibility = assessCompatibility(
+      let restaurantForCart = restaurant;
+      const initialCompat = assessCompatibility(
         restaurant,
         userGeo?.lat,
         userGeo?.lng,
         input.intent_style,
       );
+      // Enrich if initial assessment left item or coverage unknown (fail-open).
+      if (
+        initialCompat.overall === "caution" &&
+        (initialCompat.item.state === "unknown" ||
+          initialCompat.coverage.state === "unknown")
+      ) {
+        try {
+          const { enriched } = await enrichEvidence(
+            restaurant,
+            input.intent_style,
+          );
+          if (enriched !== restaurant) restaurantForCart = enriched;
+        } catch {
+          /* fail-open */
+        }
+      }
+      const compatibility =
+        restaurantForCart !== restaurant
+          ? assessCompatibility(
+              restaurantForCart,
+              userGeo?.lat,
+              userGeo?.lng,
+              input.intent_style,
+            )
+          : initialCompat;
       eventBus.publish(
         artifact(taskId, contextId, "proposed_cart", {
           restaurant_id: restaurant.id,
