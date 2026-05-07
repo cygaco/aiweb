@@ -58,13 +58,38 @@ function cachePath(restaurantId: string): string {
   return join(cacheDir(), `${restaurantId}.json`);
 }
 
+function isValidDeliveryCues(d: unknown): d is DeliveryCues {
+  if (!d || typeof d !== "object") return false;
+  const obj = d as Record<string, unknown>;
+  const okOffers =
+    obj.offersDelivery === null || typeof obj.offersDelivery === "boolean";
+  const okRadius =
+    obj.deliveryRadiusMiles === null ||
+    typeof obj.deliveryRadiusMiles === "number";
+  const okSignal = obj.rawSignal === null || typeof obj.rawSignal === "string";
+  return okOffers && okRadius && okSignal;
+}
+
+function isValidCachedMenuResult(raw: unknown): raw is CachedMenuResult {
+  if (!raw || typeof raw !== "object") return false;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.discoveredAt !== "string") return false;
+  if (obj.source !== "restaurant_website") return false;
+  if (!Array.isArray(obj.pizzas) || !Array.isArray(obj.sides)) return false;
+  if (!isValidDeliveryCues(obj.deliveryCues)) return false;
+  return true;
+}
+
 function readCache(restaurantId: string): CachedMenuResult | null {
   try {
     const p = cachePath(restaurantId);
     if (!existsSync(p)) return null;
-    const raw = JSON.parse(readFileSync(p, "utf8")) as CachedMenuResult;
+    const raw = JSON.parse(readFileSync(p, "utf8")) as unknown;
+    // Shape validation — malformed cache (e.g. older schema, partial write,
+    // hand-edited file) returns miss instead of throwing in applyEnrichment.
+    if (!isValidCachedMenuResult(raw)) return null;
     const age = Date.now() - new Date(raw.discoveredAt).getTime();
-    if (age > CACHE_TTL_MS) return null;
+    if (!Number.isFinite(age) || age > CACHE_TTL_MS) return null;
     return raw;
   } catch {
     return null;
@@ -92,7 +117,11 @@ async function fetchWebsite(url: string): Promise<string | null> {
     });
     if (!res.ok) return null;
     const html = await res.text();
-    // Trim to 15k chars — enough for menu section, avoids giant context
+    // Body-too-large fail-open: a 500KB+ page is almost certainly not a real
+    // menu we can parse usefully (load-test, attack, or framework bloat).
+    // Refuse rather than truncating + extracting noise.
+    if (html.length > 500_000) return null;
+    // Trim to 15k chars — enough for menu section, avoids giant context.
     return html.slice(0, 15_000);
   } catch {
     return null;
@@ -166,13 +195,14 @@ async function extractMenuFromHtml(
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/, "")
       .trim();
-    const parsed = JSON.parse(cleaned) as ExtractedMenu;
-
-    // Validate shape minimally — fail-open if malformed
-    if (!Array.isArray(parsed.pizzas) || !Array.isArray(parsed.sides))
-      return null;
-
-    return parsed;
+    const parsed = JSON.parse(cleaned) as unknown;
+    // Shape validation — fail-open if Claude returns a partial/malformed
+    // schema. Without deliveryCues the call to applyEnrichment would throw.
+    if (!parsed || typeof parsed !== "object") return null;
+    const obj = parsed as Record<string, unknown>;
+    if (!Array.isArray(obj.pizzas) || !Array.isArray(obj.sides)) return null;
+    if (!isValidDeliveryCues(obj.deliveryCues)) return null;
+    return obj as unknown as ExtractedMenu;
   } catch {
     return null;
   }

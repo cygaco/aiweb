@@ -280,7 +280,7 @@ export function checkItemAvailability(
       reason: match
         ? `Generic Places menu template matched "${match.matched}" — not real evidence; real menu unknown.`
         : `"${intentStyle}" not in generic 3-item template; real menu unknown.`,
-      nextStep: `Confirm on call: 'Do you carry ${intentStyle}?'`,
+      nextStep: `Run menu discovery, or confirm on call: 'Do you carry ${intentStyle}?'`,
     };
   }
 

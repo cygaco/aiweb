@@ -17,6 +17,8 @@
 | ISS-003 | Gemini API rejects `gemini-3.1-pro` — free-tier project quota limit:0 | Deferred | redteam gauntlet |
 | ISS-004 | Requirements graph format mismatch — STORIES used `## S-1` not `### GS-COMPAT-01` | Fixed | merge-guard freshness gate |
 | ISS-005 | place_order/A2A executor recompute compatibility from unbound intent_style — adversarial wrong-item bypass (RT-201, HIGH) | Open / pending decision | redteam gauntlet (gpt-5.4-mini) |
+| ISS-006 | Gamma's gauntlet dispatches die silently with 0-byte output + 0-byte .err on Windows when not routed through `runProvider` | Documented + workaround | /fix:deep RT-004 |
+| ISS-007 | Menu-discovery deferred review findings (test coverage, third_party_only schema, distinct failure-mode source enum, delivery-cues with empty pizzas) | Deferred | gauntlet pass-2 (gpt-5.5) |
 
 ---
 
@@ -115,6 +117,38 @@
 - **Files touched:** _none yet — pending fix decision_
 - **Current recommendation:** **defer to post-YC application** — demo flows A-E (DEMO-SCRIPT.md) don't trigger this desync (honest intent_style throughout), YC reviewer unlikely to probe adversarial integrity, sprint already long. Beta consult in flight to confirm. If approved-fix-now: dispatch fixer with option (b), single ~30 LOC change.
 - **Final resolution:** _(pending Beta + user decision)_
+
+---
+
+### ISS-006 — Gamma gauntlet dispatches die silently on Windows when not routed through runProvider
+
+- **Status:** Documented + workaround (Alpha-driven gauntlet via `scripts/one-off/run-gauntlet-alpha.js`); upstream guard pending in `warpos-to-update.md`
+- **Source:** `/fix:deep` RT-004 (2026-05-07)
+- **Related feature:** dispatch infrastructure (orchestrator → codex/claude/gemini)
+- **Steps to reproduce (adversarial):**
+  1. Have Gamma compose dispatch prompts and invoke codex/claude via raw bash (e.g. `cat prompt.txt | codex exec --full-auto -m gpt-5.5 -`).
+  2. Observe: 7 lock files held by dead PIDs after ~10 min; 0-byte output JSON; 0-byte .err files; orchestrator hangs waiting for output.
+- **Expected:** dispatches return JSON envelopes via stdout/stderr; failures land in .err; auto-prune frees stale slots.
+- **Actual:** silent 0-byte death — no stdout, no stderr, no event. PIDs gone but locks linger past TTL because auto-prune is lazy (only fires on next acquireSlot).
+- **Suspected cause:** binding-gap recurrence (LRN-2026-04-17-n class). Codex/claude on Windows have stdin handling that breaks when piped through cmd.exe; the canonical fix is in `runProvider` (providers.js:441) using `execSync` with `input:` option instead of shell-pipe. Gamma's invocation route bypassed runProvider.
+- **Diagnostic evidence:** direct probe via `runProvider` with the same 191KB reviewer prompt completed in 197s and returned a 6206-char real review (`scripts/one-off/probe-codex-large-prompt.js`). So the canonical path works; the orchestrator route is the bug.
+- **Workaround:** `scripts/one-off/run-gauntlet-alpha.js` calls `runProvider` directly per-role from Alpha's context. Gauntlet runs sequentially, all 3 gates return real findings.
+- **Permanent fix path:** see `warpos-to-update.md` 2026-05-07 entries — write-time guard hook for raw `codex exec` / `claude -p` / `gemini` patterns + orchestrator-side telemetry + active prune in concurrency-lock + smoke-probe in `/oneshot:preflight` and `/mode:adhoc`.
+- **YC-demo blocker?** No — Alpha-driven workaround unblocked the gauntlet for this sprint.
+- **Final resolution:** _(open; permanent fix tracked upstream in WarpOS roadmap)_
+
+### ISS-007 — Menu-discovery deferred review findings (test coverage, schema gaps, observability)
+
+- **Status:** Deferred to next iteration
+- **Source:** Alpha-driven gauntlet pass-2 (gpt-5.5 reviewer + compliance + qa) on `feat/menu-discovery` HEAD post-fix
+- **Related feature:** menu-delivery-discovery
+- **Items:**
+  1. **Test coverage gaps (medium-high)** — `tests/menu-discovery.test.ts` does not mock `fetch` or the Anthropic SDK; missing cases for cache-miss → fetch → Claude → write success path, fetch timeout (AbortError), 404, body-too-large (>500KB), invalid JSON, empty extraction, bypassCache, mkdir, cache-write failure. Existing 9 tests cover no-website / no-API-key / cache hit / Domino's skip / immutability paths. **Mitigation:** the production code paths are exercised by build + manual smoke; the gap is verification-rigor not behavior. Adding fetch + Anthropic mocks requires a test-harness layer the project doesn't currently have.
+  2. **third_party_only schema (medium)** — `DeliveryCues.offersDelivery` is `boolean | null` so the extraction layer can't distinguish pickup-only from third-party-only. Compatibility layer's `serviceType` enum already supports `third_party_only`; would require schema + prompt extension.
+  3. **Source enum collapses failure modes (medium)** — `EnrichmentResult.source: 'restaurant_website' | 'cache' | 'unchanged'` collapses fetch-timeout, 404, body-too-large, parse-fail, no-API-key, no-menu, no-website, dominos-skip all into `unchanged`. Demo Beat 3 ("graceful failure with reason") loses observability granularity. Permanent fix would split `unchanged` into `skipped:no-website | skipped:dominos | failed:fetch | failed:extract | no-evidence` with a parallel `reason` field. ~30 LOC across menu-discovery.ts + 2 wire-in points.
+  4. **Delivery cues discarded when pizzas empty (low-medium)** — `enrichEvidence` returns `unchanged` when `extracted.pizzas.length === 0`, dropping any delivery cues from the same fetch. Edge case: a website with delivery info but no parseable menu still gets unknown coverage.
+- **Demo blockers?** No — none of these affect the YC demo flows. The four HIGH findings from gauntlet pass-1 (enrichment block missing, EVT-enrichment missing, cache validation, A2A cart staleness) were all addressed in the post-fix commit.
+- **Final resolution:** _(deferred; tracked here for next iteration)_
 
 ---
 
