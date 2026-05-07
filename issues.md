@@ -67,11 +67,18 @@
 - **Expected:** Per user directive 2026-05-06, Gemini's latest is `gemini-3.1-pro` (no `-preview` suffix). Per `ai.google.dev/gemini-api/docs/models`, model ID is `gemini-3.1-pro` with status "Preview".
 - **Actual:** Google's API endpoint rejects the bare `gemini-3.1-pro` id. May require a date suffix (e.g. `gemini-3.1-pro-04-2026`), or the docs and API are out of sync, or the previously-working `gemini-3.1-pro-preview` is still the actual API id.
 - **Suspected cause:** Google's docs/API are out of sync, OR the model name has a versioned suffix not documented on the overview page.
-- **Fix attempts:** Bulk replaced `gemini-3.1-pro-preview` → `gemini-3.1-pro` across 14 files. Not yet attempted reverting one of them and re-testing — that's the post-sprint debug step.
+- **Fix attempts:** Bulk replaced `gemini-3.1-pro-preview` → `gemini-3.1-pro` across 14 files. Gamma probed CLI directly:
+  - `gemini-cli` version: **0.35.3**
+  - `gemini -m gemini-3.1-pro -p ...` → ModelNotFoundError
+  - `gemini -m gemini-3-pro -p ...` → ModelNotFoundError
+  - `gemini -m models/gemini-3.1-pro -p ...` → ModelNotFoundError
+  - `gemini -m gemini-3-1-pro -p ...` → ModelNotFoundError
+  - `gemini -p ...` (default model, no `-m`) → returns OK successfully
+- **Hypotheses:** (1) CLI version 0.35.3 model registry is shipped with the binary, may not yet include 3.1 — fix is `npm i -g @google/gemini-cli@latest`. (2) Account entitlement on user's `~/.gemini/` creds. (3) Versioned suffix needed (e.g., `gemini-3.1-pro-002` / `-latest` / `-04-2026`). Cheapest probe path: upgrade CLI first.
 - **Workaround:** Redteam gate marked `infra_blocked` per 3-strike rule. Build verified-clean without it (3 of 4 gauntlet gates green). Compatibility-layer feature is YC-demo-ready.
-- **Current recommendation:** post-sprint, ping the gemini CLI directly to confirm the exact model id Google currently accepts, then update manifest + agent frontmatter.
+- **Current recommendation:** when user returns, run `npm i -g @google/gemini-cli@latest` then re-probe with `echo ok | gemini -m gemini-3.1-pro -p "Reply OK"`. If still 404, it's an account/entitlement issue (not code). Either way, the manifest and code are correct relative to ai.google.dev/gemini-api/docs/models.
 - **YC-demo blocker?** No.
-- **Final resolution:** _(deferred to post-sprint; redteam scope is bounded — when fixed, can re-run as a single small gauntlet pass)_
+- **Final resolution:** _(deferred to post-sprint; awaits user CLI upgrade + re-probe)_
 
 ### ISS-004 — Requirements graph format mismatch — STORIES used `## S-1` not `### GS-COMPAT-01`
 
