@@ -158,14 +158,83 @@ The agent successfully runs all five Critical UX scenarios (Flows A-E in the spr
 
 ## Current State (live — keep this updated)
 
-- **Phase:** 5 — Logging + first /export. Phases 0-4 + 7 complete.
-- **Last action:** Merged `feat/compatibility-layer` to main (commit `3077fb3`); 105/105 tests pass; `npm run build` clean.
-- **Next action:** User runs `/export` to produce `yc-export.md`. Then Phase 8 (final export + yc-application.md update) and Phase 9 (/learn:deep + /learn:integrate).
-- **Open issues:** ISS-001 (keyless geocoding caution), ISS-002 (codex cold-start), ISS-003 (gemini model id mismatch). All non-blocking; YC-demo-ready.
-- **Tests passing:** 105/105 (88 pre-existing + 17 new + 0 regressions). 1 added by Gamma in fix commit `4c7dcb9` (snake_case regression). 18 compatibility cases in `tests/compatibility.test.ts`.
-- **Build green:** YES — `npm run build` clean on main as of `3077fb3`.
-- **Gauntlet:** reviewer + compliance + qa = pass-after-fix (3 of 4 gates green); redteam = infra_blocked on gemini model name (ISS-003).
-- **Branch state:** main = 3077fb3 (merged). feat/compatibility-layer = a59e34c (merged). Worktree still exists; can be cleaned up post-sprint.
+- **Phase:** 5 done (yc-export-01.md saved by user). Phases 6 + 7 done via gauntlet. **Sprint at wrap.** Phase 8 (final /export) + Phase 9 (/learn:deep + /learn:integrate) remaining.
+- **Last action:** Redteam retry via openai/gpt-5.4-mini returned PASS-with-warn (1 HIGH, 0 CRITICAL). Gauntlet 4/4 closeable. Committed `1ae13c7`.
+- **Next action:** User runs human verification check on the demo (designed in §"Human verification test" below), then final `/export` → `yc-export-2.md`.
+- **Open issues:**
+  - ISS-001 (keyless geocoding caution) — Deferred, non-blocking
+  - ISS-002 (codex cold-start race) — Open, tooling
+  - ISS-003 (gemini free-tier limit:0) — Deferred, account
+  - ISS-004 (graph format) — Fixed `8bc7ae5`
+  - **ISS-005 (RT-201 wrong-item bypass via unbound intent_style)** — **Deferred per Beta DECIDE 0.88 + user agreement**. First work post-application. Option-b fix path documented (~30 LOC across server.ts + executor.ts, derive compatibility from cart contents).
+- **Tests passing:** 105/105 (88 pre-existing + 17 new + 1 regression added by Gamma in fix commit `4c7dcb9`).
+- **Build green:** YES — `npm run build` clean on main as of `3077fb3` and follow-up commits.
+- **Gauntlet 4/4:**
+  - reviewer (gpt-5.5/codex): pass-after-fix (`a59e34c`)
+  - compliance (gpt-5.5/codex): pass-after-fix (`a59e34c`)
+  - qa (gpt-5.5-mini/codex): pass-after-fix (`4c7dcb9`)
+  - redteam (gpt-5.4-mini/codex, re-routed from gemini): pass-with-warn (1 HIGH = ISS-005, deferred)
+- **MCP + A2A coverage:** confirmed symmetric. Both surfaces import `assessCompatibility`, both gate `place_order` on `no_go` with `override_compatibility` opt-in, both surface compatibility in their respective output (MCP response per-restaurant; A2A `proposed_cart` artifact). ITEM-CONFIRM in Bland prompt fires identically for both surfaces. Tool description on MCP side instructs the LLM to reproduce `compatibility.nextStep` verbatim.
+- **Branch state:** main = `1ae13c7`. feat/compatibility-layer merged (no longer the source of truth). Worktree at `.worktrees/wt-compatibility-layer` can be cleaned up post-sprint.
+
+---
+
+## Human verification test (Phase 6 manual smoke)
+
+Goal: prove the compatibility layer works end-to-end on real surfaces, with one positive flow and three blocker flows.
+
+### Pre-flight (60 sec)
+
+1. `npm run build` — should exit 0 clean. (Already verified on main.)
+2. `npm test` — should print "tests 105 / pass 105 / fail 0". (Already verified.)
+3. Confirm `runtime/events.jsonl` exists OR the runtime dir is writable (it's created on first compatibility event).
+4. Server: `npm run dev` (or whatever the local-MCP launcher is) — should bind on the configured port.
+
+### Test plan — 5 flows × 2 surfaces (10 cases)
+
+The two surfaces are **MCP** (Claude Desktop or `mcp-remote` bridge) and **A2A** (the test panel at https://aiweb-mcp.fly.dev). Run each flow on both surfaces. Each should produce the expected verdict in the response artifact AND match the expected behavior on `place_order`.
+
+| # | Flow | Address + intent | Expected `compatibility.overall` | place_order behavior | Notes |
+|---|---|---|---|---|---|
+| 1 | E (success path) | `1 Market St, San Francisco, CA 94105` + `meat_lovers` | `go` on `test_vlad` | dispatches Bland call cleanly | Demo Beat 3 — the happy path |
+| 2 | A (no-deliver) | same address + `pepperoni`, force `test_pickup_only` fixture | `no_go` (delivery=`pickup_only`) | refuses with `compatibility_blocked` error | Demo Beat 4 |
+| 3 | C (wrong-item) | same address + `sushi`, target `test_vlad` | `no_go` (item=`not_available`) | refuses, surfaces `nextStep` text suggesting substitute | Demo Beat 5 |
+| 4 | B (out-of-range) | distant address + any intent (forcing a Domino's far away) | `no_go` (coverage=`out_of_range`) on the far Domino's | refuses | Verifies Domino's coverage path; if Domino's `lat:0/lng:0` short-circuits to `unknown`, that's the v2-delta C-1 mitigation working as designed |
+| 5 | D (caution) | same address + `meat_lovers`, force a `places_*` restaurant | `caution` (one or more `unknown`) | proceeds (caution does NOT block) AND Bland prompt includes ITEM-CONFIRM step | Verifies the caution path doesn't false-block |
+
+### Per-surface checklist for each flow
+
+**MCP (Claude Desktop):**
+1. Open Claude Desktop → ensure `aiweb-pizza` MCP server is connected.
+2. Send the natural-language prompt corresponding to the flow.
+3. Check Claude's response for the compatibility narrative (it should reproduce `nextStep` verbatim on caution/no_go).
+4. If place_order would fire: monitor for the actual Bland call. If blocked: confirm no Bland call dispatched.
+5. Inspect `runtime/events.jsonl` — there should be a `cat: "compatibility"` event for each `assessCompatibility` call, plus a `cat: "compatibility-override"` event if the override flag was used.
+
+**A2A (test panel):**
+1. Open https://aiweb-mcp.fly.dev → bearer token + agent-card preloaded.
+2. Send a structured A2A message with the same address + intent as the flow.
+3. Inspect the `proposed_cart` artifact — confirm it carries a `compatibility` field with the four sub-fields (delivery / coverage / item / overall) plus `nextStep`.
+4. Submit the same message with `confirmed: true` (and matching `confirmation_token`). For no_go flows, expect rejection with `compatibility_blocked`. For go flows, expect Bland dispatch.
+5. Same events.jsonl inspection.
+
+### What to look for that the gauntlet can't see
+
+The gauntlet validates code correctness. The human check validates UX:
+
+- Does the agent's natural-language reply on a `caution` flow actually surface the unknown clearly to YOU (not just embed the field in the response JSON)? If the agent says "Vlad's might have meat lovers — should I call to confirm?" verbatim from `nextStep`, that's the AC7 + D-2 directive working. If the agent paraphrases or omits, the tool description didn't bind tightly enough.
+- Does the Bland call ITEM-CONFIRM step (when fired) sound natural to the restaurant on the other end, or does it confuse them? This is the only real-world signal that the prompt change in `bland.ts` works.
+- On Beat 1 (success path): does the cart preview shown to you BEFORE confirmation match what Bland actually orders? Drift here = ISS-005 territory but in the honest path; if it drifts, RT-201 is more urgent than we think.
+
+### Known gap during your test (do not flag as bug)
+
+- **RT-201 / ISS-005:** if you specifically try to mutate `intent_style` between `start_pizza_order` and `place_order` to a compatible value while keeping a no_go cart, the gate WILL pass and Bland WILL fire — that's the deferred adversarial bypass. Honest-path testing won't trip it. Don't do this in the YC demo.
+- **Gemini quota:** Gemini Pro models 404 on this account. Doesn't affect the demo (only redteam dispatch, which already ran via openai). Will resolve if you upgrade to Tier 1+ in Google Cloud billing.
+
+### After the test
+
+- If all 10 cases pass: run final `/export` → save as `yc-export-2.md`.
+- If any flow surprises you: log the surprise in `issues.md` with full repro, decide fix-now-vs-defer same as we did for RT-201.
 
 ---
 
