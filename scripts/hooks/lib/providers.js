@@ -54,7 +54,7 @@ function loadStore() {
 // (qa, learner) where cost matters more than peak reasoning.
 const OPENAI_FLAGSHIP = process.env.OPENAI_FLAGSHIP_MODEL || "gpt-5.5"; // reviewer, compliance
 const OPENAI_MINI = process.env.OPENAI_MINI_MODEL || "gpt-5.4-mini"; // qa, learner (no gpt-5.5-mini exists yet)
-const GEMINI_DEFAULT = process.env.GEMINI_MODEL || "gemini-3.1-pro-preview";
+const GEMINI_DEFAULT = process.env.GEMINI_MODEL || "gemini-3.1-pro";
 
 // Reasoning effort per role. Forces deeper deliberation across all dispatch
 // roles. Per recent learning: "LLM-as-judge is systematically biased and
@@ -148,7 +148,7 @@ const DEFAULT_PROVIDERS = {
     default_model: GEMINI_DEFAULT,
     fallback: "claude",
     // Gemini CLI: pipe context on stdin, instruction via `-p`, plain-text output via `-o text`.
-    // `gemini-3.1-pro-preview` has thinking mode + 1M input context — ideal for attack-chain reasoning.
+    // `gemini-3.1-pro` has thinking mode + 1M input context — ideal for attack-chain reasoning.
     // No explicit reasoning-effort flag; thinking is always-on for the pro-preview tier.
     // `{reasoning}` template var is empty for gemini (kept for syntax uniformity).
     syntax: `gemini {reasoning} -m {model} -p`,

@@ -96,10 +96,10 @@ const GEMINI = {
   cliEffortFlagTemplate: "",
   syntaxTemplate: "gemini -m {model} -p",
   requiresFallback: true,
-  defaultModel: "gemini-3.1-pro-preview",
+  defaultModel: "gemini-3.1-pro",
   models: [
     {
-      id: "gemini-3.1-pro-preview",
+      id: "gemini-3.1-pro",
       label: "Gemini 3.1 Pro (preview, thinking always-on)",
       effortLevels: [],
       contextTokens: 1_000_000,

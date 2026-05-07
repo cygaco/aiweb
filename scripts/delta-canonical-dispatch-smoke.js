@@ -120,9 +120,9 @@ const providers = {
     test() {
       // gemini reads stdin and APPENDS --prompt to it (per `gemini --help`).
       // Use the SAME -m model that dispatch-agent.js will use at runtime
-      // (read from GEMINI_MODEL env, default gemini-3.1-pro-preview).
+      // (read from GEMINI_MODEL env, default gemini-3.1-pro).
       // HYGIENE Rule 67.
-      const model = process.env.GEMINI_MODEL || "gemini-3.1-pro-preview";
+      const model = process.env.GEMINI_MODEL || "gemini-3.1-pro";
       const r = runShell(`gemini -m ${model} --prompt ""`, TEST_PROMPT);
       return { ...r, ok: r.exit === 0 && /OK/i.test(r.stdout) };
     },

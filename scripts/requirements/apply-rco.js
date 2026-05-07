@@ -2,7 +2,7 @@
  * apply-rco.js — Resolve an open RCO (mark applied / dismissed / expired) and
  * propagate verification-status changes to the graph.
  *
- * Phase 3K artifact. Phase-3 review fix-forward (gemini-3.1-pro-preview
+ * Phase 3K artifact. Phase-3 review fix-forward (gemini-3.1-pro
  * 2026-04-30) added:
  *   - Coarse advisory file lock to serialize rewrites against concurrent
  *     edit-watcher appends. Fail-open on lock-acquire failure with

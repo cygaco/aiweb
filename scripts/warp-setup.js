@@ -681,7 +681,7 @@ if (!fs.existsSync(manifestFile)) {
       },
       gemini: {
         cli: "gemini",
-        default_model: "gemini-3.1-pro-preview",
+        default_model: "gemini-3.1-pro",
         fallback: "claude",
         // `gemini -m <model> -p <instruction> -o text` (context via stdin)
         syntax: "gemini -m {model} -p",

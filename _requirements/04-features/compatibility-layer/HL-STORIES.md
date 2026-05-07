@@ -36,16 +36,19 @@ The five Critical UX flows from the YC sprint plan, mapped to the compatibility 
   - Agent says: *"This restaurant doesn't carry [intent]. Want me to (a) try another restaurant, or (b) substitute with one of [their actual styles]?"*
 - Demo success: agent does not place an order for an item the restaurant doesn't carry.
 
-## Flow D — Unknown Compatibility
+## Flow D — Unknown Compatibility (caution path)
 
-**As a user**, I want the agent to **be honest about what it doesn't know** instead of pretending it knows.
+**As a user**, I want the agent to **be honest about what it doesn't know** instead of pretending it knows. AC8 + QA D.3 win: caution does NOT auto-block `place_order`.
 
-- Trigger: any check returns `unknown` (no real data: Places-derived restaurant, missing menu, missing user address).
+- Trigger: any check returns a `caution`-bucket state (`unknown`, `requires_address`, `requires_substitution`, `likely_available`). No `no_go` checks.
 - Agent behavior:
-  - `compatibility.overall: 'caution'`, nextStep names the cheapest safe resolution.
-  - Resolution priority: existing structured data → website/menu data (future) → known business metadata (future) → user clarification → targeted phone call.
-  - For the demo, options 1-3 are mostly N/A; the agent picks user-clarification when address-related, or call-to-confirm when item-related.
-- Demo success: agent never claims `available` or `in_range` without real data.
+  - `compatibility.overall: 'caution'`, `nextStep` names the cheapest safe resolution.
+  - The agent's natural-language reply to the user MUST include the verbatim `compatibility.nextStep` text — don't paraphrase. (Tool description, AC7 + D-2 in PRD-V2-DELTA, instructs Claude to do this.)
+  - **Item caution (`item.state === 'unknown' | 'likely_available'`):** if user proceeds, `place_order` fires Bland with `itemAvailabilityUnknown: true`, which adds the ITEM-CONFIRM step to the call prompt. Restaurant confirms or substitutes on the call. **place_order does NOT auto-block.**
+  - **Coverage caution (`coverage.state === 'unknown' | 'requires_address'`):** agent surfaces the unknown and asks the user for address clarification or to choose another restaurant. place_order is not auto-blocked but the agent should require user confirmation.
+  - **Delivery caution (`delivery.state === 'unknown'`):** rare in practice (only when serviceType is missing on a restaurant). Agent surfaces and asks.
+- Resolution priority for the agent's choice of next step: existing structured data → user clarification → targeted phone call (via Bland ITEM-CONFIRM).
+- Demo success: agent never claims `available` or `in_range` without real data; agent surfaces unknowns; ITEM-CONFIRM step appears in the Bland prompt when item is unknown.
 
 ## Flow E — Successful Compatibility Path
 

@@ -239,7 +239,7 @@ if (!slot) {
 let result;
 try {
   // Honor the agent's frontmatter-declared provider_model (e.g. qa → gpt-5.4-mini,
-  // evaluator → gpt-5.4, redteam → gemini-3.1-pro-preview) instead of falling back
+  // evaluator → gpt-5.4, redteam → gemini-3.1-pro) instead of falling back
   // to the provider default for every role.
   const roleModel = getRoleModel(role);
   result = runProvider(role, prompt, roleModel ? { model: roleModel } : {});

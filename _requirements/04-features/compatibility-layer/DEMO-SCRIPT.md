@@ -29,7 +29,9 @@ Open `roadmap-yc.md`, scroll to "Current Objective" and "Compatibility Questions
 
 In Claude Desktop:
 
-> "Order me a meat lovers pizza, delivery to 5208 Riddle Bypass Rd, Riddle, OR 97469, name Vlad, phone +14152335033."
+> "Order me a meat lovers pizza, delivery to 1 Market St, San Francisco, CA 94105, name Vlad, phone +14152335033."
+
+**Address note:** Use a SF-area demo address — test_vlad fixture coordinates are (37.7749, -122.4194) with `deliveryRadius: 10`. The Riddle, OR address (~600 mi from SF) would fail coverage on test_vlad. For the live demo, use 1 Market St (~0.5 mi from test_vlad center) so Flow E succeeds. The Riddle, OR address can be saved in the user's actual profile but is NOT the demo address.
 
 Agent:
 - Calls `start_pizza_order` (intent=meat_lovers, address)
@@ -41,7 +43,7 @@ Agent:
 
 > "Now order from somewhere I know is pickup-only."
 
-Agent receives a fixture or simulated pickup_only restaurant; surfaces the blocker.
+Agent receives the `test_pickup_only` fixture (Slice Box, Mission St, SF — added in PRD-V2-DELTA M-8); surfaces the blocker.
 
 > "This place is pickup-only — would you like pickup, or another restaurant?"
 
