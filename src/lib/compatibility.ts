@@ -79,7 +79,10 @@ function sourceTagFor(restaurantId: string): string {
 }
 
 function normalize(s: string): string {
-  return s.toLowerCase().trim();
+  // Underscores become spaces so the snake_case intent_style format the
+  // server schema documents (e.g. "meat_lovers") matches menu names like
+  // "Meat Lovers". Without this, fuzzy match silently returns not_available.
+  return s.toLowerCase().trim().replace(/_+/g, " ");
 }
 
 // Haversine distance in miles. Inlined to avoid a dependency on places.ts.

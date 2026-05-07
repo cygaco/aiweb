@@ -248,6 +248,14 @@ test("assessCompatibility — emits EVT-compatibility line to events file", () =
   assert.strictEqual(last.data.overall, "go");
 });
 
+// 17a — snake_case intent matches menu names (server schema documents
+// `meat_lovers` format). Caught by QA gauntlet — without underscore→space
+// normalization, the fuzzy match misses and emits not_available.
+test("checkItemAvailability — snake_case intent ('meat_lovers') matches 'Meat Lovers'", () => {
+  const r = checkItemAvailability(VLAD, "meat_lovers");
+  assert.strictEqual(r.state, "available");
+});
+
 // 17 — Domino's lat=0/lng=0 special case (PRD-V2-DELTA C-1)
 test("checkDeliveryCoverage — dominos_* with lat=0/lng=0 → unknown (NOT out_of_range)", () => {
   const r = checkDeliveryCoverage(
