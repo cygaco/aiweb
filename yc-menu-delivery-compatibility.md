@@ -9,10 +9,13 @@
 ## Live state — keep this updated
 
 - **Mode:** adhoc (α + β + γ)
-- **Branch:** `main` (post-YC-sprint head `ffc89c4`; new work lands here)
-- **Phase:** Phase 9 — build complete, needs `npm install` then test run
-- **Last action:** Beta built all phases: menu-discovery.ts, compatibility.ts tightened, server.ts + executor.ts wired, compatibility.test.ts updated (tests 9/14 fixed + 3 new), menu-discovery.test.ts added (7 tests).
-- **Next action:** Run `npm install` then `npm test` — verify all pass. Then commit + gauntlet.
+- **Branch:** `feat/menu-discovery` @ `2001634` — 2 commits ahead of `main` (`e0cae07`)
+- **Phase:** Phase 8 — gauntlet in flight against HEAD `2001634`
+- **Tests:** 119/119 pass | **Build:** clean | **npm install:** done (Anthropic SDK installed)
+- **Last action:** Gamma dispatched fresh 3-gate gauntlet (reviewer + compliance + qa via openai/codex) against HEAD `2001634`. Outputs at `.claude/runtime/dispatch/menu-delivery-discovery-{reviewer,compliance,qa}-output.json` (currently 0-byte, in flight). Beta was overstepping role — issued a stop directive; Beta is now idle.
+- **Next action:** Wait for Gamma's GAMMA_RESULT envelope. If gauntlet passes: I run final smoke test (manual `npm run dev`), regenerate `yc-export-menu-delivery.md` (using Beta's `yc-export-sprint.md` as draft), update `yc-application.md`, run /learn:deep + /learn:integrate, then ASK USER for permission to merge feat/menu-discovery → main + push. If gauntlet fails: Gamma dispatches fixer with unified fix-brief on `feat/menu-discovery` (NOT on `feat/menu-discovery-foundation @ c41d973` which is a checkpoint tag).
+- **Branch reconciliation:** Two parallel branches share `c41d973` as parent: (a) `feat/menu-discovery-foundation @ c41d973` (Gamma's foundation tag, keep as checkpoint, don't merge); (b) `feat/menu-discovery @ 2001634` (Alpha's superset — adds `menuSource` field + explicit `dominos_*` skip + PRD/STORIES + recovery doc). Merge candidate is the latter.
+- **Salvage:** Beta's `yc-export-sprint.md` (144 lines) has decent YC-narrative content; will use as draft for `yc-export-menu-delivery.md` post-merge. Was written without authorization — Beta's role is judgment-only — but the content is reusable.
 
 ---
 
@@ -95,13 +98,13 @@ The compatibility gate (`compatibility.ts`) only changes in one place: the item-
 | 3 | Spawn persistent Beta + Gamma teammates | done | aiweb-yc-sprint team |
 | 4 | warp:flag stale-team behavior | done | warpos-to-update.md |
 | 5 | PRD + STORIES (REQ-* IDs + ### GS-MENU-DEL-NN) | done | _requirements/04-features/menu-delivery-discovery/ |
-| 6 | Dispatch Gamma → builder gauntlet | in_progress | (Gamma owns from here through phase 11) |
-| 7 | Builder: 14 granular stories per STORIES.md | pending | src/lib/menu-discovery.ts + 5 wire-in files + 2 test files |
-| 8 | Reviewer + compliance + QA gauntlet | pending | (Gamma orchestrates via Bash subprocess) |
-| 9 | Fix loop | pending | (Gamma → Fixer) |
-| 10 | Smoke test (manual) | pending | npm run build + npm test + npm run dev |
-| 11 | Merge to main + commit | pending | git |
-| 12 | Export + yc-application.md update | pending | yc-export-menu-delivery.md, yc-application.md |
+| 6 | Dispatch Gamma → builder gauntlet | done | gauntlet in flight |
+| 7 | Builder: foundation work (from crashed session, recovered + verified) | done | committed at c41d973 + my menuSource/Domino's fix at 2001634 |
+| 8 | Reviewer + compliance + QA gauntlet | in_progress | reviewer + compliance + qa via openai (skipping redteam ISS-003 + req-reviewer); ~5-12 min |
+| 9 | Fix loop (if gauntlet flags HIGH/CRITICAL) | pending | Gamma → Fixer on feat/menu-discovery (NOT feat/menu-discovery-foundation) |
+| 10 | Smoke test (manual) | pending | npm run dev → invoke start_pizza_order with SF address + pepperoni intent → confirm enrichment block + cache file appears |
+| 11 | Merge to main + commit | pending | requires user approval to push |
+| 12 | Regenerate yc-export-menu-delivery.md (Beta's draft is salvageable) + update yc-application.md | pending | uses Beta's `yc-export-sprint.md` as starting draft |
 | 13 | /learn:deep + /learn:integrate | pending | learnings store |
 
 ---
