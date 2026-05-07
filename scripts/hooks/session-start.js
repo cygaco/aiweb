@@ -350,17 +350,32 @@ process.stdin.on("end", () => {
     }
 
     // ── Inject context into model ──────────────────────────
-    if (handoffContext || sleepContext || systemsNudge) {
-      let ctx = "";
-      if (handoffContext) {
-        ctx += `PREVIOUS SESSION HANDOFF (auto-loaded):\n\n${handoffContext}\n\n`;
-      }
-      if (sleepContext) {
-        ctx += `OVERNIGHT SLEEP CYCLE RESULTS:\n\n${sleepContext}\nThe system ran a sleep cycle since your last session. Review the findings above. Dream solutions are speculative — verify before acting on them.\n\n`;
-      }
-      if (systemsNudge) {
-        ctx += `\n${systemsNudge}\n`;
-      }
+    // Always-included references (load every session, before handoff/sleep)
+    let ctx = "";
+    const dispatchGuidePath = path.join(
+      claudeDir,
+      "agents",
+      ".system",
+      "guides",
+      "agent-dispatch-guide.md",
+    );
+    if (fs.existsSync(dispatchGuidePath)) {
+      ctx += `MANDATORY REFERENCE — agent-dispatch-guide.md\n\n`;
+      ctx += `Path: ${dispatchGuidePath}\n`;
+      ctx += `Status: load BEFORE any build-chain dispatch (builder/fixer/reviewer/compliance/qa/redteam/learner). `;
+      ctx += `Skipping it leads to known failure modes: \`claude -p\` Windows-stdin bug (LRN-2026-04-17-n), wrong output-dir convention, missed delta-aggregate-reviews.js. `;
+      ctx += `Read it at session start if you anticipate dispatching agents this session.\n\n`;
+    }
+    if (handoffContext) {
+      ctx += `PREVIOUS SESSION HANDOFF (auto-loaded):\n\n${handoffContext}\n\n`;
+    }
+    if (sleepContext) {
+      ctx += `OVERNIGHT SLEEP CYCLE RESULTS:\n\n${sleepContext}\nThe system ran a sleep cycle since your last session. Review the findings above. Dream solutions are speculative — verify before acting on them.\n\n`;
+    }
+    if (systemsNudge) {
+      ctx += `\n${systemsNudge}\n`;
+    }
+    if (ctx) {
       ctx +=
         "Use this context to continue seamlessly. Do not ask the user to recap — you already have the state.";
       process.stdout.write(

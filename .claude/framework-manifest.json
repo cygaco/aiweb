@@ -4,7 +4,7 @@
   "generated_by": "scripts/generate-framework-manifest.js",
   "counts": {
     "agent": 57,
-    "skill": 117,
+    "skill": 118,
     "reference": 17,
     "maps_baseline": 23,
     "hook": 53,
@@ -35,7 +35,7 @@
     "installer_script": 1,
     "framework_doc": 2
   },
-  "total": 417,
+  "total": 418,
   "assets": {
     "agent": [
       {
@@ -307,7 +307,7 @@
         "src": ".claude/agents/00-alex/delta.md",
         "dest": ".claude/agents/00-alex/delta.md",
         "kind": "agent",
-        "sha256": "6b878b045bc5",
+        "sha256": "b15c81849661",
         "owner": "framework",
         "mergeStrategy": "three_way_markdown",
         "introducedIn": "0.0.0",
@@ -319,7 +319,7 @@
         "src": ".claude/agents/00-alex/gamma.md",
         "dest": ".claude/agents/00-alex/gamma.md",
         "kind": "agent",
-        "sha256": "911c37d16f08",
+        "sha256": "ca11f00f1754",
         "owner": "framework",
         "mergeStrategy": "three_way_markdown",
         "introducedIn": "0.0.0",
@@ -2033,6 +2033,18 @@
         "replaces": null
       },
       {
+        "id": "skill.warp.flag.md",
+        "src": ".claude/commands/warp/flag.md",
+        "dest": ".claude/commands/warp/flag.md",
+        "kind": "skill",
+        "sha256": "9fbc7237faee",
+        "owner": "framework",
+        "mergeStrategy": "three_way_markdown",
+        "introducedIn": "0.0.0",
+        "removedIn": null,
+        "replaces": null
+      },
+      {
         "id": "skill.warp.health.md",
         "src": ".claude/commands/warp/health.md",
         "dest": ".claude/commands/warp/health.md",
@@ -2341,7 +2353,7 @@
         "src": ".claude/project/maps/.stale.json",
         "dest": ".claude/project/maps/.stale.json",
         "kind": "maps_baseline",
-        "sha256": "ebe9455c2509",
+        "sha256": "d614a72abffa",
         "owner": "generated",
         "mergeStrategy": "regenerate",
         "introducedIn": "0.0.0",
@@ -3063,7 +3075,7 @@
         "src": "scripts/hooks/session-start.js",
         "dest": "scripts/hooks/session-start.js",
         "kind": "hook",
-        "sha256": "2b46be4fc960",
+        "sha256": "5d902c5af015",
         "owner": "framework",
         "mergeStrategy": "replace_if_unmodified",
         "introducedIn": "0.0.0",
@@ -3365,7 +3377,7 @@
         "src": "scripts/hooks/lib/providers.js",
         "dest": "scripts/hooks/lib/providers.js",
         "kind": "hook_lib",
-        "sha256": "08e5ca4913c3",
+        "sha256": "94f96487cfeb",
         "owner": "framework",
         "mergeStrategy": "replace_if_unmodified",
         "introducedIn": "0.0.0",

@@ -396,7 +396,12 @@ function runProvider(role, prompt, opts = {}) {
       output: "",
       fallback: false,
       strictFailure: true,
-      error: `Model ${model} is not available on your ${providerName} account. Upgrade your tier, or edit manifest.providers.${providerName}.default_model to a model you have access to. Refusing to silently downgrade.`,
+      error:
+        `Model ${model} is not available on your ${providerName} account or CLI registry. ` +
+        (providerName === "gemini"
+          ? `Cause is usually a stale gemini-cli (model registry ships with the binary). Try \`npm i -g @google/gemini-cli@latest\` and re-probe with \`echo ok | gemini -m ${model} -p "Reply OK"\`. If still 404 after upgrade, it's an account entitlement issue, not a code/manifest bug. See issues.md ISS-003. `
+          : ``) +
+        `Or edit manifest.providers.${providerName}.default_model to a model you have access to. Refusing to silently downgrade.`,
     };
   }
 
