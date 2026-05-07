@@ -17,6 +17,7 @@ Items flagged from this product repo for upstream WarpOS propagation. Drained on
 | 2026-05-07 | provider | gemini exclusion-rationale doc dead reference — `_requirements/09-integrations/PROVIDER/03-google-gemini.md` doesn't exist (per Beta consult) | `scripts/dispatch/catalog.js:91` exclusion comment |
 | 2026-05-07 | provider | redteam fallback chain when gemini quota exhausted — temporarily re-route to openai gpt-5.4-mini for cross-model coverage | `manifest.agentProviders`, `.claude/agents/01-adhoc/redteam/orchestrator.md`, providers.js fallback logic |
 | 2026-05-07 | dispatch | dispatch-agent.js findAgentSpec — mode-aware spec resolution (read mode.json, prefer matching mode subdir) | `scripts/dispatch-agent.js` (patched by Gamma this session) |
+| 2026-05-07 | other | ROADMAP.md template pollution — WarpOS install ships its own framework roadmap into the product repo's ROADMAP.md; product needs a clean blank or namespaced framework variant | `ROADMAP.md`, `install.ps1`, canonical `cygaco/WarpOS/ROADMAP.md` |
 
 ---
 
@@ -116,7 +117,14 @@ Items flagged from this product repo for upstream WarpOS propagation. Drained on
 
 ---
 
-### 2026-05-07 — redteam fallback chain when gemini quota exhausted
+### 2026-05-07 — ROADMAP.md template pollution — WarpOS install ships its own framework roadmap into the product repo
+
+- **Category:** other (template / install layout)
+- **Source:** `ROADMAP.md` (this product repo, pre-consolidation), `install.ps1` (presumably copies the template), canonical `cygaco/WarpOS/ROADMAP.md`
+- **Description:** When WarpOS is installed into a product repo, it ships a `ROADMAP.md` at project root that contains WarpOS-framework roadmap content (installer phases, hook correctness, skill coverage, agent diversity, etc.) — not a clean blank for the product to fill in. This session, the product (AIWeb pizza concierge) accumulated its own roadmap content (intake upgrade, compatibility layer, menu connectors, etc.) inside the same `ROADMAP.md`, mixing framework and product items. Eventually had to manually strip ~280 lines of WarpOS content + condense a separate `roadmap-yc.md` into a clean AIWeb-only `ROADMAP.md` (commit `5f11b01`, this product repo).
+- **Recommendation:** WarpOS install should EITHER (a) ship a clean blank `ROADMAP.md` template scaffold (e.g., "# {{project_name}} Roadmap\n\n## Current state\n...\n\n## Active backlog\n...") with no framework-specific items in it, OR (b) namespace the framework roadmap as `FRAMEWORK_ROADMAP.md` / `WARPOS_ROADMAP.md` so it doesn't collide with the product's `ROADMAP.md`. Option (a) is cleaner for new installs; option (b) preserves the framework's own roadmap visibility without polluting product roadmaps.
+- **Why it matters:** every product repo that adopts WarpOS will repeat this manual strip step otherwise. Same class as PROJECT.md staleness (which still describes Jobzooka in this repo as of 2026-05-07).
+- **Status:** open
 
 - **Category:** provider
 - **Source:** `manifest.agentProviders`, `.claude/agents/01-adhoc/redteam/orchestrator.md`, providers.js fallback logic
