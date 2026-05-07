@@ -38,7 +38,11 @@ import {
   type CartDiff,
 } from "./lib/cart-flow.js";
 import { assessCompatibility } from "./lib/compatibility.js";
-import { logCompatibilityOverride } from "./lib/event-log.js";
+import { enrichEvidence, ENRICH_COUNT } from "./lib/menu-discovery.js";
+import {
+  logCompatibilityOverride,
+  logEnrichmentEvent,
+} from "./lib/event-log.js";
 import { geocodeAddress } from "./lib/geo.js";
 
 const modifierSchema = z
@@ -655,6 +659,95 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         annotated.map((a) => [a.restaurant.id, a.compatibility]),
       );
 
+      // Enrich the top-N caution restaurants only when the SORTED top-1 is
+      // caution due to item-unknown or coverage-unknown. If the top-1 is
+      // already `go` we don't burn discovery cost on weaker candidates.
+      // ENRICH_COUNT=0 disables enrichment entirely. Fail-open everywhere:
+      // any thrown error / timeout / parse failure leaves the original
+      // caution-state assessment intact.
+      const top = annotated[0];
+      const topNeedsEnrich =
+        top &&
+        top.compatibility.overall === "caution" &&
+        (top.compatibility.item.state === "unknown" ||
+          top.compatibility.coverage.state === "unknown");
+      const enrichmentById = new Map<
+        string,
+        {
+          ran: boolean;
+          source: "restaurant_website" | "cache" | "unchanged";
+          durationMs: number;
+        }
+      >();
+      if (ENRICH_COUNT > 0 && topNeedsEnrich) {
+        const cautionRestaurants = annotated
+          .filter(
+            (a) =>
+              a.compatibility.overall === "caution" &&
+              (a.compatibility.item.state === "unknown" ||
+                a.compatibility.coverage.state === "unknown"),
+          )
+          .slice(0, ENRICH_COUNT);
+        for (const { restaurant } of cautionRestaurants) {
+          const enrichStart = Date.now();
+          try {
+            const { enriched, source } = await enrichEvidence(
+              restaurant,
+              intent_style,
+            );
+            const durationMs = Date.now() - enrichStart;
+            enrichmentById.set(restaurant.id, {
+              ran: source !== "unchanged",
+              source,
+              durationMs,
+            });
+            logEnrichmentEvent({
+              restaurant_id: restaurant.id,
+              ran: source !== "unchanged",
+              source,
+              durationMs,
+              intent_style: intent_style ?? null,
+            });
+            if (enriched !== restaurant) {
+              const reAssessed = assessCompatibility(
+                enriched,
+                userLat,
+                userLng,
+                intent_style,
+              );
+              compatibilityById.set(restaurant.id, reAssessed);
+              const idx = restaurants.indexOf(restaurant);
+              if (idx !== -1) restaurants[idx] = enriched;
+            }
+          } catch {
+            // Even when enrichEvidence throws (it shouldn't — fail-open is
+            // contractual — but defense in depth), record the attempt so the
+            // response carries an honest enrichment block.
+            const durationMs = Date.now() - enrichStart;
+            enrichmentById.set(restaurant.id, {
+              ran: true,
+              source: "unchanged",
+              durationMs,
+            });
+            logEnrichmentEvent({
+              restaurant_id: restaurant.id,
+              ran: true,
+              source: "unchanged",
+              durationMs,
+              intent_style: intent_style ?? null,
+              error: "enrichEvidence threw",
+            });
+          }
+        }
+      }
+      // Re-sort restaurants by post-enrichment verdict so an enriched
+      // candidate that flips from caution → go ends up at the top.
+      restaurants.sort(
+        (a, b) =>
+          VERDICT_ORDER[compatibilityById.get(a.id)!.overall] -
+          VERDICT_ORDER[compatibilityById.get(b.id)!.overall],
+      );
+
       // Build response — every restaurant entry now carries `compatibility`.
       const result: Record<string, unknown> = {
         delivery_address: resolvedAddress,
@@ -678,6 +771,12 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
             // top-level fields still see the resolution recommendation.
             nextStep: c.nextStep,
             recommended: c.overall !== "no_go",
+            // Enrichment trace — populated only for the candidate(s) we
+            // actually attempted to enrich. Absence means enrichment didn't
+            // run for this entry.
+            ...(enrichmentById.has(r.id) && {
+              enrichment: enrichmentById.get(r.id),
+            }),
             menuSummary: {
               pizzas: r.menu.pizzas.map((p) => ({
                 name: p.name,

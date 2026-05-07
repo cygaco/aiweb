@@ -64,6 +64,9 @@ export interface Restaurant {
     deals?: Deal[];
   };
   hours: string;
+  website?: string;
+  /** Set to 'restaurant_website' after menu-discovery enrichment. Absence means generic/connector source. */
+  menuSource?: "restaurant_website";
   isTest?: boolean; // always included in results, labeled for the agent
 }
 

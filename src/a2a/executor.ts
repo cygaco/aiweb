@@ -30,7 +30,11 @@ import {
   legacyItemsToCart,
 } from "../lib/cart-flow.js";
 import { assessCompatibility } from "../lib/compatibility.js";
-import { logCompatibilityOverride } from "../lib/event-log.js";
+import { enrichEvidence, ENRICH_COUNT } from "../lib/menu-discovery.js";
+import {
+  logCompatibilityOverride,
+  logEnrichmentEvent,
+} from "../lib/event-log.js";
 import { geocodeAddress } from "../lib/geo.js";
 
 const POLL_INTERVAL_MS = 15_000;
@@ -242,23 +246,97 @@ export class PizzaAgentExecutor implements AgentExecutor {
         );
         return;
       }
+      // Per-chosen-restaurant compatibility assessment for the artifact.
+      // Address is geocoded best-effort; null falls through to coverage
+      // `requires_address`.
+      const userGeo = await geocodeAddress(input.address!);
+      let restaurantForCart = restaurant;
+      const initialCompat = assessCompatibility(
+        restaurant,
+        userGeo?.lat,
+        userGeo?.lng,
+        input.intent_style,
+      );
+      // Enrich BEFORE building the cart. Symmetric with start_pizza_order:
+      // respects ENRICH_COUNT=0, emits EVT-enrichment, populates an
+      // enrichment metadata block for the proposed_cart artifact. Fail-open
+      // everywhere. Building the cart against the enriched menu prevents the
+      // "real-menu compatibility says go but cart shows generic items" drift.
+      let enrichmentBlock: {
+        ran: boolean;
+        source: "restaurant_website" | "cache" | "unchanged";
+        durationMs: number;
+      } | null = null;
+      if (
+        ENRICH_COUNT > 0 &&
+        initialCompat.overall === "caution" &&
+        (initialCompat.item.state === "unknown" ||
+          initialCompat.coverage.state === "unknown")
+      ) {
+        const enrichStart = Date.now();
+        try {
+          const { enriched, source } = await enrichEvidence(
+            restaurant,
+            input.intent_style,
+          );
+          const durationMs = Date.now() - enrichStart;
+          enrichmentBlock = {
+            ran: source !== "unchanged",
+            source,
+            durationMs,
+          };
+          logEnrichmentEvent({
+            restaurant_id: restaurant.id,
+            ran: source !== "unchanged",
+            source,
+            durationMs,
+            intent_style: input.intent_style ?? null,
+            surface: "a2a",
+          });
+          if (enriched !== restaurant) restaurantForCart = enriched;
+        } catch {
+          const durationMs = Date.now() - enrichStart;
+          enrichmentBlock = { ran: true, source: "unchanged", durationMs };
+          logEnrichmentEvent({
+            restaurant_id: restaurant.id,
+            ran: true,
+            source: "unchanged",
+            durationMs,
+            intent_style: input.intent_style ?? null,
+            surface: "a2a",
+            error: "enrichEvidence threw",
+          });
+        }
+      }
+      const compatibility =
+        restaurantForCart !== restaurant
+          ? assessCompatibility(
+              restaurantForCart,
+              userGeo?.lat,
+              userGeo?.lng,
+              input.intent_style,
+            )
+          : initialCompat;
+      // Build cart from the (possibly enriched) restaurant. orderFromIntent +
+      // legacyItemsToCart consult restaurant.menu, so passing
+      // restaurantForCart ensures items reflect real-menu evidence.
       const items: OrderItem[] = input.items?.length
         ? input.items
         : input.intent_style
-          ? orderFromIntent(restaurant, {
+          ? orderFromIntent(restaurantForCart, {
               style: input.intent_style,
               size: input.intent_size,
               quantity: input.intent_quantity,
             })
           : input.occasion
             ? (COLD_PRESETS.find((p) => p.id === input.occasion)?.items(
-                restaurant,
+                restaurantForCart,
                 input.headcount ?? 4,
               ) ?? [])
             : [];
       const cart = input.cart?.length
         ? input.cart
-        : legacyItemsToCart(items, restaurant);
+        : legacyItemsToCart(items, restaurantForCart);
       const estimatedTotal = cartTotal(cart);
       let proposedToken: string | undefined;
       try {
@@ -275,16 +353,6 @@ export class PizzaAgentExecutor implements AgentExecutor {
         // PROFILE_ENCRYPTION_SECRET missing — token feature unavailable;
         // executor still emits the cart so the caller can decide.
       }
-      // Per-chosen-restaurant compatibility assessment for the artifact.
-      // Address is geocoded best-effort; null falls through to coverage
-      // `requires_address`.
-      const userGeo = await geocodeAddress(input.address!);
-      const compatibility = assessCompatibility(
-        restaurant,
-        userGeo?.lat,
-        userGeo?.lng,
-        input.intent_style,
-      );
       eventBus.publish(
         artifact(taskId, contextId, "proposed_cart", {
           restaurant_id: restaurant.id,
@@ -301,6 +369,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
           confirmation_token: proposedToken,
           confirmation_token_ttl_seconds: proposedToken ? 600 : undefined,
           compatibility,
+          ...(enrichmentBlock && { enrichment: enrichmentBlock }),
         }),
       );
       const customizationSurface = buildCustomizationSurface(restaurant, cart);

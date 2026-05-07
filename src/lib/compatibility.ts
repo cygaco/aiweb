@@ -262,25 +262,25 @@ export function checkItemAvailability(
     };
   }
 
-  const isPlaces = restaurant.id.startsWith("places_");
+  // isPlaces is true for places_* ids, BUT enriched restaurants retain their
+  // places_ id with a real menu. menuSource='restaurant_website' means the menu
+  // is real evidence — treat it like a real menu, not the generic template.
+  const isPlaces =
+    restaurant.id.startsWith("places_") &&
+    restaurant.menuSource !== "restaurant_website";
   const match = findPizzaMatch(restaurant, intentStyle);
 
   if (isPlaces) {
-    if (match) {
-      return {
-        state: "likely_available",
-        confidence: 0.6,
-        source: "places_generic_menu",
-        reason: `Generic Places menu matches "${match.matched}" — real menu not verified.`,
-        nextStep: `Confirm on call: 'Do you carry ${intentStyle}?'`,
-      };
-    }
+    // Generic template is not evidence — never produce likely_available from it.
+    // Both match and no-match land at unknown; enrichment may upgrade this later.
     return {
       state: "unknown",
       confidence: 0.4,
       source: "places_generic_menu",
-      reason: `"${intentStyle}" not in generic 3-item menu; real menu unknown.`,
-      nextStep: `Confirm on call: 'Do you carry ${intentStyle}?'`,
+      reason: match
+        ? `Generic Places menu template matched "${match.matched}" — not real evidence; real menu unknown.`
+        : `"${intentStyle}" not in generic 3-item template; real menu unknown.`,
+      nextStep: `Run menu discovery, or confirm on call: 'Do you carry ${intentStyle}?'`,
     };
   }
 

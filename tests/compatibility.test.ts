@@ -167,11 +167,13 @@ test("checkItemAvailability — test_vlad + 'sushi' → not_available", () => {
   assert.strictEqual(r.state, "not_available");
 });
 
-// 9
-test("checkItemAvailability — places + 'pepperoni' (matches generic) → likely_available", () => {
+// 9 — generic template is not evidence; both match and no-match → unknown
+test("checkItemAvailability — places + 'pepperoni' (generic template match) → unknown, not likely_available", () => {
   const r = checkItemAvailability(PLACES, "pepperoni");
-  assert.strictEqual(r.state, "likely_available");
-  assert.ok(r.confidence <= 0.7);
+  assert.strictEqual(r.state, "unknown");
+  assert.notStrictEqual(r.state, "likely_available");
+  assert.ok(r.confidence <= 0.5);
+  assert.strictEqual(r.source, "places_generic_menu");
 });
 
 // 10
@@ -207,11 +209,10 @@ test("assessCompatibility — one no_go (out_of_range) → no_go + nextStep abou
 });
 
 // 14
-test("assessCompatibility — two unknowns → caution + nextStep targets lowest-confidence check", () => {
-  // PLACES: delivery=unknown(0.4), coverage=unknown(0.4), item depends.
-  // intent='pepperoni' → places generic match → likely_available (0.6).
-  // Lowest confidence: 0.4 — tie between delivery (first) and coverage.
-  // Combiner picks the first lowest in the ordered iteration (delivery).
+test("assessCompatibility — three unknowns → caution + nextStep targets lowest-confidence check", () => {
+  // PLACES: delivery=unknown(0.4), coverage=unknown(0.4), item=unknown(0.4).
+  // Generic template no longer produces likely_available — all three unknown.
+  // All three in caution set; combiner picks first (delivery) for nextStep.
   const r = assessCompatibility(
     PLACES,
     USER_NEAR_LAT,
@@ -254,6 +255,68 @@ test("assessCompatibility — emits EVT-compatibility line to events file", () =
 test("checkItemAvailability — snake_case intent ('meat_lovers') matches 'Meat Lovers'", () => {
   const r = checkItemAvailability(VLAD, "meat_lovers");
   assert.strictEqual(r.state, "available");
+});
+
+// 18 — generic template match is never likely_available (Sprint Phase 3)
+test("checkItemAvailability — places + 'meat_lovers' match in generic template → unknown, not likely_available", () => {
+  // Even if the intent is in the generic 3-item list, it must not produce likely_available.
+  const placesWithMeatLovers: Restaurant = {
+    ...PLACES,
+    menu: {
+      pizzas: [
+        { name: "Meat Lovers", sizes: [{ name: "Large", price: 16.99 }] },
+      ],
+      sides: [],
+    },
+  };
+  const r = checkItemAvailability(placesWithMeatLovers, "meat_lovers");
+  assert.strictEqual(r.state, "unknown");
+  assert.notStrictEqual(r.state, "likely_available");
+});
+
+// 19 — Domino's unchanged by the generic-menu tightening
+test("checkItemAvailability — dominos + 'pepperoni' on real menu → available", () => {
+  const r = checkItemAvailability(DOMINOS_LATLNG_ZERO, "pepperoni");
+  assert.strictEqual(r.state, "available");
+});
+
+// 20 — places + intent not in generic → unknown (unchanged from before)
+test("checkItemAvailability — places + 'sushi' → unknown, not not_available", () => {
+  const r = checkItemAvailability(PLACES, "sushi");
+  assert.strictEqual(r.state, "unknown");
+  assert.strictEqual(r.source, "places_generic_menu");
+});
+
+// 21 — enriched places restaurant (menuSource='restaurant_website') bypasses generic-template path
+test("checkItemAvailability — places + menuSource=restaurant_website + item on menu → available", () => {
+  const enrichedPlaces: Restaurant = {
+    ...PLACES,
+    menuSource: "restaurant_website",
+    menu: {
+      pizzas: [
+        { name: "Buffalo Chicken", sizes: [{ name: "Large", price: 17.99 }] },
+        { name: "Pepperoni", sizes: [{ name: "Large", price: 15.99 }] },
+      ],
+      sides: [],
+    },
+  };
+  const r = checkItemAvailability(enrichedPlaces, "Buffalo Chicken");
+  assert.strictEqual(r.state, "available");
+  assert.notStrictEqual(r.source, "places_generic_menu");
+});
+
+// 22 — enriched places restaurant + item NOT on menu → not_available (real evidence)
+test("checkItemAvailability — places + menuSource=restaurant_website + item not on menu → not_available", () => {
+  const enrichedPlaces: Restaurant = {
+    ...PLACES,
+    menuSource: "restaurant_website",
+    menu: {
+      pizzas: [{ name: "Cheese", sizes: [{ name: "Large", price: 14.99 }] }],
+      sides: [],
+    },
+  };
+  const r = checkItemAvailability(enrichedPlaces, "meat_lovers");
+  assert.strictEqual(r.state, "not_available");
 });
 
 // 17 — Domino's lat=0/lng=0 special case (PRD-V2-DELTA C-1)
