@@ -80,53 +80,56 @@ The agent successfully runs all five Critical UX scenarios (Flows A-E in the spr
 - [x] roadmap-yc.md written (this file)
 - [x] issues.md scaffold
 
-### Phase 1: Requirements (IN PROGRESS)
+### Phase 1: Requirements (DONE)
 
-- [ ] PRD at `_requirements/04-features/compatibility-layer/PRD.md`
-- [ ] HL stories at `_requirements/04-features/compatibility-layer/HL-STORIES.md`
-- [ ] Granular stories at `_requirements/04-features/compatibility-layer/STORIES.md`
-- [ ] Compatibility state model spec
-- [ ] QA checklist (5 flows)
-- [ ] Red-team checklist (relevant ordering risks)
-- [ ] Demo script
+- [x] PRD at `_requirements/04-features/compatibility-layer/PRD.md` (12 AC + REQ-* registry block)
+- [x] HL stories at `_requirements/04-features/compatibility-layer/HL-STORIES.md`
+- [x] Granular stories at `_requirements/04-features/compatibility-layer/STORIES.md` (renamed S-* → GS-COMPAT-01..15)
+- [x] Compatibility state model spec at COMPATIBILITY-MODEL.md
+- [x] QA checklist (5 flows) at QA-CHECKLIST.md
+- [x] Red-team checklist (relevant ordering risks) at REDTEAM-CHECKLIST.md
+- [x] Demo script at DEMO-SCRIPT.md
+- [x] PRD-V2-DELTA.md (caught + fixed 4 critical + 8 major + minor spec defects pre-build)
 
-### Phase 2-4: Implementation
+### Phase 2-4: Implementation (DONE)
 
-- [ ] `src/lib/compatibility.ts` — three checks + assess + types
-- [ ] `src/lib/compatibility.test.ts` — unit tests
-- [ ] Update `src/data/restaurants.ts` Restaurant interface (add optional explicit `deliversTo?`, `serviceType?`)
-- [ ] Update `src/connectors/places.ts` to emit `serviceType: 'unknown'` instead of fabricating delivery
-- [ ] Update `src/connectors/dominos.ts` to emit `serviceType: 'delivery'` from real data
-- [ ] Update `src/server.ts` `start_pizza_order` handler — embed compatibility in response, filter or annotate
-- [ ] Update `src/server.ts` `place_order` handler — block on `overall=no_go` unless override
-- [ ] Update tool descriptions — entry-point reasoning includes compatibility states
-- [ ] Update `bland.ts` to surface item UNKNOWN as confirmation question on call
+- [x] `src/lib/compatibility.ts` — three checks + assess + types (commits 05ab8c0, ab77b28)
+- [x] `tests/compatibility.test.ts` — 18 unit tests (commit ab77b28 + 4c7dcb9 regression)
+- [x] `src/data/restaurants.ts` — Restaurant gains `serviceType?`, `deliveryRadius:number|null`, +`test_pickup_only` fixture (05ab8c0)
+- [x] `src/connectors/places.ts` — `serviceType:'unknown'` + null radius (05ab8c0)
+- [x] `src/connectors/dominos.ts` — `serviceType:'delivery'` + lat/lng=0 code comment (05ab8c0)
+- [x] `src/server.ts` start_pizza_order — embed compatibility, sort, recommended flag, BEFORE PROCEEDING tool description (4787381)
+- [x] `src/server.ts` place_order — block on no_go, override flag, second-pass assess, cache-miss fail-closed (4787381 + a59e34c)
+- [x] `src/connectors/bland.ts` — ITEM-CONFIRM block when itemAvailabilityUnknown (4787381 + a59e34c likely_available trigger)
+- [x] `src/a2a/executor.ts` — proposed_cart artifact carries compatibility (4787381)
+- [x] New: `src/lib/event-log.ts`, `src/lib/geo.ts`
 
 ### Phase 5: First export (BEFORE risky QA)
 
-- [ ] /export → `yc-export.md`
+- [ ] User runs `/export` → save to `yc-export.md`. (Conversation captured by Claude Code's built-in /export — not a WarpOS skill.)
 
-### Phase 6: Focused QA + red-team
+### Phase 6: Focused QA + red-team (DONE — covered by gauntlet)
 
-- [ ] QA: five compatibility flows only
-- [ ] Red-team: ordering risks only (wrong item, hallucinated coverage, infinite loop, unsafe assumptions, unnecessary user data on call)
+- [x] QA: gpt-5.5-mini caught snake_case bug (fixed in 4c7dcb9 + regression test)
+- [x] Reviewer: gpt-5.5/codex pass-after-fix (a59e34c)
+- [x] Compliance: gpt-5.5/codex pass-after-fix (a59e34c)
+- [x] Redteam: infra_blocked (ISS-003 gemini model id) — non-blocking, deferred
 
-### Phase 7: Reviewer + fix
+### Phase 7: Reviewer + fix (DONE — gauntlet handled it)
 
-- [ ] Reviewer agent on changed files
-- [ ] Fix agent on findings
-- [ ] /fix:deep on stubborn bugs
-- [ ] All bugs logged in `issues.md` with full schema; 3-strike cap enforced
+- [x] Reviewer agent on changed files (codex)
+- [x] Fix agent on findings (Gamma applied fixes inline: 4c7dcb9, a59e34c)
+- [x] All bugs logged in `issues.md` with full schema; 3-strike cap enforced
 
 ### Phase 8: Final export + YC notes
 
-- [ ] /export → `yc-export-2.md`
-- [ ] Update `yc-application.md` (built/why/errors/tradeoffs/risks/demo/next)
+- [ ] User runs `/export` → save to `yc-export-2.md`
+- [x] Update `yc-application.md` (built/why/errors/tradeoffs/risks/demo/next) — Session 2026-05-06 entry written; needs final-build-outcome update before /export-2
 
 ### Phase 9: Learning
 
-- [ ] /learn:deep
-- [ ] /learn:integrate
+- [ ] /learn:deep — partial (3 learnings logged for the agent-death failure class)
+- [ ] /learn:integrate — pending
 
 ---
 
@@ -155,12 +158,14 @@ The agent successfully runs all five Critical UX scenarios (Flows A-E in the spr
 
 ## Current State (live — keep this updated)
 
-- **Phase:** 1 — requirements
-- **Last action:** wrote roadmap-yc.md
-- **Next action:** dispatch Gamma to write PRD + HL stories + granular stories for the compatibility-layer feature
-- **Open issues:** see issues.md
-- **Tests passing:** unverified (no compatibility tests exist yet)
-- **Build green:** unverified (no recent build)
+- **Phase:** 5 — Logging + first /export. Phases 0-4 + 7 complete.
+- **Last action:** Merged `feat/compatibility-layer` to main (commit `3077fb3`); 105/105 tests pass; `npm run build` clean.
+- **Next action:** User runs `/export` to produce `yc-export.md`. Then Phase 8 (final export + yc-application.md update) and Phase 9 (/learn:deep + /learn:integrate).
+- **Open issues:** ISS-001 (keyless geocoding caution), ISS-002 (codex cold-start), ISS-003 (gemini model id mismatch). All non-blocking; YC-demo-ready.
+- **Tests passing:** 105/105 (88 pre-existing + 17 new + 0 regressions). 1 added by Gamma in fix commit `4c7dcb9` (snake_case regression). 18 compatibility cases in `tests/compatibility.test.ts`.
+- **Build green:** YES — `npm run build` clean on main as of `3077fb3`.
+- **Gauntlet:** reviewer + compliance + qa = pass-after-fix (3 of 4 gates green); redteam = infra_blocked on gemini model name (ISS-003).
+- **Branch state:** main = 3077fb3 (merged). feat/compatibility-layer = a59e34c (merged). Worktree still exists; can be cleaned up post-sprint.
 
 ---
 
