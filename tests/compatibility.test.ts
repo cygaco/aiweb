@@ -287,6 +287,38 @@ test("checkItemAvailability — places + 'sushi' → unknown, not not_available"
   assert.strictEqual(r.source, "places_generic_menu");
 });
 
+// 21 — enriched places restaurant (menuSource='restaurant_website') bypasses generic-template path
+test("checkItemAvailability — places + menuSource=restaurant_website + item on menu → available", () => {
+  const enrichedPlaces: Restaurant = {
+    ...PLACES,
+    menuSource: "restaurant_website",
+    menu: {
+      pizzas: [
+        { name: "Buffalo Chicken", sizes: [{ name: "Large", price: 17.99 }] },
+        { name: "Pepperoni", sizes: [{ name: "Large", price: 15.99 }] },
+      ],
+      sides: [],
+    },
+  };
+  const r = checkItemAvailability(enrichedPlaces, "Buffalo Chicken");
+  assert.strictEqual(r.state, "available");
+  assert.notStrictEqual(r.source, "places_generic_menu");
+});
+
+// 22 — enriched places restaurant + item NOT on menu → not_available (real evidence)
+test("checkItemAvailability — places + menuSource=restaurant_website + item not on menu → not_available", () => {
+  const enrichedPlaces: Restaurant = {
+    ...PLACES,
+    menuSource: "restaurant_website",
+    menu: {
+      pizzas: [{ name: "Cheese", sizes: [{ name: "Large", price: 14.99 }] }],
+      sides: [],
+    },
+  };
+  const r = checkItemAvailability(enrichedPlaces, "meat_lovers");
+  assert.strictEqual(r.state, "not_available");
+});
+
 // 17 — Domino's lat=0/lng=0 special case (PRD-V2-DELTA C-1)
 test("checkDeliveryCoverage — dominos_* with lat=0/lng=0 → unknown (NOT out_of_range)", () => {
   const r = checkDeliveryCoverage(

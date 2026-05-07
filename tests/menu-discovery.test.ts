@@ -215,3 +215,62 @@ test("enrichEvidence — original restaurant object is not mutated on cache hit"
   assert.strictEqual(restaurant.serviceType, "unknown");
   assert.strictEqual(restaurant.deliveryRadius, null);
 });
+
+// 8 — enriched restaurant has menuSource='restaurant_website' so compatibility
+//     bypasses the generic-template path and uses the real menu
+test("enrichEvidence — cache hit sets menuSource=restaurant_website on enriched restaurant", async () => {
+  const restaurantId = "places_menu_source_test";
+  const cached = {
+    discoveredAt: new Date().toISOString(),
+    source: "restaurant_website" as const,
+    pizzas: [{ name: "Hawaiian", sizes: [{ name: "Large", price: 16.99 }] }],
+    sides: [],
+    deliveryCues: {
+      offersDelivery: null,
+      deliveryRadiusMiles: null,
+      rawSignal: null,
+    },
+  };
+  writeFileSync(join(TMP_DIR, `${restaurantId}.json`), JSON.stringify(cached));
+
+  const restaurant: Restaurant = {
+    ...PLACES_NO_WEBSITE,
+    id: restaurantId,
+    website: "https://should-not-be-fetched.invalid",
+  };
+
+  const result = await enrichEvidence(restaurant);
+  assert.strictEqual(result.source, "cache");
+  assert.strictEqual(result.enriched.menuSource, "restaurant_website");
+});
+
+// 9 — Domino's restaurants are skipped by id even when website is set
+//      (dominos.com would otherwise fetch a marketing page on top of the
+//      truthful provider-adapter API data; Beta DECIDE 2026-05-07 Q6)
+test("enrichEvidence — dominos_* with website set → returns unchanged, no fetch, no cache lookup", async () => {
+  const dominosWithWebsite: Restaurant = {
+    id: "dominos_4242",
+    name: "Domino's Pizza",
+    phone: "+14155552323",
+    address: "1 Market St, San Francisco, CA",
+    lat: 0,
+    lng: 0,
+    deliveryRadius: 5,
+    estimatedDeliveryMinutes: 30,
+    acceptsCash: true,
+    serviceType: "delivery",
+    website: "https://www.dominos.com/",
+    menu: {
+      pizzas: [{ name: "Pepperoni", sizes: [{ name: "Large", price: 14.99 }] }],
+      sides: [],
+    },
+    hours: "Daily",
+  };
+
+  const result = await enrichEvidence(dominosWithWebsite, "pepperoni");
+  assert.strictEqual(result.source, "unchanged");
+  assert.strictEqual(result.enriched, dominosWithWebsite);
+  assert.strictEqual(result.deliveryCues, null);
+  // Verify menuSource was NOT set (Domino's is provider-adapter truth, not website-fetched)
+  assert.strictEqual(result.enriched.menuSource, undefined);
+});

@@ -207,6 +207,12 @@ export async function enrichEvidence(
     deliveryCues: null,
   };
 
+  // Domino's has its own provider adapter (src/connectors/dominos.ts) with
+  // truthful API data. Even if a future commit populates restaurant.website
+  // with dominos.com, we don't want a generic marketing page overwriting the
+  // local-store API data. Beta DECIDE 2026-05-07 Q6 directive: adapter unchanged.
+  if (restaurant.id.startsWith("dominos_")) return unchanged;
+
   // Cache check first — no network needed
   const cached = readCache(restaurant.id);
   if (cached) {
@@ -266,6 +272,7 @@ function applyEnrichment(
 ): Restaurant {
   const enriched: Restaurant = {
     ...restaurant,
+    menuSource: "restaurant_website",
     menu: {
       ...restaurant.menu,
       pizzas: data.pizzas,

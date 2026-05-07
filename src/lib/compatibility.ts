@@ -262,7 +262,12 @@ export function checkItemAvailability(
     };
   }
 
-  const isPlaces = restaurant.id.startsWith("places_");
+  // isPlaces is true for places_* ids, BUT enriched restaurants retain their
+  // places_ id with a real menu. menuSource='restaurant_website' means the menu
+  // is real evidence — treat it like a real menu, not the generic template.
+  const isPlaces =
+    restaurant.id.startsWith("places_") &&
+    restaurant.menuSource !== "restaurant_website";
   const match = findPizzaMatch(restaurant, intentStyle);
 
   if (isPlaces) {
