@@ -37,6 +37,9 @@ import {
   legacyItemsToCart,
   type CartDiff,
 } from "./lib/cart-flow.js";
+import { assessCompatibility } from "./lib/compatibility.js";
+import { logCompatibilityOverride } from "./lib/event-log.js";
+import { geocodeAddress } from "./lib/geo.js";
 
 const modifierSchema = z
   .object({
@@ -452,6 +455,12 @@ FIRST — IDENTIFY THE ENTRY POINT, then follow the right path:
 
 AFTER THE TOOL RETURNS:
 
+BEFORE PROCEEDING TO ORDER: Each returned restaurant has a \`compatibility\` field with sub-fields \`delivery\`, \`coverage\`, \`item\`, and \`overall\` plus a top-level \`nextStep\`.
+  - \`compatibility.overall === 'go'\`: proceed to cart-flow normally.
+  - \`compatibility.overall === 'caution'\`: proceed but surface the unknown to the user; resolve via the cheapest safe option (existing data > user clarification > targeted call). The \`nextStep\` string tells the agent which path.
+  - \`compatibility.overall === 'no_go'\`: DO NOT call this restaurant. Explain the blocker to the user and pick a \`go\`/\`caution\` alternative or ask how to proceed.
+  When \`compatibility.overall === 'caution'\` or \`'no_go'\`, your reply to the user MUST include the verbatim text from \`compatibility.nextStep\`. Don't paraphrase. The nextStep is the agent's resolution-path recommendation.
+
 ADAPTIVE CART FLOW:
 - If the user already specified everything (style, size, modifiers, drink, deal) → skip to confirmation. Do not ask follow-up questions.
 - Otherwise: required clarifications first (size if missing, headcount if preset needs it). Then ONE concise upsell turn combining extras + drinks + sides + deals: 'Want extra cheese, a soda, or to bundle with the family deal ($X total)?' — never list as 4 separate prompts.
@@ -617,33 +626,67 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         if (filtered.length > 0) restaurants = filtered;
       }
 
-      // Build response
+      // Geocode user address once for compatibility coverage checks. Falls
+      // back to undefined when key is missing or geocode fails — compatibility
+      // layer then emits coverage `requires_address`.
+      const userGeo = await geocodeAddress(resolvedAddress);
+      const userLat = userGeo?.lat;
+      const userLng = userGeo?.lng;
+
+      // Per-restaurant compatibility assessment. Sort by overall verdict
+      // (go > caution > no_go) so the agent's first-pick is the best-fit.
+      const VERDICT_ORDER: Record<string, number> = {
+        go: 0,
+        caution: 1,
+        no_go: 2,
+      };
+      const annotated = restaurants
+        .map((r) => ({
+          restaurant: r,
+          compatibility: assessCompatibility(r, userLat, userLng, intent_style),
+        }))
+        .sort(
+          (a, b) =>
+            VERDICT_ORDER[a.compatibility.overall] -
+            VERDICT_ORDER[b.compatibility.overall],
+        );
+      restaurants = annotated.map((a) => a.restaurant);
+      const compatibilityById = new Map(
+        annotated.map((a) => [a.restaurant.id, a.compatibility]),
+      );
+
+      // Build response — every restaurant entry now carries `compatibility`.
       const result: Record<string, unknown> = {
         delivery_address: resolvedAddress,
-        restaurants: restaurants.map((r) => ({
-          id: r.id,
-          name: r.name,
-          phone: r.phone,
-          address: r.address,
-          estimatedDeliveryMinutes: r.estimatedDeliveryMinutes,
-          acceptsCash: r.acceptsCash,
-          hours: r.hours,
-          ...(r.isTest && {
-            isTest: true,
-            note: "Test entry — real phone, answer as restaurant staff.",
-          }),
-          menuSummary: {
-            pizzas: r.menu.pizzas.map((p) => ({
-              name: p.name,
-              description: p.description,
-              sizes: p.sizes,
-            })),
-            sides: r.menu.sides.map((s) => ({
-              name: s.name,
-              price: s.sizes[0].price,
-            })),
-          },
-        })),
+        restaurants: restaurants.map((r) => {
+          const c = compatibilityById.get(r.id)!;
+          return {
+            id: r.id,
+            name: r.name,
+            phone: r.phone,
+            address: r.address,
+            estimatedDeliveryMinutes: r.estimatedDeliveryMinutes,
+            acceptsCash: r.acceptsCash,
+            hours: r.hours,
+            ...(r.isTest && {
+              isTest: true,
+              note: "Test entry — real phone, answer as restaurant staff.",
+            }),
+            compatibility: c,
+            recommended: c.overall !== "no_go",
+            menuSummary: {
+              pizzas: r.menu.pizzas.map((p) => ({
+                name: p.name,
+                description: p.description,
+                sizes: p.sizes,
+              })),
+              sides: r.menu.sides.map((s) => ({
+                name: s.name,
+                price: s.sizes[0].price,
+              })),
+            },
+          };
+        }),
       };
 
       // Discovery-only mode: just return restaurants, no order building
@@ -915,6 +958,14 @@ You MUST have shown them: items, price, restaurant, ETA, address, name,
 phone, and gotten explicit approval. This triggers a real phone call
 to a real restaurant.
 
+COMPATIBILITY BLOCK: place_order re-runs the compatibility check server-side
+even when a valid confirmation_token is presented. If the assessment returns
+\`overall: 'no_go'\`, the call is refused with \`error_code: compatibility_blocked\`
+and Bland is NOT dispatched. Caller may pass \`override_compatibility: true\`
+ONLY when the user has explicitly approved proceeding despite a known
+mismatch (e.g., user accepts pickup from a no-delivery restaurant). Override
+events are logged for audit.
+
 Prefer cart for new calls; items is the legacy single-line-pizza shape kept for back-compat. When cart is present, the voice connector renders cart lines with modifiers, drinks, sides, and deals.
 
 The call takes 2-3 minutes. After calling this, tell the user:
@@ -980,6 +1031,18 @@ Then call check_order_status with the returned call_id to get the result.`,
         .describe(
           "Server-issued token from prepare_order. Required when REQUIRE_CONFIRMATION_TOKEN is set; binds the call to a reviewed cart. Modifying restaurant_id, items, name, phone, or address after issuance invalidates the token.",
         ),
+      override_compatibility: z
+        .boolean()
+        .optional()
+        .describe(
+          "Set true to bypass compatibility blocking. Only use when the user has explicitly approved proceeding despite a known mismatch (e.g., user wants pickup from a no-delivery restaurant). Override events are logged.",
+        ),
+      intent_style: z
+        .string()
+        .optional()
+        .describe(
+          "What the user wanted (used for the second-pass compatibility check and for the ITEM-CONFIRM step in the call when item availability is unknown).",
+        ),
     },
 
     async ({
@@ -994,6 +1057,8 @@ Then call check_order_status with the returned call_id to get the result.`,
       max_total,
       dietary_requirements,
       confirmation_token,
+      override_compatibility,
+      intent_style,
     }) => {
       // Resolve optional fields from profile if available
       let resolvedAddress = delivery_address;
@@ -1155,6 +1220,69 @@ Then call check_order_status with the returned call_id to get the result.`,
         };
       }
 
+      // Second-pass compatibility assessment (PRD-V2-DELTA M-5 / S-11.5).
+      // Catches data drift between prepare_order/start_pizza_order and now.
+      // Even a valid confirmation_token does NOT bypass this — compatibility
+      // is intentionally NOT bound into the token (PRD §11). To proceed
+      // despite no_go, the caller must pass override_compatibility=true.
+      const restaurantForAssess = getRestaurantById(restaurant_id);
+      let itemAvailabilityUnknown = false;
+      if (restaurantForAssess) {
+        const userGeoForAssess = await geocodeAddress(resolvedAddress_);
+        const assessment = assessCompatibility(
+          restaurantForAssess,
+          userGeoForAssess?.lat,
+          userGeoForAssess?.lng,
+          intent_style,
+        );
+        itemAvailabilityUnknown = assessment.item.state === "unknown";
+
+        if (assessment.overall === "no_go" && !override_compatibility) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    status: "error",
+                    error_code: "compatibility_blocked",
+                    reason:
+                      assessment.nextStep ?? "Compatibility check failed.",
+                    next_step: assessment.nextStep,
+                    delivery: assessment.delivery,
+                    coverage: assessment.coverage,
+                    item: assessment.item,
+                    override_field: "override_compatibility",
+                    message:
+                      "Order blocked by compatibility check. Pick an alternative restaurant, ask the user to confirm pickup, or pass override_compatibility=true if the user has explicitly approved.",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        if (assessment.overall === "no_go" && override_compatibility) {
+          // Loud-log the override so we can audit demo-time choices.
+          logCompatibilityOverride({
+            restaurant_id,
+            block_reason:
+              assessment.delivery.state !== "available" &&
+              assessment.delivery.state !== "unknown"
+                ? assessment.delivery.state
+                : assessment.coverage.state !== "in_range" &&
+                    assessment.coverage.state !== "unknown" &&
+                    assessment.coverage.state !== "requires_address"
+                  ? assessment.coverage.state
+                  : assessment.item.state,
+            user_intent: intent_style ?? null,
+            assessment,
+          });
+        }
+      }
+
       const orderRequest: PlaceOrderRequest = {
         restaurantName: restaurant_name,
         restaurantPhone: resolvedRestaurantPhone,
@@ -1166,6 +1294,8 @@ Then call check_order_status with the returned call_id to get the result.`,
         deliveryInstructions: delivery_instructions,
         maxTotal: max_total,
         dietaryRequirements: dietary_requirements,
+        itemAvailabilityUnknown,
+        intentStyle: intent_style,
       };
 
       try {

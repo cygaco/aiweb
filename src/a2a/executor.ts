@@ -29,6 +29,9 @@ import {
   hasCustomizationOpportunities,
   legacyItemsToCart,
 } from "../lib/cart-flow.js";
+import { assessCompatibility } from "../lib/compatibility.js";
+import { logCompatibilityOverride } from "../lib/event-log.js";
+import { geocodeAddress } from "../lib/geo.js";
 
 const POLL_INTERVAL_MS = 15_000;
 const POLL_TIMEOUT_MS = 5 * 60_000;
@@ -57,6 +60,7 @@ interface OrderInput {
   max_total?: number;
   confirmed?: boolean;
   confirmation_token?: string;
+  override_compatibility?: boolean;
 }
 
 export function extractInput(message: Message): OrderInput {
@@ -271,6 +275,16 @@ export class PizzaAgentExecutor implements AgentExecutor {
         // PROFILE_ENCRYPTION_SECRET missing — token feature unavailable;
         // executor still emits the cart so the caller can decide.
       }
+      // Per-chosen-restaurant compatibility assessment for the artifact.
+      // Address is geocoded best-effort; null falls through to coverage
+      // `requires_address`.
+      const userGeo = await geocodeAddress(input.address!);
+      const compatibility = assessCompatibility(
+        restaurant,
+        userGeo?.lat,
+        userGeo?.lng,
+        input.intent_style,
+      );
       eventBus.publish(
         artifact(taskId, contextId, "proposed_cart", {
           restaurant_id: restaurant.id,
@@ -286,6 +300,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
           payment: "Cash on delivery",
           confirmation_token: proposedToken,
           confirmation_token_ttl_seconds: proposedToken ? 600 : undefined,
+          compatibility,
         }),
       );
       const customizationSurface = buildCustomizationSurface(restaurant, cart);
@@ -453,6 +468,37 @@ export class PizzaAgentExecutor implements AgentExecutor {
       return;
     }
 
+    // Second-pass compatibility (PRD-V2-DELTA M-5). Block on no_go unless
+    // override_compatibility is set. Caller must explicitly opt-in to bypass.
+    const userGeo = await geocodeAddress(input.address!);
+    const assessment = assessCompatibility(
+      restaurant,
+      userGeo?.lat,
+      userGeo?.lng,
+      input.intent_style,
+    );
+    if (assessment.overall === "no_go" && !input.override_compatibility) {
+      eventBus.publish(
+        status(
+          taskId,
+          contextId,
+          "failed",
+          `Order blocked by compatibility check (${assessment.delivery.state}/${assessment.coverage.state}/${assessment.item.state}). ${assessment.nextStep ?? ""} Pass override_compatibility:true if the user explicitly approved.`,
+          true,
+        ),
+      );
+      return;
+    }
+    if (assessment.overall === "no_go" && input.override_compatibility) {
+      logCompatibilityOverride({
+        restaurant_id: restaurant.id,
+        user_intent: input.intent_style ?? null,
+        assessment,
+        source: "a2a",
+      });
+    }
+    const itemAvailabilityUnknown = assessment.item.state === "unknown";
+
     const orderRequest: PlaceOrderRequest = {
       restaurantName: restaurant.name,
       restaurantPhone,
@@ -464,6 +510,8 @@ export class PizzaAgentExecutor implements AgentExecutor {
       deliveryInstructions: input.delivery_instructions,
       maxTotal: input.max_total,
       dietaryRequirements: input.dietary,
+      itemAvailabilityUnknown,
+      intentStyle: input.intent_style,
     };
 
     let callId: string;
