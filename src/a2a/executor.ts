@@ -497,7 +497,10 @@ export class PizzaAgentExecutor implements AgentExecutor {
         source: "a2a",
       });
     }
-    const itemAvailabilityUnknown = assessment.item.state === "unknown";
+    // likely_available also requires call-side confirmation (compliance C-003 / M-7).
+    const itemAvailabilityUnknown =
+      assessment.item.state === "unknown" ||
+      assessment.item.state === "likely_available";
 
     const orderRequest: PlaceOrderRequest = {
       restaurantName: restaurant.name,

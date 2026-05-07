@@ -673,6 +673,10 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
               note: "Test entry — real phone, answer as restaurant staff.",
             }),
             compatibility: c,
+            // Top-level nextStep per restaurant entry (PRD AC6 / compliance C-004).
+            // Mirrors compatibility.nextStep so consumers that only read the
+            // top-level fields still see the resolution recommendation.
+            nextStep: c.nextStep,
             recommended: c.overall !== "no_go",
             menuSummary: {
               pizzas: r.menu.pizzas.map((p) => ({
@@ -1225,62 +1229,105 @@ Then call check_order_status with the returned call_id to get the result.`,
       // Even a valid confirmation_token does NOT bypass this — compatibility
       // is intentionally NOT bound into the token (PRD §11). To proceed
       // despite no_go, the caller must pass override_compatibility=true.
-      const restaurantForAssess = getRestaurantById(restaurant_id);
-      let itemAvailabilityUnknown = false;
-      if (restaurantForAssess) {
-        const userGeoForAssess = await geocodeAddress(resolvedAddress_);
-        const assessment = assessCompatibility(
-          restaurantForAssess,
-          userGeoForAssess?.lat,
-          userGeoForAssess?.lng,
-          intent_style,
-        );
-        itemAvailabilityUnknown = assessment.item.state === "unknown";
+      //
+      // Cache-miss handling (compliance C-002 / reviewer issue 2): when the
+      // restaurant_id isn't in TEST_RESTAURANTS or the in-memory cache, we
+      // re-run discovery via findNearbyRestaurants. If still missing, fail
+      // closed — never silently dispatch a call without an assessment.
+      let restaurantForAssess = getRestaurantById(restaurant_id);
+      if (!restaurantForAssess) {
+        const fresh = await findNearbyRestaurants(resolvedAddress_);
+        restaurantForAssess = fresh.find((r) => r.id === restaurant_id) ?? null;
+      }
+      if (!restaurantForAssess) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  status: "error",
+                  error_code: "compatibility_unavailable",
+                  message:
+                    "Could not resolve restaurant for compatibility check. Re-run start_pizza_order to refresh discovery, or pick a restaurant from a fresh result list.",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
 
-        if (assessment.overall === "no_go" && !override_compatibility) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    status: "error",
-                    error_code: "compatibility_blocked",
-                    reason:
-                      assessment.nextStep ?? "Compatibility check failed.",
-                    next_step: assessment.nextStep,
-                    delivery: assessment.delivery,
-                    coverage: assessment.coverage,
-                    item: assessment.item,
-                    override_field: "override_compatibility",
-                    message:
-                      "Order blocked by compatibility check. Pick an alternative restaurant, ask the user to confirm pickup, or pass override_compatibility=true if the user has explicitly approved.",
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        }
+      const userGeoForAssess = await geocodeAddress(resolvedAddress_);
+      const assessment = assessCompatibility(
+        restaurantForAssess,
+        userGeoForAssess?.lat,
+        userGeoForAssess?.lng,
+        intent_style,
+      );
+      // Both `unknown` and `likely_available` are caution-state item checks
+      // whose nextStep is "confirm on call" — Bland MUST verify the item
+      // before placing the order in either case (compliance C-003 / M-7).
+      const itemAvailabilityUnknown =
+        assessment.item.state === "unknown" ||
+        assessment.item.state === "likely_available";
 
-        if (assessment.overall === "no_go" && override_compatibility) {
-          // Loud-log the override so we can audit demo-time choices.
-          logCompatibilityOverride({
-            restaurant_id,
-            block_reason:
-              assessment.delivery.state !== "available" &&
-              assessment.delivery.state !== "unknown"
-                ? assessment.delivery.state
-                : assessment.coverage.state !== "in_range" &&
-                    assessment.coverage.state !== "unknown" &&
-                    assessment.coverage.state !== "requires_address"
-                  ? assessment.coverage.state
-                  : assessment.item.state,
-            user_intent: intent_style ?? null,
-            assessment,
-          });
-        }
+      if (assessment.overall === "no_go" && !override_compatibility) {
+        // The failing check's `reason` (state-specific evidence) is distinct
+        // from `next_step` (resolution recommendation). Compliance C-005.
+        const failing =
+          [assessment.delivery, assessment.coverage, assessment.item].find(
+            (c) =>
+              [
+                "pickup_only",
+                "third_party_only",
+                "no",
+                "out_of_range",
+                "not_available",
+              ].includes(c.state),
+          ) ?? null;
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  status: "error",
+                  error_code: "compatibility_blocked",
+                  reason: failing?.reason ?? "Compatibility check failed.",
+                  next_step: assessment.nextStep,
+                  delivery: assessment.delivery,
+                  coverage: assessment.coverage,
+                  item: assessment.item,
+                  override_field: "override_compatibility",
+                  message:
+                    "Order blocked by compatibility check. Pick an alternative restaurant, ask the user to confirm pickup, or pass override_compatibility=true if the user has explicitly approved.",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      if (assessment.overall === "no_go" && override_compatibility) {
+        // Loud-log the override so we can audit demo-time choices.
+        logCompatibilityOverride({
+          restaurant_id,
+          block_reason:
+            assessment.delivery.state !== "available" &&
+            assessment.delivery.state !== "unknown"
+              ? assessment.delivery.state
+              : assessment.coverage.state !== "in_range" &&
+                  assessment.coverage.state !== "unknown" &&
+                  assessment.coverage.state !== "requires_address"
+                ? assessment.coverage.state
+                : assessment.item.state,
+          user_intent: intent_style ?? null,
+          assessment,
+        });
       }
 
       const orderRequest: PlaceOrderRequest = {
