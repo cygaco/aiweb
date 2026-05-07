@@ -48,45 +48,85 @@ const { validate: validateAgentOutput } = require("./agents/output-validator");
  *   .claude/agents/<mode>/<role>/<role>.md
  *   .claude/agents/<mode>/<role>/orchestrator.md
  *   .claude/agents/00-alex/<role>.md
+ *
+ * When the active mode (from .claude/runtime/mode.json) is `adhoc` or
+ * `oneshot`, prefer specs under the matching `01-adhoc/` or `02-oneshot/`
+ * subdirectory. Both modes ship a `redteam` orchestrator with different
+ * provider_model frontmatter, and DFS scan order alone returns the wrong
+ * spec — observed 2026-05-06 when adhoc redteam picked up oneshot's
+ * gemini-3.1-pro instead of adhoc's gpt-5.4-mini.
  */
+function readActiveMode() {
+  try {
+    const modeFile = path.join(
+      PATHS.claudeDir || ".claude",
+      "runtime",
+      "mode.json",
+    );
+    if (!fs.existsSync(modeFile)) return null;
+    const m = JSON.parse(fs.readFileSync(modeFile, "utf8"));
+    return m && typeof m.mode === "string" ? m.mode : null;
+  } catch {
+    return null;
+  }
+}
+
+function modePreferredSubdir(mode) {
+  if (mode === "adhoc") return "01-adhoc";
+  if (mode === "oneshot") return "02-oneshot";
+  return null;
+}
+
 function findAgentSpec(role) {
   const agentsDir =
     PATHS.agents || path.join(PATHS.claudeDir || ".claude", "agents");
   if (!fs.existsSync(agentsDir)) return null;
-  const stack = [agentsDir];
-  while (stack.length) {
-    const dir = stack.pop();
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const ent of entries) {
-      const full = path.join(dir, ent.name);
-      if (ent.isDirectory()) {
-        stack.push(full);
-      } else if (ent.isFile() && ent.name.endsWith(".md")) {
-        const stem = ent.name.replace(/\.md$/, "");
-        if (stem === role || stem === "orchestrator") {
-          try {
-            const body = fs.readFileSync(full, "utf8");
-            const fmMatch = body.match(/^---\n([\s\S]*?)\n---/);
-            if (fmMatch) {
-              const nameMatch = fmMatch[1].match(/^name:\s*(\S+)/m);
-              if (nameMatch && nameMatch[1] === role) return full;
-              if (stem === role) return full;
-            } else if (stem === role) {
-              return full;
+
+  const matchInDir = (rootDir) => {
+    if (!fs.existsSync(rootDir)) return null;
+    const stack = [rootDir];
+    while (stack.length) {
+      const dir = stack.pop();
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const ent of entries) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) {
+          stack.push(full);
+        } else if (ent.isFile() && ent.name.endsWith(".md")) {
+          const stem = ent.name.replace(/\.md$/, "");
+          if (stem === role || stem === "orchestrator") {
+            try {
+              const body = fs.readFileSync(full, "utf8");
+              const fmMatch = body.match(/^---\n([\s\S]*?)\n---/);
+              if (fmMatch) {
+                const nameMatch = fmMatch[1].match(/^name:\s*(\S+)/m);
+                if (nameMatch && nameMatch[1] === role) return full;
+                if (stem === role) return full;
+              } else if (stem === role) {
+                return full;
+              }
+            } catch {
+              /* skip */
             }
-          } catch {
-            /* skip */
           }
         }
       }
     }
+    return null;
+  };
+
+  const activeMode = readActiveMode();
+  const preferred = modePreferredSubdir(activeMode);
+  if (preferred) {
+    const preferredHit = matchInDir(path.join(agentsDir, preferred));
+    if (preferredHit) return preferredHit;
   }
-  return null;
+  return matchInDir(agentsDir);
 }
 
 /**
@@ -249,7 +289,10 @@ try {
   if (roleModel) result.specModel = roleModel;
   const parsed = parseProviderJson(result.output);
   if (parsed) result.parsed = parsed;
-  const envelopeValidation = validateAgentOutput(role, parsed || result.output || "");
+  const envelopeValidation = validateAgentOutput(
+    role,
+    parsed || result.output || "",
+  );
   result.envelopeValidation = {
     ok: envelopeValidation.ok,
     errors: envelopeValidation.errors || [],

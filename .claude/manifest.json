@@ -1,0 +1,111 @@
+{
+  "$schema": "warpos/manifest/v1",
+  "project": {
+    "name": "aiweb",
+    "slug": "aiweb",
+    "description": "",
+    "techStack": [
+      "node"
+    ],
+    "framework": "node.js"
+  },
+  "git": {
+    "mainBranch": "master"
+  },
+  "warpos": {
+    "version": "0.1.1",
+    "installed": true,
+    "source": "https://github.com/cygaco/WarpOS.git",
+    "features": [
+      "agents",
+      "hooks",
+      "skills",
+      "memory",
+      "maps",
+      "events"
+    ]
+  },
+  "agents": {
+    "team": {
+      "name": "alex",
+      "identity": "Alex",
+      "members": {
+        "alpha": {
+          "symbol": "α",
+          "role": "orchestrator"
+        },
+        "beta": {
+          "symbol": "β",
+          "role": "judgment"
+        },
+        "gamma": {
+          "symbol": "γ",
+          "role": "adhoc builder"
+        },
+        "delta": {
+          "symbol": "δ",
+          "role": "oneshot builder"
+        }
+      }
+    },
+    "modes": [
+      "adhoc",
+      "oneshot",
+      "solo"
+    ],
+    "build": [
+      "builder",
+      "evaluator",
+      "compliance",
+      "auditor",
+      "qa",
+      "redteam",
+      "fixer"
+    ]
+  },
+  "source_dirs": [
+    "src/"
+  ],
+  "build": {
+    "features": [],
+    "phases": []
+  },
+  "providers": {
+    "claude": {
+      "cli": "claude",
+      "default_model": "sonnet",
+      "invocation": "native"
+    },
+    "openai": {
+      "cli": "codex",
+      "default_model": "gpt-5.5",
+      "fallback": "claude",
+      "syntax": "codex exec --full-auto -m {model} -"
+    },
+    "gemini": {
+      "cli": "gemini",
+      "default_model": "gemini-3.1-pro",
+      "fallback": "claude",
+      "syntax": "gemini -m {model} -p"
+    }
+  },
+  "agentProviders": {
+    "alpha": "claude",
+    "beta": "claude",
+    "gamma": "claude",
+    "delta": "claude",
+    "builder": "claude",
+    "fixer": "claude",
+    "evaluator": "openai",
+    "compliance": "openai",
+    "auditor": "openai",
+    "qa": "openai",
+    "redteam": "openai"
+  },
+  "buildCommands": {
+    "build": "npm run build"
+  },
+  "fileOwnership": {
+    "foundation": []
+  }
+}

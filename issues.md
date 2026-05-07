@@ -14,8 +14,9 @@
 |---|---|---|---|
 | ISS-001 | Keyless geocoding fallback returns caution-state for known fixtures | Deferred | QA gauntlet (gpt-5.5-mini) |
 | ISS-002 | Codex CLI cold-start race on Windows (intermittent) | Open | gauntlet dispatch |
-| ISS-003 | Gemini API rejects `gemini-3.1-pro` — needs version qualifier | Deferred | redteam gauntlet |
+| ISS-003 | Gemini API rejects `gemini-3.1-pro` — free-tier project quota limit:0 | Deferred | redteam gauntlet |
 | ISS-004 | Requirements graph format mismatch — STORIES used `## S-1` not `### GS-COMPAT-01` | Fixed | merge-guard freshness gate |
+| ISS-005 | place_order/A2A executor recompute compatibility from unbound intent_style — adversarial wrong-item bypass (RT-201, HIGH) | Open / pending decision | redteam gauntlet (gpt-5.4-mini) |
 
 ---
 
@@ -90,6 +91,30 @@
 - **Commit:** `8bc7ae5`
 - **Lesson:** the four pre-existing features (special-instructions etc.) all use the same wrong format and would also fail merge if anyone tried to merge them. None are merged yet. Format compliance is required at merge-time, not write-time.
 - **Final resolution:** Fixed in `8bc7ae5`. Suggest a guard to flag this at write-time (linter for `_requirements/04-features/*/STORIES.md` heading format).
+
+### ISS-005 — Compatibility recompute uses unbound intent_style — adversarial wrong-item bypass (RT-201)
+
+- **Status:** Open / decision pending (fix-now vs defer-post-YC)
+- **Source:** redteam gauntlet (gpt-5.4-mini, openai route) — RT-201 finding
+- **Severity:** HIGH (adversarial only)
+- **Related feature:** compatibility-layer
+- **Steps to reproduce (adversarial):**
+  1. Call `start_pizza_order` with intent_style="meat_lovers" (which place_X doesn't carry → no_go).
+  2. Override compatibility OR find a path to obtain a `confirmation_token` for the no_go cart.
+  3. Call `place_order` with the same `confirmation_token` + bound cart, BUT pass `intent_style="cheese"` (which IS available).
+  4. Server's second-pass `assessCompatibility(..., intent_style="cheese")` returns "go" — passes the gate.
+  5. `dispatchCall` fires Bland with the ORIGINAL no_go cart (because the cart was bound to the token, not the intent_style).
+  6. Restaurant gets a call for an item they don't carry — exact failure mode the compatibility layer was supposed to prevent.
+- **Expected behavior:** server should refuse to fire Bland on a cart that fails compatibility — regardless of what intent_style argument is provided to place_order.
+- **Actual behavior:** the compatibility check at place_order is recomputed against the unbound intent_style, so an attacker (or sloppy caller) can desync the gate from the actual cart.
+- **Suspected cause:** `assessCompatibility` was designed around intent_style as the input. At place_order time, the real ground truth is the bound cart contents (which has been validated by the token), not whatever intent_style is in the args. The second-pass should derive its compatibility input from the cart, not re-accept intent_style.
+- **Mitigation options (Gamma + redteam recommendation):**
+  - (a) Bind intent_style into confirmation_token payload — contradicts PRD §11 ("compatibility is NOT bound into the token"), adds a binding field
+  - (b) **Derive compatibility from the resolved cart contents** instead of intent_style — extract dominant pizza name from cart's pizza components. Cart IS already bound → no new token field. Fits PRD §11. ~30 LOC across `src/server.ts` (place_order ~L1262) + `src/a2a/executor.ts` (~L473) + helper in `src/lib/compatibility.ts` to derive intent from cart. **Recommended.**
+  - (c) Reject mismatched style/cart pairs at the gate — surface error
+- **Files touched:** _none yet — pending fix decision_
+- **Current recommendation:** **defer to post-YC application** — demo flows A-E (DEMO-SCRIPT.md) don't trigger this desync (honest intent_style throughout), YC reviewer unlikely to probe adversarial integrity, sprint already long. Beta consult in flight to confirm. If approved-fix-now: dispatch fixer with option (b), single ~30 LOC change.
+- **Final resolution:** _(pending Beta + user decision)_
 
 ---
 

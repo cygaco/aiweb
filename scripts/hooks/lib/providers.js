@@ -151,7 +151,7 @@ const DEFAULT_PROVIDERS = {
     // `gemini-3.1-pro` has thinking mode + 1M input context — ideal for attack-chain reasoning.
     // No explicit reasoning-effort flag; thinking is always-on for the pro-preview tier.
     // `{reasoning}` template var is empty for gemini (kept for syntax uniformity).
-    syntax: `gemini {reasoning} -m {model} -p`,
+    syntax: `gemini --skip-trust {reasoning} -m {model} -p`,
   },
 };
 
@@ -432,7 +432,7 @@ function runProvider(role, prompt, opts = {}) {
       // model actually served the request (preview models can silently fall
       // back under load). We extract response as `output` and record the
       // served model as `actualModel`.
-      cmd = `${cfg.cli} -m ${model} -p "Process the instructions on stdin and produce the requested output." -o json`;
+      cmd = `${cfg.cli} --skip-trust -m ${model} -p "Process the instructions on stdin and produce the requested output." -o json`;
     } else {
       // Generic pattern from cfg.syntax (used when manifest overrides defaults)
       cmd = `${cfg.syntax.replace("{model}", model).replace("{reasoning}", reasoningFlag)}`;
