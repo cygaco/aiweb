@@ -4,9 +4,9 @@
  */
 
 import type { Restaurant } from "../data/restaurants.js";
+import { geocodeAddress } from "../lib/geo.js";
 
 const PLACES_API_BASE = "https://places.googleapis.com/v1";
-const GEOCODE_API_BASE = "https://maps.googleapis.com/maps/api/geocode/json";
 const MILES_TO_METERS = 1609.34;
 
 const FIELD_MASK = [
@@ -51,7 +51,10 @@ const GENERIC_PIZZA_MENU: Restaurant["menu"] = {
     },
   ],
   sides: [
-    { name: "Sides available — ask on call", sizes: [{ name: "Regular", price: 0 }] },
+    {
+      name: "Sides available — ask on call",
+      sizes: [{ name: "Regular", price: 0 }],
+    },
   ],
 };
 
@@ -65,31 +68,12 @@ type RawPlace = {
   businessStatus?: string;
 };
 
-async function geocodeAddress(
-  address: string,
-  apiKey: string
-): Promise<{ lat: number; lng: number }> {
-  const url = new URL(GEOCODE_API_BASE);
-  url.searchParams.set("address", address);
-  url.searchParams.set("key", apiKey);
-
-  const res = await fetch(url.toString());
-  const data = (await res.json()) as {
-    status: string;
-    results: { geometry: { location: { lat: number; lng: number } } }[];
-  };
-
-  if (data.status !== "OK" || !data.results.length) {
-    throw new Error(`Geocoding failed: ${data.status}`);
-  }
-
-  return data.results[0].geometry.location;
-}
-
 // Haversine distance in miles
 function distanceMiles(
-  lat1: number, lng1: number,
-  lat2: number, lng2: number
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
 ): number {
   const R = 3959;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -97,8 +81,8 @@ function distanceMiles(
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) *
-    Math.cos((lat2 * Math.PI) / 180) *
-    Math.sin(dLng / 2) ** 2;
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -117,7 +101,7 @@ function toE164(phone: string): string {
 function mapToRestaurant(
   place: RawPlace,
   searchLat: number,
-  searchLng: number
+  searchLng: number,
 ): Restaurant {
   const placeLat = place.location?.latitude ?? searchLat;
   const placeLng = place.location?.longitude ?? searchLng;
@@ -133,9 +117,13 @@ function mapToRestaurant(
     address: place.formattedAddress ?? "",
     lat: placeLat,
     lng: placeLng,
-    deliveryRadius: Math.max(5, Math.ceil(distMi * 1.5)),
+    // Places API doesn't tell us the restaurant's true delivery radius.
+    // Stop fabricating one — emit null and let the compatibility layer mark
+    // coverage UNKNOWN. (PRD §6.4 / S-4.)
+    deliveryRadius: null,
     estimatedDeliveryMinutes: estimateDeliveryMinutes(distMi),
     acceptsCash: true,
+    serviceType: "unknown",
     menu: GENERIC_PIZZA_MENU,
     hours,
   };
@@ -147,7 +135,7 @@ async function searchPlaces(
   radiusMiles: number,
   apiKey: string,
   includedTypes: string[],
-  nameFilter?: (name: string) => boolean
+  nameFilter?: (name: string) => boolean,
 ): Promise<RawPlace[]> {
   const res = await fetch(`${PLACES_API_BASE}/places:searchNearby`, {
     method: "POST",
@@ -199,13 +187,15 @@ const isPizzaName = (name: string) =>
  * Returns empty array if GOOGLE_PLACES_API_KEY is not set.
  */
 export async function findNearbyPizzaPlaces(
-  address: string
+  address: string,
 ): Promise<Restaurant[]> {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return [];
 
   try {
-    const { lat, lng } = await geocodeAddress(address, apiKey);
+    const geo = await geocodeAddress(address, apiKey);
+    if (!geo) return [];
+    const { lat, lng } = geo;
 
     for (const radiusMiles of [5, 15, 30]) {
       // Pass 1: dedicated pizza restaurant type
@@ -216,9 +206,12 @@ export async function findNearbyPizzaPlaces(
       // Pass 2: any restaurant/delivery with "pizza" in the name
       if (raw.length === 0) {
         raw = await searchPlaces(
-          lat, lng, radiusMiles, apiKey,
+          lat,
+          lng,
+          radiusMiles,
+          apiKey,
           ["restaurant", "meal_delivery", "meal_takeaway"],
-          isPizzaName
+          isPizzaName,
         );
       }
 
