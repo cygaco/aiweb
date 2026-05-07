@@ -179,6 +179,32 @@ The agent successfully runs all five Critical UX scenarios (Flows A-E in the spr
 
 ---
 
+## Next iteration — post-application backlog
+
+When the YC application ships, the first work in the next sprint is:
+
+### N-1 — Pre-call menu confirmation (extends compatibility-layer)
+
+**Problem today:** when item availability is `unknown` (typically a Places-discovered restaurant — generic 3-item menu, no real menu data), the bot still calls. The Bland prompt's ITEM-CONFIRM step asks the restaurant on the call — but the call has already been initiated, the user is committed, and a "no, we don't carry that" answer means the bot has to recover mid-call.
+
+**Next iteration:** add a cheap pre-call menu probe step BEFORE `place_order` fires Bland. Three candidate sources, ranked by cost:
+
+1. **Cached menu from prior calls.** If we've called this restaurant before and the transcript contains menu items (parse from past Bland transcripts), use that — it's free, ground-truth data we already paid to gather.
+2. **Restaurant website scrape.** For Places-discovered restaurants, fetch the website (already in Place data), extract menu via Claude on the HTML. ~1-2 sec, ~5K tokens.
+3. **Pre-call voice probe.** A 30-second Bland call that ONLY asks "do you carry [item]?" — no order placement, no customer details voiced. Cheap because the call ends at the menu confirmation.
+
+After any of these resolves, re-run `assessCompatibility` with the now-known menu data. If still unknown, fall back to current behavior (place call with ITEM-CONFIRM step).
+
+**Why deferred to next iteration:** none of the three sources are zero-effort. Source 1 needs a transcript-parser + a per-restaurant menu cache. Source 2 needs an HTML-fetch + parse step + caching. Source 3 needs a separate Bland call type with a different prompt. Each is ~1-day of work. Stack against the YC-ship priority: out of scope for this sprint, in scope for the next.
+
+**Pairs with:** ISS-005 fix (RT-201 — derive compatibility from cart contents not intent_style). Same area of code (`src/server.ts:place_order`, `src/a2a/executor.ts`), so doing both at once is efficient.
+
+### N-2 — Resolve ISS-001 through ISS-005 in priority order
+
+(See `issues.md` for the full schema. ISS-005 is the only HIGH; ISS-001/002/003 are deferred non-blockers; ISS-004 is fixed.)
+
+---
+
 ## Human verification test (Phase 6 manual smoke)
 
 Goal: prove the compatibility layer works end-to-end on real surfaces, with one positive flow and three blocker flows.
