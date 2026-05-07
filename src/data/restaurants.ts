@@ -39,9 +39,22 @@ export interface Restaurant {
   address: string;
   lat: number;
   lng: number;
-  deliveryRadius: number; // miles
+  /**
+   * Delivery radius in miles. `null` when the source connector cannot
+   * truthfully report it (e.g. Google Places — we don't fabricate the value).
+   * The compatibility layer treats `null` as `coverage: unknown`.
+   */
+  deliveryRadius: number | null;
   estimatedDeliveryMinutes: number;
   acceptsCash: boolean;
+  /**
+   * Honest fulfillment signal. Absent ≡ 'unknown' inside checkDeliveryAvailability.
+   *  - 'delivery'          — confirmed delivery (Domino's API filter, test fixtures)
+   *  - 'pickup_only'       — confirmed pickup-only
+   *  - 'third_party_only'  — only via DoorDash/UberEats/etc.
+   *  - 'unknown'           — source doesn't report
+   */
+  serviceType?: "delivery" | "pickup_only" | "third_party_only" | "unknown";
   menu: {
     pizzas: PizzaMenuItem[];
     sides: MenuItem[];
@@ -154,6 +167,7 @@ export const TEST_RESTAURANTS: Restaurant[] = [
     deliveryRadius: 10,
     estimatedDeliveryMinutes: 30,
     acceptsCash: true,
+    serviceType: "delivery",
     menu: {
       pizzas: [
         {
@@ -303,6 +317,7 @@ export const TEST_RESTAURANTS: Restaurant[] = [
     deliveryRadius: 10,
     estimatedDeliveryMinutes: 35,
     acceptsCash: true,
+    serviceType: "delivery",
     menu: {
       pizzas: [
         {
@@ -336,6 +351,44 @@ export const TEST_RESTAURANTS: Restaurant[] = [
       ],
     },
     hours: "11:00 AM - 10:00 PM",
+    isTest: true,
+  },
+  {
+    // Pickup-only fixture — drives QA Flow A and Demo Beat 4.
+    // The compatibility layer's checkDeliveryAvailability emits state
+    // 'pickup_only' for this restaurant, which collapses overall to no_go.
+    id: "test_pickup_only",
+    name: "Slice Box (Pickup Only)",
+    phone: "+14155550199",
+    address: "Mission St, San Francisco, CA",
+    lat: 37.7749,
+    lng: -122.4194,
+    deliveryRadius: 0, // legacy field; ignored due to serviceType
+    estimatedDeliveryMinutes: 0,
+    acceptsCash: true,
+    serviceType: "pickup_only",
+    menu: {
+      pizzas: [
+        {
+          name: "Pepperoni",
+          sizes: [
+            { name: 'Medium 12"', price: 11.99 },
+            { name: 'Large 14"', price: 14.99 },
+          ],
+        },
+        {
+          name: "Cheese",
+          sizes: [
+            { name: 'Medium 12"', price: 10.99 },
+            { name: 'Large 14"', price: 13.99 },
+          ],
+        },
+      ],
+      sides: [
+        { name: "Garlic Knots", sizes: [{ name: "Regular", price: 5.99 }] },
+      ],
+    },
+    hours: "Daily 11am–10pm",
     isTest: true,
   },
 ];

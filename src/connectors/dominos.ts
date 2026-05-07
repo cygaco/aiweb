@@ -38,7 +38,10 @@ function parseAddress(address: string): { street: string; city: string } {
 
 function parseWaitMinutes(wait?: string): number {
   if (!wait) return 35;
-  const parts = wait.split("-").map(Number).filter((n) => !isNaN(n));
+  const parts = wait
+    .split("-")
+    .map(Number)
+    .filter((n) => !isNaN(n));
   if (parts.length === 0) return 35;
   return Math.round(parts.reduce((a, b) => a + b, 0) / parts.length);
 }
@@ -62,22 +65,33 @@ function mapToRestaurant(store: DominosRawStore): Restaurant {
     name: "Domino's Pizza",
     phone: formatPhone(store.Phone),
     address: addressStr,
+    // Domino's locator API does not return store coordinates. Leaving lat/lng
+    // at 0 is honest about that absence; the compatibility layer's
+    // checkDeliveryCoverage detects (lat===0 && lng===0) for `dominos_*` and
+    // emits coverage `unknown` rather than computing a 6000-mile distance to
+    // (0°,0°). Future: geocode `addressStr` here, or pull from a richer field
+    // when Domino's exposes one. (PRD-V2-DELTA C-1, S-3a.)
     lat: 0,
     lng: 0,
     deliveryRadius: store.MaxDistance ?? 5,
     estimatedDeliveryMinutes: parseWaitMinutes(store.EstimatedWaitMinutes),
     acceptsCash: true,
+    serviceType: "delivery", // API filter already requires IsDeliveryStore && AllowDeliveryOrders
     hours: "See store for hours",
     menu: DOMINOS_MENU,
   };
 }
 
 export async function findNearbyDominosStores(
-  address: string
+  address: string,
 ): Promise<Restaurant[]> {
   try {
     const { street, city } = parseAddress(address);
-    const params = new URLSearchParams({ s: street, c: city, type: "Delivery" });
+    const params = new URLSearchParams({
+      s: street,
+      c: city,
+      type: "Delivery",
+    });
 
     const res = await fetch(`${DOMINOS_API}/store-locator?${params}`, {
       headers: { Accept: "application/json" },
@@ -93,7 +107,7 @@ export async function findNearbyDominosStores(
       (s) =>
         s.IsDeliveryStore &&
         s.AllowDeliveryOrders &&
-        s.ServiceIsOpen?.Delivery !== false
+        s.ServiceIsOpen?.Delivery !== false,
     )
       .slice(0, 3)
       .map(mapToRestaurant);
