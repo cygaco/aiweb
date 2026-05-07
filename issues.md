@@ -38,7 +38,7 @@
 - **Files touched:** none yet.
 - **Current recommendation:** add a future enhancement — when geocoding returns null but the user address string and restaurant address share a substantial token overlap (city/state), emit `in_range` with confidence 0.5 instead of `requires_address`. Out of scope for this YC sprint per AC8 (caution does not block `place_order`; the demo flow still completes — just surfaces an honest "I don't have your exact location" message).
 - **YC-demo blocker?** No. AC8 + ITEM-CONFIRM in Bland prompt cover the demo flow even under caution.
-- **Final resolution:** _(deferred to post-sprint follow-up; tracked in roadmap-yc.md "Known Risks")_
+- **Final resolution:** _(deferred to post-sprint follow-up; tracked in ROADMAP.md "Known Risks")_
 
 ### ISS-002 — Codex CLI cold-start race on Windows
 

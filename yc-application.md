@@ -33,7 +33,7 @@ Each failure became a product requirement. The architectural question they all s
 - `_requirements/04-features/compatibility-layer/DEMO-SCRIPT.md` — 90-second YC demo walkthrough
 
 **Crash-recovery infrastructure:**
-- `roadmap-yc.md` — Phase tracker, recovery instructions, files-touched log, current state
+- `ROADMAP.md` — Phase tracker, recovery instructions, files-touched log, current state
 - `issues.md` — bug tracker scaffold with full schema and 3-strike rule
 
 **Implementation (dispatched to Gamma):**
@@ -79,7 +79,7 @@ Each failure became a product requirement. The architectural question they all s
 
 ### What's next (if this session crashes)
 
-1. Read `roadmap-yc.md` from project root. Phases & Checklist tells you where we are.
+1. Read `ROADMAP.md` from project root. Phases & Checklist tells you where we are.
 2. Read `issues.md` for any open bugs.
 3. Build is merged on main as of `3077fb3`. 105/105 tests pass. `npm run build` clean.
 4. User-side actions remaining: run `/export` (Claude Code built-in) once now → save as `yc-export.md`. Run again at end of session → save as `yc-export-2.md`.
@@ -94,7 +94,7 @@ Each failure became a product requirement. The architectural question they all s
 - **Three real demo failures fixed structurally:** no-pizza, no-deliver, no-coverage all caught by `assessCompatibility` and surfaced as state + confidence + nextStep before any Bland call fires.
 - **Spec quality sweep:** parallel gpt-5.5 spec reviewer caught 4 critical + 8 major defects in v1 PRD before any builder code landed. Most consequential: dominos.ts hardcoded lat/lng=0 would have falsely flagged every Domino's restaurant as out-of-range. Fixed in v2 PRD delta.
 - **Beta-system self-improvement:** 7 new patterns + 4 anti-patterns + 5 confidence rows added to Beta's judgment model mid-session via `/beta:mine + /beta:integrate`. Three of those patterns (P-023, P-024, P-025) were derived from this exact session's context.
-- **Crash-recovery infrastructure shipped:** roadmap-yc.md, issues.md, yc-application.md, yc-application-brief.md (paste-ready YC narrative) all on disk in main.
+- **Crash-recovery infrastructure shipped:** ROADMAP.md, issues.md, yc-application.md, yc-application-brief.md (paste-ready YC narrative) all on disk in main.
 
 ### Tradeoffs made this session
 

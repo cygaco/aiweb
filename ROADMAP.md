@@ -1,359 +1,208 @@
-# WarpOS Roadmap
+# AIWeb Roadmap
 
-Post-MVP work. Items grouped by phase.
-
----
-
-## ✅ Shipped in v0.1.1 (2026-04-18)
-
-The install-hardening batch. Every item below was a ROADMAP entry from 2026-04-17 or 04-18 that now ships in production.
-
-### Installer foundation
-- [x] **Ship-manifest system** — `.claude/framework-manifest.json` declares every shippable asset; installer iterates the manifest instead of hand-coded `copyDir` calls. Generator: `scripts/generate-framework-manifest.js`. (205 assets + 9 generated.)
-- [x] **Framework-installed snapshot** — target projects get `.claude/framework-installed.json` at install; uninstall walks it exhaustively; re-install diffs old vs new for ghost-file detection.
-- [x] **Ghost-file cleanup on re-install** — installer detects files declared by prior install but removed/renamed upstream; `--clean-ghosts` flag removes them.
-- [x] **`--dry-run` actually works** — flag was parsed but unused; now prints the full plan (per-kind counts, would-skip existing, would-generate, ghost count) and exits without writes.
-- [x] **Installer copy-scope gap closed** — first-install on aiweb missed 46 files (requirements + patterns + maps + top-level scripts). Manifest makes this impossible: if it's in the manifest, the installer sees it.
-- [x] **Top-level scripts ship too** — `path-lint.js`, `dispatch-agent.js`, `generate-maps.js`, `generate-framework-manifest.js`.
-
-### Installer UX
-- [x] **CLAUDE.md auto-merge** — if target has existing `CLAUDE.md`, installer appends Alex identity with `---` separator; backup kept.
-- [x] **AGENTS.md auto-merge** — same pattern; prior behavior silently kept user's AGENTS.md without Alex system, breaking γ dispatch.
-- [x] **Restart banner handles both paths** — "already have Claude Code open? close + reopen. not open yet? just open" — replaces the old "YOU MUST RESTART NOW" that confused first-time users.
-- [x] **`WARPOS_NEXT_STEPS.md` written at project root** — user references it in the fresh session.
-- [x] **`/warp:init` → `/warp:setup`** — resumable state-machine skill; 5 signals checked, only missing steps run. Safe to re-run. `/warp:uninstall` shipped.
-- [x] **Pre-install backup** — `.warpos-backup/<ts>/` captures CLAUDE.md, AGENTS.md, .gitignore, .claude/, scripts/hooks/ before any write.
-
-### Hook correctness
-- [x] **Hook schema: `type:"command"` required** — installer was writing just `{command}`; Claude Code's validator rejected at launch. Fixed via `cmd()` helper.
-- [x] **Single-event keys** — `"Stop|SessionEnd|StopFailure"` pipe-joined was "Unknown hook event"; split into three top-level keys.
-- [x] **Per-matcher hook merge** — if user has any pre-existing hook in an event, old logic skipped WarpOS's whole set. Now: append WarpOS hooks into matching matcher, dedup by command string. User's hooks preserved.
-- [x] **merge-guard catches `+refspec` force-push** — was only catching `--force` and `-f`; `git push origin +main` bypassed the guard. Fixed.
-- [x] **Framework-manifest guard** — PreToolUse Bash hook blocks commits that stage tracked assets without re-staging the manifest. Enforces "regenerate before commit." β DECIDE: block, don't mutate.
-
-### Skills + docs
-- [x] **`/discover:systems`** — 6-angle discovery (declarative/structural/behavioral/refgraph/convention/historical).
-- [x] **`/warp:uninstall`** — clean removal with restore from `.warpos-backup/`; consumes `framework-installed.json` for exhaustive file list.
-- [x] **Attestation events schema** — `cat: "attestation"` in events.jsonl tracks learning → enforcement provenance. One-shot emitters: `scripts/tools/emit-attestation-events.js`, `emit-integrate-events.js`.
-- [x] **USER_GUIDE §2 clarity** — modes are project-wide and persistent; adhoc still probes β with just α + user; oneshot is end-to-end-rebuild from requirements.
-- [x] **USER_GUIDE §5.6 preflight ELI5** — 7-pass breakdown; ONLY for oneshot.
-- [x] **`/sleep:deep` Phase 4 painting MANDATORY** — several cycles had skipped the ASCII art step; now self-check-gated.
-
-### Privacy + public release
-- [x] **Repo transitioned private → public** — `cygaco/WarpOS` now public.
-- [x] **History scrub via git-filter-repo** — 68 commits rewritten; zero references to private product/repo names in any commit.
-- [x] **Redteam audit (4 parallel scans)** — 0 credentials, 0 PII, 0 tracked-but-ignored. IP hygiene scrub landed in 20+ files.
-- [x] **smart-context Haiku timeout + payload caps** — was 8000ms on unbounded context; now 15000ms + per-source caps (60 learnings, 20 traces, 20 decisions).
+The AI Web — Wave 00 pizza concierge. This file is the single roadmap for the product (active backlog + recently-shipped + open risks + crash-recovery + human verification test). Framework / WarpOS roadmap items live in their own canonical clone, not here.
 
 ---
 
-## Phase 1 — Ship-week hardening (2026-04-17 target)
+## Current state (live — keep this updated)
 
-### Path System (Command 1 from session 2026-04-16)
-The paths.json registry is the single source of truth for dir/file locations. Current state: 37 keys. Goal: every `.claude/*`, `scripts/hooks/*`, and shared file referenced by skills/hooks/agents resolves via `paths.json`, never hardcoded.
-
-- [x] Expand `paths.json` from 20 → 37 keys (add eventsFile, learningsFile, tracesFile, systemsFile, judgmentModel, judgmentRecommendations, betaEvents, lexicon, pathsLib, loggerLib, betaSourceData, toolsFile, requirementsFile, requirementsStagedFile, hookLib, patterns, requirements)
-- [x] Update `lib/paths.js` fallback to match
-- [x] Update `warp-setup.js` to emit the expanded paths.json at install time
-- [x] Install `path-guard.js` hook — warns (optionally blocks with `PATH_GUARD_STRICT=1`) when stale paths are written to skills/agents/hooks
-- [ ] **Follow-up:** migrate the remaining ~80 skill references that write paths as prose literals (e.g. "Write to `.claude/project/memory/learnings.jsonl`") to reference `PATHS.learningsFile` semantically
-- [ ] **Follow-up:** `/paths:validate` skill — verify every key resolves on disk + flag hardcoded paths + suggest consolidations
-- [ ] **Follow-up:** `/paths:add` skill — interactive helper to add a new path key (updates paths.json + lib/paths.js fallback + warp-setup.js in one go)
-
-### Events & Logging
-Current: `logger.js` abstracts appends to `events.jsonl`; `memory-guard.js` blocks direct writes. Smart-context reads events for context injection.
-
-- [x] memory-guard fixed to not block `2>&1` fd redirects (false positive blocked read commands)
-- [ ] **Follow-up:** dedicated `/events:tail`, `/events:query` skills (currently done via ad-hoc node oneliners)
-- [ ] **Follow-up:** events retention policy — events.jsonl crosses ~6MB in real-world usage. Compress / roll when above threshold (sleep:deep handles this manually today)
-- [ ] **Follow-up:** structured query language for events.jsonl (current: grep + filter)
-
-### Installer — Created vs Assumed model
-Current: 13-step install. 8 items are CREATED (paths, manifest, store, memory, settings, dirs), 5 items are ASSUMED (agents, skills, hooks, reference, CLAUDE.md copied verbatim).
-
-- [x] `warp-setup.js` generates paths.json v3 with all keys (CREATED)
-- [x] Registers the 31 real hooks (not phantom ones)
-- [x] WarpOS repo no longer ships a committed `paths.json` — clients get one built by the installer
-- [ ] **Phase 1 ship blocker:** `.gitignore` mutation — append WarpOS runtime exclusion block to target's `.gitignore` to prevent session-data leaks
-- [ ] **Interview phase** — warp-setup asks 5–10 questions before acting:
-  - project name (override basename detection)
-  - one-line pitch
-  - primary user
-  - main branch (detected via `git symbolic-ref refs/remotes/origin/HEAD`, confirm)
-  - WarpOS repo URL (default `cygaco/WarpOS`, support forks)
-  - ANTHROPIC_API_KEY location
-  - Result written to `manifest.git.mainBranch`, `manifest.warpos.source`, `manifest.project.*`
-- [ ] **Tool-detected hook bundles** — check for prettier/tsc/eslint/python/etc. present, only register hooks whose tooling exists. Surface skipped hooks with "install X then run `/hooks:enable <name>`"
-- [ ] **Requirements pre-fill** — `/warp:init` runs after install, interviews the user, writes filled `CORE_BRIEF.md`, `PRODUCT_MODEL.md`, `GLOSSARY.md`, `USER_COHORTS.md` (not skeleton + guidance comments)
-- [ ] **Parameterize `/warp:*` repo URLs** — `/warp:sync`, `/warp:check`, `/warp:init` read `manifest.warpos.source`, not hardcoded
-- [ ] **Parameterize project name** — all skills/docs that mention project name read from `manifest.project.name`
-- [ ] **Install-test harness** — `warp-setup.js --dry-run` on a fresh tmp dir, verify every claim in the setup output
-- [ ] **`/warp:update` skill** — pull latest WarpOS, compare, apply diff (analog to `/warp:sync`)
-- [ ] **`/warp:uninstall` skill** — clean removal
-
-### Gaps from the Created vs Assumed audit
-
-Items that are currently NEITHER created NOR assumed (just missing):
-- `.gitignore` runtime exclusions — **leak risk**
-- Main branch name — assumed "main" everywhere
-- Project name — used basename, no override
-- Git remote URL — hardcoded in `/warp:sync`
-- `.env.example` template
-- Environment flavor selection (minimal / full / security-heavy bundles)
-
-### Gitignore audit (2026-04-17 — flagged by user)
-
-Current `.gitignore` excludes `.claude/project/events/` and `.claude/project/memory/` — this protects privacy but **events and learnings are not backed up anywhere**. If a dev laptop dies, reasoning traces and event history are lost. Consider:
-
-- A redacted subset that *is* committable (e.g. a weekly digest)
-- Opt-in encrypted backup to a gitignored-by-default side-branch
-- Confirm every directory that is ignored is genuinely session-ephemeral — audit line-by-line
-- Write a `/warp:backup` skill that pushes events/memory to a private mirror repo (opt-in)
-
-Priority: medium — not blocking launch, but a data-loss risk that compounds over time.
+- **Branch:** `main` at `ffc89c4` (post-YC-sprint head; subsequent commits land here)
+- **Build:** `npm run build` clean. `npm test` 105/105 passing.
+- **Last sprint:** YC application sprint, 2026-05-06 → 07 — compatibility-layer feature shipped + four-gate gauntlet closeable. Full story in `yc-application.md`.
+- **Open issues:** 5 in `issues.md` (1 fixed, 3 deferred non-blocking, 1 deferred-with-fix-path = ISS-005 / RT-201).
+- **Open WarpOS-propagation flags:** 13 in `warpos-to-update.md`. Drained on `/warp:promote` or `/warp:release`.
 
 ---
 
-## Phase 2 — Skills & systems
+## Recently shipped
 
-### Cross-provider agent diversity (high priority)
+### YC sprint — compatibility layer (2026-05-06 → 07)
 
-**Problem:** all review and security agents currently run on Claude (same model that generates the code under review). Same-model review is blind to shared failure modes. Per Alex β decision 2026-04-16: "having the same model review its own work is not good."
+Three real demo failures (no-pizza, no-deliver, no-deliver-here) became one structural fix.
 
-**Solution:** route review-layer agents through OpenAI CLI (`codex`), security orchestration through Gemini CLI. Uses the existing `store.compliance` CLI-bridge pattern, generalized.
+- New module `src/lib/compatibility.ts` (399 LOC) with three checks (delivery / coverage / item) + `assessCompatibility` combiner returning `go | caution | no_go` with confidence + source + nextStep.
+- Wired symmetrically into both surfaces: MCP `start_pizza_order` (embed per-restaurant + sort by verdict + reproduce-nextStep tool description) and A2A `proposed_cart` artifact (carries compatibility for client display).
+- Hard block at `place_order` and at A2A `confirmed=true` — refuses to fire Bland when `overall === 'no_go'` unless `override_compatibility: true`.
+- Bland prompt gains conditional ITEM-CONFIRM step when item availability is `unknown` — call starts with "Quick question — do you carry [intent_style]?" before placing the order.
+- New helpers: `src/lib/geo.ts` (extracted geocodeAddress for cross-module reuse), `src/lib/event-log.ts` (append-only `runtime/events.jsonl` writer with fail-open).
+- 18 unit tests in `tests/compatibility.test.ts` (15 from PRD §9 + #16 logger spy + #17 dominos lat=0 unknown + #18 snake_case regression).
+- Connector honesty: `src/connectors/places.ts` stops fabricating `deliveryRadius` (was inventing values from haversine + 50% padding); now emits `deliveryRadius: null` + `serviceType: 'unknown'`. `src/connectors/dominos.ts` sets `serviceType: 'delivery'` truthfully.
+- New fixture `test_pickup_only` for QA Flow A + Demo Beat 4.
+- Gauntlet 4/4 closeable — reviewer + compliance + qa pass-after-fix; redteam pass-with-warn (1 HIGH = ISS-005, deferred per Beta DECIDE 0.88).
+- Cross-provider review caught what same-provider missed: gpt-5.5-mini (QA) caught snake_case intent normalization that Claude builder + Claude reviewer both missed.
 
-Target model mapping:
+Commits: `05ab8c0`, `ab77b28`, `4787381`, `4c7dcb9`, `a59e34c`, `8bc7ae5`, `3077fb3` (merge), `1ae13c7`, `aa78cff`, `ffc89c4`.
 
-| Agent | Provider | Model | Rationale |
-|---|---|---|---|
-| alpha, beta, gamma, delta | Claude | sonnet (or inherit) | Orchestration, judgment continuity — keep Claude |
-| builder (×2), fixer (×2) | Claude | sonnet | Code generation — Claude is tuned here |
-| **evaluator (×2)** | **OpenAI** | **gpt-5.4** | Deep review with different lens; 1M context fits spec+code+fixtures |
-| **compliance (×2)** | **OpenAI** | **gpt-5.4** | Adversarial integrity — flagship, not mini |
-| **auditor (oneshot)** | **OpenAI** | **gpt-5.4-mini** | Cross-cycle pattern synthesis; many small inputs |
-| **qa (×2)** | **OpenAI** | **gpt-5.4-mini** | 13 failure-mode personas × volume |
-| **redteam (×2)** | **Gemini** | **gemini-3.1-pro-preview** | 11 attack-chain personas — different adversarial training corpus |
+### Pizza intake upgrade (2026-05-02 → 04)
 
-Implementation:
-- [x] Extend `manifest.providers` with `claude`, `openai`, `gemini` entries (cli, default_model, fallback)
-- [x] Add `manifest.agentProviders` mapping role → provider
-- [x] New lib module: `scripts/hooks/lib/providers.js` — wraps `execSync` calls to `codex` / `gemini` CLIs
-- [x] Update γ/δ dispatch to read `agentProviders[<role>]` and route accordingly (via `scripts/dispatch-agent.js`)
-- [x] `/check:environment` verifies `codex` and `gemini` CLIs present if configured (E25-E26 checks)
-- [x] Fallback: CLI missing → use `fallback` model (always Claude) — `provider_fallback: claude` in agent frontmatter
-- [x] Per-agent prompts stay in the .md files (agent gets the same prompt regardless of provider)
-- [x] Response parsing adapter — `parseProviderJson` normalizes GPT/Gemini output to match Claude sub-agent JSON shape
-
-**SHIPPED 2026-04-17.** Strict model assertion added (commit f7f5885) so silent downgrades fail loudly. `actualModel` from CLI stats vs declared `model` detected via `modelsMatch()`.
-
-### Token usage optimization (deferred per user directive)
-
-Not a ship blocker. Once cross-provider is live:
-- [ ] Track per-agent token usage in events log — category `provider-call`
-- [ ] Per-provider cost dashboard (estimate from token counts)
-- [ ] Prompt compression for GPT/Gemini — the Claude-tuned prompts are often verbose; condense for cross-provider
-- [ ] Cache the "system/identity" portion of review prompts where provider supports it (OpenAI prompt caching, Gemini context caching)
-- [ ] Tiered fallback: gpt-5.4 → gpt-5.4-mini → claude if primary times out or rate-limits
-- [ ] Per-agent model override via env var (`WARPOS_EVALUATOR_MODEL=gpt-5.4-mini`) for cost-sensitive users
-
-### Missing skills identified in audit
-- [x] `/check:system` — systems audit (scans for every system, diffs manifest)  **SHIPPED**
-- [x] `/discover:systems` — multi-angle discovery (6 lenses, surfaces emergent/ghost systems)  **SHIPPED 2026-04-17** (beyond scope of original ask)
-- [ ] `/check:privacy` — pre-publish scan for personal data (names, session artifacts, learnings, credentials)
-- [ ] `/check:install` — verify a fresh install is complete end-to-end
-- [ ] `/check:hooks` — hook test harness via synthetic payloads (extends `/hooks:test`)
-- [ ] `/warp:doctor` — single-command full diagnostic (runs `health` + `check:*` suite)
-- [ ] `/warp:update` — see Installer section above
-- [x] `/warp:uninstall` — clean removal with restore from `.warpos-backup/` **SHIPPED 2026-04-18**
-- [ ] `/agents:list` + `/agents:test` — first-class observability for the agent system
-- [ ] `/paths:validate` + `/paths:add` — see Path System above
-- [ ] `/linters:run` — unified lint runner (linters are a system per feedback)
-- [ ] `/manifest:show`, `/manifest:validate`, `/manifest:migrate`
-- [ ] `/docs:catalog` — enumerate reference docs with status
-
-### Existing skill follow-ups
-- [ ] `/research:deep` — 728 lines, likely untested, model versions stale. Either validate end-to-end OR deprecate in favor of `/research:simple`
-- [ ] `/research:simple` — add synthesis phase (merge reports → SYNTHESIS.md)
-- [x] `/sleep:deep` — REM Phase 4 painting step made MANDATORY with self-check gate (2026-04-17). Vague phase 1c/1e thresholds still deferred.
-- [ ] `/ui:review` — genericize (no hardcoded product names); add parameterized design-system path support
-- [ ] `/retro:code`, `/retro:full` — remove stale "retro directory" manifest.json references; either hard-code `.claude/project/retros/` or make optional
-- [ ] `/warp:sync` — add fallback if `../WarpOS/version.json` doesn't exist (git tags / commit hash)
-- [ ] `/warp:init` — parameterize GitHub URL (hardcodes `cygaco/WarpOS.git`)
-
-### Mode persistence clarity (2026-04-18)
-- [ ] Mode (solo / adhoc / oneshot) is project-wide and persistent — switching in any terminal switches it for ALL terminals on that project. User guide now documents this. Behavior is already correct in code but was not documented — also surface this in `/mode:*` skill output on entry (e.g. "Adhoc mode active for project X — all your open terminals now share this mode").
-- [x] USER_GUIDE.md §2 updated to clarify: modes are project-wide, not per-terminal; even in adhoc with just α + user, α probes β on non-trivial decisions.
-- [x] USER_GUIDE.md §5.6 Preflight explained ELI5 with 7-pass breakdown; clarified it's ONLY for oneshot.
-- [x] USER_GUIDE.md §4 cross-terminal coordination language now explicit: write for an Alex that wasn't there.
-
-### Installer + setup UX (2026-04-18)
-- [x] Renamed `/warp:init` → `/warp:setup` — covers clone + install + CLAUDE.md merge + restart + verify
-- [x] `warp-setup.js` backs up pre-install files to `.warpos-backup/<timestamp>/` (CLAUDE.md, AGENTS.md, .gitignore, .claude/, scripts/hooks/)
-- [x] `warp-setup.js` writes `WARPOS_NEXT_STEPS.md` at project root — users reference it in the fresh Claude Code session after restart
-- [x] Installer "NEXT STEPS" output now tells users to close + reopen Claude Code before anything else
-- [x] `/warp:uninstall` skill created — clean removal with restore from backup
-- [x] CLAUDE.md auto-append when user has existing content (2026-04-18)
-- [x] AGENTS.md auto-append same pattern as CLAUDE.md (2026-04-18 — prior behavior kept client's and skipped WarpOS's, breaking γ dispatch)
-- [ ] **Follow-up:** wire `/warp:setup` CLAUDE.md merge step into the installer itself (currently split between script + skill; consider unified)
-- [ ] **Follow-up:** dry-run mode (`--dry-run`) currently parses the flag but doesn't actually skip writes — needs real implementation
-- [ ] **Follow-up:** `warp-setup.js` should emit `manifest.warpos.installed: true` on success (currently unset) so `/warp:setup` Step 1 check works
-
-### Install safety — branch isolation + conflict resolution (2026-04-18)
-
-Raised by user after the first real-project install. Current installer runs directly on whatever branch the user is on (usually `main`) — a bad install could contaminate their shippable branch. We back up files but not git state.
-
-- [ ] **`--branch` default:** installer creates `warp/install-<timestamp>` branch, checks out, runs install there. Prints "Install is on branch X. Review with `git diff main`, merge with `git checkout main && git merge X`, discard with `git branch -D X`." Add `--direct` flag to opt-out.
-- [ ] **Refuse install on `main` by default** — require either `--branch <name>` or explicit `--yes-install-on-main`.
-- [ ] **Wire `--dry-run` to actually skip writes** — currently the flag is parsed but never gates the writes. Print every file it WOULD touch, then exit clean.
-- [ ] **Pre-install state snapshot** — `git status`, current branch name, uncommitted file count written into `.warpos-backup/<ts>/install-context.json` so uninstall can report "you had N uncommitted changes at install time".
-- [ ] **Same-name agent collision detection** — scan target `.claude/agents/` for basenames that match WarpOS agent roles (`builder`, `evaluator`, `fixer`, `qa`, `redteam`, `compliance`, `auditor`, `alpha`, `beta`, `gamma`, `delta`). If any match at any depth, prompt user: (a) keep yours / (b) rename yours to `<name>-custom.md` / (c) replace with WarpOS's. Unresolved collisions silently break the gauntlet.
-- [ ] **Ghost-file cleanup on re-install** — installer leaves orphan files from prior WarpOS versions (e.g., `warp/init.md` after rename to `warp/setup.md`). Installer should write a ship-manifest of every file it owns, and on re-install offer to delete ghosts (files in ship-manifest from prior version but not current).
-- [ ] **Customer-agent namespace convention** — document that WarpOS owns `.claude/agents/00-*/`, `01-*/`, `02-*/` and clients should put custom agents under `.claude/agents/99-custom/`. Installer checks + refuses to write into `99-*` slots.
-- [ ] **Post-install integrity check** — run `/warp:health --strict` at end of install; if any red, roll back to `.warpos-backup/<ts>/` automatically with user confirmation.
-
-### Requirements system — shipped but not being installed (2026-04-18, FIXED)
-
-**Correction to earlier entry.** WarpOS source actually DOES have 30 requirement template files across 10 numbered subdirs (`00-canonical/`, `01-design-system/`, `02-copy-system/`, `03-requirement-standards/`, `04-architecture/`, `05-features/`, `06-operations/`, `07-security/`, `08-testing/`, `09-automation/`) plus `_example-onboarding` feature skeleton. The files exist. The installer just wasn't copying them. FIXED in this session — installer now copies `requirements/`, `patterns/`, and `.claude/project/maps/` baseline. Historical note on what was missing: Users get a broken promise: "ask Alex to help fill in your requirements templates" → there are no templates.
-
-What jobhunter-app (the source project) has under `docs/` that WarpOS should ship as `requirements/`:
-
-- `requirements/00-canonical/` — project-level truth docs
-  - `CORE_BRIEF.md` (the product in one page)
-  - `PRODUCT_MODEL.md` (data model + state machine)
-  - `GLOSSARY.md` (terms)
-  - `USER_COHORTS.md` (target users)
-- `requirements/01-design-system/` — UI rules
-  - `COMPONENT_LIBRARY.md` (registered components)
-  - `COLOR_SEMANTICS.md` (design tokens)
-  - `ANIMATION_MOTION.md`, `FEEDBACK_PATTERNS.md`, `RESPONSIVE.md`
-- `requirements/02-copy-system/` — microcopy, tone, variants
-- `requirements/03-requirement-standards/` — `PRD_TEMPLATE.md`, `STORIES_TEMPLATE.md`, `INPUTS_TEMPLATE.md`, `HL-STORIES_TEMPLATE.md`, field spec standards
-- `requirements/04-architecture/` — architecture decision records template + examples
-- `requirements/05-features/` — per-feature dir structure (PRD + STORIES + INPUTS + COPY)
-  - Ship empty dir with one **example feature** folder showing the shape, not client content
-- `requirements/.decisions/` — ADR template
-
-Action items:
-- [ ] **Extract templates from jobhunter:** copy the canonical structure, strip all consumer-product-specific content, reduce to fillable skeletons with guidance comments. Place in WarpOS repo at `requirements/`.
-- [ ] **Installer copies `requirements/` to target** if target has no `requirements/` dir — same copy-if-missing pattern as `.claude/`. Never overwrite if target has one.
-- [ ] **One example feature** — ship `requirements/05-features/example-feature/` with PRD + STORIES + INPUTS demonstrating the schema. Users delete or rename when they create their first real feature.
-- [ ] **`/check:requirements` dry-run on fresh install** — should report "0 features defined, ready for first `/skills:create` or `Help me write a product brief`" cleanly instead of erroring on missing dirs.
-- [ ] **Update `warp-setup.js` skeleton check** to stop referencing `requirements/01-design-system` path existence as a `ui-lint` enablement signal before the templates actually ship (currently generates a misleading warning on every install).
-- [ ] **Update `systems.jsonl` seed** — `requirements-templates` entry currently seeded with `count: 0`; once templates ship, bump to real count and add `files: [...]` listing the templates.
-
-Priority: **high for v0.2.0** — the framework's value prop ("ask Alex to help write specs") is broken without templates. Current installs look complete but the `requirements/` dir is silently missing.
-
-### Guard strengthening (2026-04-18)
-
-Surfaced when I force-pushed to scrub history and my own merge-guard blocked `--force` but not `+refspec` syntax.
-
-- [ ] **merge-guard: catch all force-push forms** — current regex only catches `--force` and `-f`. Git also supports `+refs/heads/X:refs/heads/X` (plus-prefix refspec) to force-update a branch. Extend regex to: `(--force|-f\b|\s\+\S+:\S+|\s\+[a-zA-Z])` when matched against a `git push` command.
-- [ ] **team-guard: tiered agent allowlist for adhoc mode** (β RT-010). Alpha can spawn research agents (Explore, Plan, general-purpose). Build-chain agents (builder, evaluator, fixer, compliance, redteam, auditor, qa) are Gamma-only. Currently team-guard is permissive.
-
-### Namespace reorganization
-- [ ] Merge `/retro:context` + `/retro:code` into `/retro:full` as modes (not separate skills)
-- [ ] Merge `/fav:list` + `/fav:search` into `/fav` with args
-- [ ] Consider moving `/hooks:friction` analysis into `/check:patterns propose`
-
-### Spec-propagation closer (Batch G, deferred from 2026-04-17 /check:all remediation)
-- [ ] Close the loop between `/check:requirements drift` detection and actual spec updates. Current state: drift markers stage into `requirements-staged.jsonl`, reviewer manually triages. Missing: a propagation-closer that (a) walks dependent spec nodes via SPEC_GRAPH, (b) surfaces which downstream files MUST be updated when a root spec changes, (c) fails the gauntlet until propagation is attested. Design separately before implementation. β DECIDE 2026-04-17: defer to Phase 2, design as its own skill.
+- W1: per-restaurant size + price binding (`015b7c4`)
+- W2: address abbreviation expansion before Bland TTS (`b6e5cc5`)
+- W4: shared cart domain model + extended menu schema (`08bf095`, `129840b`, `9d4cf43`)
+- W5: cart-flow surface + `update_order` MCP tool + token cart-binding (`a6008dc`)
+- W6: delivery special-instructions surfacing + token-bind + gauntlet-review fixes (`1a95bce`, `0225e97`)
+- Bland intro line "This is an AI pizza concierge agent calling." (`bb7f041`)
+- A2A spec-valid input-required state for upsell turn (`b18f275`)
+- Agent-card provider rebrand to Agents for All / agentsforall.co (`0d21da5`)
 
 ---
 
-## Phase 3 — Product-as-product
+## Active backlog
 
-Treat WarpOS itself as a product-in-WarpOS with its own `requirements/05-features/`:
-- [ ] Write PRDs for installer, session-lifecycle, paths-resolution, hook-pipeline
-- [ ] Spec the Alex agent team as a feature with stories
-- [ ] Run `/preflight:run` against WarpOS itself before every push
-- [ ] Run `/qa:audit` and `/redteam:full` on WarpOS — catch the hook bugs, privacy leaks, stale refs we currently hunt manually
+Items grouped by area. Each is a meaningful project on its own — listed here so they don't get lost.
 
----
+### Compatibility-layer follow-ups (next iteration)
 
-## Phase 4 — Observability & UX
+#### N-1 — Pre-call menu confirmation (extends compatibility-layer)
 
-- [ ] `agent-dashboard.js` turned into a real browser UI (currently CLI-style)
-- [ ] Skills get a usage counter (how often each is invoked) — informs pruning
-- [ ] `/warp:tour` version 2 — interactive walkthrough, not one-shot explainer
-- [ ] `USER_GUIDE.md` → split into tutorial + reference
+**Problem:** when item availability is `unknown` (typically a Places-discovered restaurant — generic 3-item menu, no real menu data), the bot still calls. The Bland prompt's ITEM-CONFIRM step asks the restaurant on the call — but the call has already been initiated, the user is committed, and a "no, we don't carry that" answer means the bot has to recover mid-call.
 
----
+**Approach:** add a cheap pre-call menu probe step BEFORE `place_order` fires Bland. Three candidate sources, ranked by cost:
+1. **Cached menu from prior calls** — parse past Bland transcripts for menu items, cache per-restaurant. Free if we've called before.
+2. **Restaurant website scrape** — fetch the website (already in Place data), extract menu via Claude on the HTML. ~1-2 sec, ~5K tokens.
+3. **Pre-call voice probe** — a 30-second Bland call that ONLY asks "do you carry [item]?" — no order placement. Cheap because the call ends at confirmation.
 
-## Phase 5 — AIWeb (Wave 00 pizza) product backlog
+After any of these resolves, re-run `assessCompatibility` with the now-known menu data. If still unknown, fall back to current behavior (place call with ITEM-CONFIRM step).
 
-Out-of-scope items deferred from the Pizza Order Intake Upgrade plan (`~/.claude/plans/pizza-size-in-inches-snazzy-bunny.md`, 2026-05-02). These are product-side, not framework. Each is a meaningful project in its own right — flagged here so they don't get lost.
+**Pairs with ISS-005 (RT-201)** — same area of code (`src/server.ts:place_order`, `src/a2a/executor.ts`); doing both at once is efficient.
 
-### Pickup point — pizza intake upgrade, mid-flight (2026-05-02)
+#### N-2 — Resolve open compatibility-layer issues
 
-Branch `feat/p1-sizes-and-address-speech` has 6 commits with W1+W2+W3+W4+P6 done. W5 and W6 remain. To resume cleanly:
+See `issues.md` for full schema. Priority order:
 
-1. **Read context**: `~/.claude/plans/pizza-size-in-inches-snazzy-bunny.md` (full plan with GPT-5.5 review baked in), `docs/99-resources/01-research/chain-menus/SAMPLES.md` (chain ontology), `src/lib/cart.ts` (already-shipped domain model), `src/data/restaurants.ts` (Vlad's enriched fixture).
-2. **Verify branch state**: `git log --oneline feat/p1-sizes-and-address-speech ^master` should show 6 commits. `npm test` should report 61/61 pass. `npm run build` clean.
-3. **Note**: build-chain agent dispatch (Gamma → builder via `claude -p`) is currently blocked by a self-modification guard on `.claude/settings.local.json`. The user must add `Bash(claude -p *)` and `Bash(claude --print *)` to the allow list (via `/config` or by editing `.claude/settings.local.json` directly) before Gamma can write files. Until then, Alex α writes directly per the user's "full authority through all phases" directive from this session.
-
-#### W5 — Cart-mutation tools / schema *(largest remaining)*
-
-Wires the `Cart` domain model into the agent-facing tool contracts. Each sub-step is independently shippable; recommend committing one at a time.
-
-- [ ] **W5.a — extend `start_pizza_order` response** with optional fields: `customization_options` (per-pizza, derived from `restaurant.menu.pizzas[i].{crusts, toppings, sauce_options, cheese_options, dipping_sauces}`), `drink_options` (from `restaurant.menu.drinks`), `side_options` (existing `restaurant.menu.sides` re-exposed), `applicable_deals` (filter `restaurant.menu.deals` by cart-shape match — phase 1 surfaces all deals; matching logic deferred to W6 surfacing rules). Touches `src/server.ts`. Additive — no breaking change.
-- [ ] **W5.b — new MCP tool `update_order(cart_diff)`** that accepts a typed diff over the cart: add/remove a `CartItem`, add modifiers to an existing line, swap to a deal. Returns the updated `Cart`. zod schema lives in `src/server.ts` next to existing tool defs. The "diff" shape: `{ op: "add"|"remove"|"add_modifier"|"swap_to_deal", line_index?: number, item?: CartItem, modifier?: SelectedModifier, deal_id?: string }`.
-- [ ] **W5.c — extend `prepare_order` and `place_order` zod schemas** to accept a full `Cart` (in addition to the existing `OrderItem[]` shape). Migration strategy: add a new optional `cart?: Cart` field; if present, use it; else fall back to legacy `items: OrderItem[]`. Eventually deprecate `items`. Touches `src/server.ts` zod blocks.
-- [ ] **W5.d — confirmation-token cart-hash extension**. `src/lib/confirmation-token.ts` currently hashes `(restaurant_id, items, customer_name, customer_phone, delivery_address)`. Extend the hash payload to optionally include the canonicalized cart (`canonicalizeCart(cart)` from `src/lib/cart.ts`) when present. Old tokens (legacy items shape) still verify; new tokens cover the full cart. **Risk**: changing the hash invalidates any in-flight tokens — but tokens are 10-minute TTL and stored in-memory only, so this is acceptable on a fresh deploy.
-- [ ] **W5.e — A2A executor `awaiting-customization` state**. After emitting `proposed_cart` artifact and before `confirmed`, accept an intermediate message carrying chosen modifiers/drinks/deal. Two round-trips before placement. Touches `src/a2a/executor.ts`. Update `a2a-test-messages.txt` with a customization round-trip fixture.
-
-**Tests**: extend `tests/cart-schema.test.ts` with tool-boundary cases. New file `tests/update-order-tool.test.ts` for the diff semantics. Snapshot test of `start_pizza_order` response shape against Vlad's enriched menu (validates customization_options surface).
-
-#### W6 — Adaptive intake flow *(cross-surface lockstep)*
-
-The W4+W5 schema and tools are useless without the agent knowing how/when to use them. W6 is mostly prompt engineering across three surfaces. Critical: ship MCP description, A2A executor, and webapp system prompt as a single PR — divergence breaks consistency.
-
-- [ ] **W6.a — MCP `start_pizza_order` description rewrite**. Grow the existing 150-line description with the new response shape and the adaptive decision tree:
-  - "If the user already specified everything (style, size, modifiers, drink, deal) → skip to confirmation, do not ask follow-up questions."
-  - "Otherwise: required clarifications first (size if missing, headcount if preset needs it). Then ONE concise upsell turn combining extras + drinks + sides + deals: 'Want extra cheese, a soda, or to bundle with the family deal ($X total)?' — never list as 4 separate prompts."
-  - "Surface deals only when their components match the cart shape; never claim a savings number unless the math is explicit and verified."
-  - "Always render the full cart with prices before `prepare_order`."
-- [ ] **W6.b — A2A executor state arm**. The new `awaiting-customization` state from W5.e needs a complementary state-machine arm. Same surface-specific rules as W6.a baked into the artifact descriptions.
-- [ ] **W6.c — webapp system prompt update** (`webapp/app/api/chat/route.ts`). Same rules. Specifically the order flow line `start_pizza_order → show cart → user confirms → prepare_order → place_order` extends to `start_pizza_order → upsell turn → update_order(diff) → show full cart → user confirms → prepare_order → place_order`.
-- [ ] **W6 verification — 12-case scenario walkthrough**. (cold/known user) × (preset/intent/freeform) × (no-modifiers/full-modifiers) × (deal/no deal). For each, snapshot the conversation transcript and resulting Bland prompt across all three surfaces. Live smoke: order via webapp on `:3001` with extras + drink + deal + "Rd" address; verify Bland recording.
-
-#### Validation before merge
-
-- [ ] **Live Bland smoke** — at least one real call to `TEST_OVERRIDE_PHONE` with the full enriched flow. Confirms address normalization, per-restaurant size, and the new modifier/drink rendering all reach the voice agent correctly.
-- [ ] **Cross-surface consistency check** — same input prompt to MCP/A2A/webapp produces the same Bland prompt output (modulo timing). Catches drift between the three surface implementations.
-
----
+- **ISS-005 / RT-201** (HIGH adversarial): place_order recomputes compatibility against unbound `intent_style`; attacker can desync gate from cart. Fix path documented (option b — derive compatibility from cart contents). ~30 LOC across server.ts + executor.ts.
+- **ISS-001** (deferred): keyless geocoding fallback returns caution-state for known SF fixtures. Fix path: city-name string match fallback when geocode fails.
+- **ISS-002** (open, tooling): codex CLI cold-start race on Windows. Fix path: extend `providerAvailable()` to do a `which codex` ping.
+- **ISS-003** (deferred, account-gated): Gemini 3.1-pro 404 on user's free-tier API key project. Fix: upgrade to Tier 1+ Google Cloud billing OR get added to 3.1 preview allowlist.
+- **ISS-004** (FIXED `8bc7ae5`): graph format mismatch — STORIES.md uses `### GS-XX-NN` headings now.
 
 ### Menu connector enrichment
+
 - [ ] **Real Domino's API menu adapter** that emits the new `Cart` schema's modifiers, drinks, and deals (today: emits only `pizzas[]` and `sides[]`). Likely 2x the size of the intake-upgrade plan. Touches `src/connectors/dominos.ts`.
-- [ ] **Google Places menu enrichment** — Places returns minimal menu data; need either a vision-based menu OCR layer or a per-restaurant "best-effort modifier estimation" stub. Touches `src/connectors/places.ts`.
+- [ ] **Google Places menu enrichment** — Places returns minimal menu data; need either a vision-based menu OCR layer or a per-restaurant "best-effort modifier estimation" stub. Touches `src/connectors/places.ts`. (Pairs with N-1 above.)
 - [ ] **New chain connectors** — Pizza Hut, Papa John's, Little Caesars. Each is a separate connector with its own auth/rate-limit story.
+- [ ] **Domino's store coordinates** — Domino's API doesn't return store lat/lng (currently hardcoded as 0/0 → coverage check returns `unknown`). Either geocode `restaurant.address` in `mapToRestaurant` or pull from another Domino's endpoint.
 
 ### Deal intelligence
+
 - [ ] **Deal optimization** — actually compute whether a published deal beats the user's current cart. Phase 1 of the intake upgrade only *surfaces* deals; it does not claim savings. The math is non-trivial: requires per-component pricing comparison, not just total-vs-total. Risk: a wrong "you'd save $X" claim is worse than no claim.
 - [ ] **Multi-restaurant deal awareness** — cross-chain bundles (e.g. "Domino's has the better price for pepperoni, Pizza Hut has the better wing deal — order from both?"). Out of scope for v1.
 
 ### Cart depth
+
 - [ ] **Half / whole topping placement in the intake UI** — schema (`SelectedModifier.half`) supports it; intake flow doesn't surface it yet. Add only when there's user demand; most chain UIs hide this behind an advanced toggle.
 - [ ] **Per-size modifier pricing** — extra cheese typically costs $1 on a small but $3 on a large. Today our `Modifier.priceDelta` is a flat number. Schema upgrade: `priceDelta: number | { sizeId: string; price: number }[]`.
 - [ ] **Tax / fees / tip handling** — Wave 00 quotes "approximate total" via Bland; doesn't capture tax line items, delivery fees, or tip. Real-world commerce needs all three.
 
 ### Profile depth
+
 - [ ] **`UserProfile.preferred_drinks` and `preferred_modifiers`** — flagged in the intake-upgrade plan as an optional future. Once we have N>10 active users, mine their order history to infer defaults; cuts the upsell turn for repeat users.
 - [ ] **Address parsing into structured fields** (street/unit/city/state/zip) — today address is a single opaque string. Structured fields enable better Bland prompts, smarter delivery-radius checks, and address verification at intake time.
 
 ### Voice quality
+
 - [ ] **Per-restaurant pronunciation profile** — some chain names are mispronounced by Bland TTS. Add a `Restaurant.speakable_name` field that overrides `name` in the call prompt. Same pattern as `speakableAddress`, applied to restaurant name.
 - [ ] **Phonetic respelling for unusual menu items** — items like "Calzone", "Stromboli", "Bruschetta" sometimes get mangled. Optional `MenuItem.speakable_name` for the prompt.
 - [ ] **SSML upgrade** — Bland may add SSML support; switch from English-spelled-out abbreviations to actual `<phoneme>` / `<say-as>` tags when available.
 
 ### Compliance + commerce
+
 - [ ] **Credit card flow** — currently cash-only by protected decision. Real commerce requires either (a) a chain-specific payment integration or (b) a tokenized card delegated to the user's chain account. Significant security + compliance scope.
 - [ ] **Allergen surfacing** — `dietary` is a string filter today. Real allergen data needs structured fields (gluten, dairy, nuts, soy, etc.) on every `MenuItem`.
 
 ---
 
+## Human verification test (Phase 6 manual smoke)
+
+Goal: prove the compatibility layer works end-to-end on real surfaces, with one positive flow and three blocker flows.
+
+### Pre-flight (60 sec)
+
+1. `npm run build` — should exit 0 clean. (Already verified on main.)
+2. `npm test` — should print "tests 105 / pass 105 / fail 0". (Already verified.)
+3. Confirm `runtime/events.jsonl` exists OR the runtime dir is writable (it's created on first compatibility event).
+4. Server: `npm run dev` (or whatever the local-MCP launcher is) — should bind on the configured port.
+
+### Test plan — 5 flows × 2 surfaces (10 cases)
+
+The two surfaces are **MCP** (Claude Desktop or `mcp-remote` bridge) and **A2A** (the test panel at https://aiweb-mcp.fly.dev). Run each flow on both surfaces.
+
+| # | Flow | Address + intent | Expected `compatibility.overall` | place_order behavior | Notes |
+|---|---|---|---|---|---|
+| 1 | E (success path) | `1 Market St, San Francisco, CA 94105` + `meat_lovers` | `go` on `test_vlad` | dispatches Bland call cleanly | Demo Beat 3 — the happy path |
+| 2 | A (no-deliver) | same address + `pepperoni`, force `test_pickup_only` fixture | `no_go` (delivery=`pickup_only`) | refuses with `compatibility_blocked` error | Demo Beat 4 |
+| 3 | C (wrong-item) | same address + `sushi`, target `test_vlad` | `no_go` (item=`not_available`) | refuses, surfaces `nextStep` text suggesting substitute | Demo Beat 5 |
+| 4 | B (out-of-range) | distant address + any intent (forcing a Domino's far away) | `no_go` (coverage=`out_of_range`) on the far Domino's | refuses | Verifies Domino's coverage path; if Domino's `lat:0/lng:0` short-circuits to `unknown`, that's the v2-delta C-1 mitigation working as designed |
+| 5 | D (caution) | same address + `meat_lovers`, force a `places_*` restaurant | `caution` (one or more `unknown`) | proceeds (caution does NOT block) AND Bland prompt includes ITEM-CONFIRM step | Verifies the caution path doesn't false-block |
+
+### Per-surface checklist for each flow
+
+**MCP (Claude Desktop):**
+1. Open Claude Desktop → ensure `aiweb-pizza` MCP server is connected.
+2. Send the natural-language prompt corresponding to the flow.
+3. Check Claude's response for the compatibility narrative (it should reproduce `nextStep` verbatim on caution/no_go).
+4. If place_order would fire: monitor for the actual Bland call. If blocked: confirm no Bland call dispatched.
+5. Inspect `runtime/events.jsonl` — there should be a `cat: "compatibility"` event for each `assessCompatibility` call, plus a `cat: "compatibility-override"` event if the override flag was used.
+
+**A2A (test panel):**
+1. Open https://aiweb-mcp.fly.dev → bearer token + agent-card preloaded.
+2. Send a structured A2A message with the same address + intent as the flow.
+3. Inspect the `proposed_cart` artifact — confirm it carries a `compatibility` field with the four sub-fields (delivery / coverage / item / overall) plus `nextStep`.
+4. Submit the same message with `confirmed: true` (and matching `confirmation_token`). For no_go flows, expect rejection with `compatibility_blocked`. For go flows, expect Bland dispatch.
+5. Same events.jsonl inspection.
+
+### What to look for that the gauntlet can't see
+
+The gauntlet validates code correctness. The human check validates UX:
+
+- Does the agent's natural-language reply on a `caution` flow actually surface the unknown clearly to YOU (not just embed the field in the response JSON)? If the agent says "Vlad's might have meat lovers — should I call to confirm?" verbatim from `nextStep`, that's the AC7 + D-2 directive working. If the agent paraphrases or omits, the tool description didn't bind tightly enough.
+- Does the Bland call ITEM-CONFIRM step (when fired) sound natural to the restaurant on the other end, or does it confuse them? This is the only real-world signal that the prompt change in `bland.ts` works.
+- On Beat 1 (success path): does the cart preview shown to you BEFORE confirmation match what Bland actually orders? Drift here = ISS-005 territory but in the honest path; if it drifts, RT-201 is more urgent than we think.
+
+### Known gaps during your test (do not flag as bugs)
+
+- **RT-201 / ISS-005:** if you specifically try to mutate `intent_style` between `start_pizza_order` and `place_order` to a compatible value while keeping a no_go cart, the gate WILL pass and Bland WILL fire — that's the deferred adversarial bypass. Honest-path testing won't trip it. Don't do this in the YC demo.
+- **Gemini quota:** Gemini Pro models 404 on this account (free-tier `limit: 0`). Doesn't affect the demo (only redteam dispatch, which already ran via openai). Will resolve if you upgrade to Tier 1+ in Google Cloud billing.
+
+### After the test
+
+- If all 10 cases pass: run final `/export` → save as `yc-export-2.md`.
+- If any flow surprises you: log the surprise in `issues.md` with full repro, decide fix-now-vs-defer same as we did for RT-201.
+
+---
+
+## Crash-recovery / Resume instructions
+
+**If the session crashes mid-work:**
+
+1. Reopen Claude Code in this directory. SessionStart hook auto-loads the previous handoff.
+2. Read this file (`ROADMAP.md`) — current state at the top.
+3. Read `issues.md` for any open bugs.
+4. Run `git status && git log --oneline -10` to see what's committed.
+5. If you were in adhoc mode: `node scripts/mode-set.js adhoc --by alpha`.
+6. Resume from the first unchecked item under **Active backlog**.
+
+**If a fresh-eyes session asks "where do I start?":**
+
+1. Read `yc-application.md` — sprint history + tradeoffs + risks.
+2. Read this file's **Current state** + **Active backlog**.
+3. Read `issues.md` for open bugs.
+4. Pick from N-1 / N-2 / connector enrichment / cart depth based on priorities.
+
+---
+
+## Known risks
+
+1. **Places API restaurants ship with `deliveryRadius: null`.** Honest, but means coverage is always `unknown` for non-Domino's discoveries. ITEM-CONFIRM in Bland is the partial mitigation; pre-call menu probe (N-1) is the structural fix.
+2. **Generic Places menu has only 3 hardcoded items.** Any non-pepperoni/cheese/specialty intent on a Places restaurant gets `unknown`. Same N-1 dependency.
+3. **Domino's lat/lng=0 in API response.** Coverage check short-circuits to `unknown` for Domino's specifically (PRD-V2-DELTA C-1 mitigation). Real fix: geocode store address.
+4. **Token-binding mutation surface.** RT-201 demonstrated that any second-pass validation must re-derive its inputs from already-bound data. Generalizes beyond compatibility — applies to any future check that runs at place_order time.
+5. **Demo-environment fragility.** test_vlad fixture is hardcoded with SF coordinates; the demo relies on a SF-area address. Demo-script address is `1 Market St, San Francisco`; do NOT use distant addresses (e.g. user's actual home in Riddle, OR — ~600 mi away).
+6. **3-strike fix-cap.** If a recurring bug class hits cap 3+ in a single sprint, log to issues.md and defer. P-025 in Beta's judgment model is HARD-RULE.
+
+---
+
 ## Notes
 
-- During co-development against a private consumer project, every WarpOS change should also ship to that project (or vice versa). Use `/hooks:sync` pattern (extended to skills too).
-- Privacy audit required before every public push. `/check:privacy` should be the gate.
-- Main branch must stay shippable at all times. Exploratory work happens on feature branches. (This is §2 of `USER_GUIDE.md` — the #1 newbie trap.)
+- **YC application materials:** `yc-application.md` (running session journal across YC-sprint sessions), `yc-application-brief.md` (paste-ready 610-word YC pitch with 6 cited 2026 sources), `yc-export-01.md` (mid-session conversation export), `yc-export-02.txt` (final session export).
+- **Sprint discipline:** main branch must stay shippable at all times. Exploratory work happens on feature branches in `.worktrees/`. Every PR must pass `npm run build` clean before merge.
+- **Cross-repo parity:** WarpOS framework changes flagged in `warpos-to-update.md` get drained on `/warp:promote` or `/warp:release`. Don't propagate manually.

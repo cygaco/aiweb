@@ -9,7 +9,7 @@ The 90-second YC demo walkthrough. Runnable end-to-end against `test_vlad` fixtu
 1. Ensure local server up on `:3001`.
 2. Confirm `test_vlad` fixture is in `restaurants.ts` and serviceType=delivery.
 3. Have the A2A test panel open at `https://aiweb-mcp.fly.dev` with bearer token + agent card pre-loaded.
-4. Have `roadmap-yc.md`, `issues.md`, and `yc-export.md` open in a side window for show-and-tell.
+4. Have `ROADMAP.md`, `issues.md`, and `yc-export.md` open in a side window for show-and-tell.
 
 ---
 
@@ -23,7 +23,7 @@ The 90-second YC demo walkthrough. Runnable end-to-end against `test_vlad` fixtu
 
 > "What I built is a compatibility layer. Three checks before any call: does this place deliver, do they deliver to me, do they have what I want. Each check has a confidence and a source. When a check fails, the agent doesn't pick up the phone."
 
-Open `roadmap-yc.md`, scroll to "Current Objective" and "Compatibility Questions" sections.
+Open `ROADMAP.md`, scroll to "Current Objective" and "Compatibility Questions" sections.
 
 ### Beat 3 — Run flow E (success) (20s)
 
