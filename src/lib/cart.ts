@@ -141,6 +141,27 @@ export interface Drink {
 }
 
 /**
+ * Display-only drink default. NO id, NO price — cart math cannot accept this
+ * shape (see legacyItemsToCart / cartTotal signatures). Surfaced at
+ * customization time with menu_confidence = "medium" | "low".
+ */
+export interface DrinkOption {
+  name: string;
+  brand?: string;
+  sizes?: { name: string }[];
+  menu_confidence: "medium" | "low";
+}
+
+/**
+ * Display-only side default — analogous to DrinkOption. No id, no price.
+ */
+export interface SideOption {
+  name: string;
+  sizes?: { name: string }[];
+  menu_confidence: "medium" | "low";
+}
+
+/**
  * A component of a deal. Constrains what the user can select for that slot
  * (e.g. "1 medium 1-topping pizza", "any side from breadsticks/wings").
  */

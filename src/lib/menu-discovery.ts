@@ -25,6 +25,8 @@ import type {
   PizzaMenuItem,
   MenuItem,
 } from "../data/restaurants.js";
+import type { Drink } from "./cart.js";
+import { logMenuDiscoveryDrinksEvent } from "./event-log.js";
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,13 @@ function cacheDir(): string {
   return process.env.MENU_CACHE_DIR ?? "runtime/menu-cache";
 }
 
+function slug(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 // ─── Cache ───────────────────────────────────────────────────────────────────
 
 interface CachedMenuResult {
@@ -45,6 +54,7 @@ interface CachedMenuResult {
   source: "restaurant_website";
   pizzas: PizzaMenuItem[];
   sides: MenuItem[];
+  drinks: Drink[];
   deliveryCues: DeliveryCues;
 }
 
@@ -76,6 +86,7 @@ function isValidCachedMenuResult(raw: unknown): raw is CachedMenuResult {
   if (typeof obj.discoveredAt !== "string") return false;
   if (obj.source !== "restaurant_website") return false;
   if (!Array.isArray(obj.pizzas) || !Array.isArray(obj.sides)) return false;
+  if (!Array.isArray(obj.drinks)) return false;
   if (!isValidDeliveryCues(obj.deliveryCues)) return false;
   return true;
 }
@@ -142,6 +153,9 @@ Return a JSON object with exactly this shape (no markdown, no explanation):
   "sides": [
     { "name": "string", "sizes": [{ "name": "string", "price": number }] }
   ],
+  "drinks": [
+    { "name": "string", "brand": "string|null", "sizes": [{ "name": "string", "price": number }] }
+  ],
   "deliveryCues": {
     "offersDelivery": true | false | null,
     "deliveryRadiusMiles": number | null,
@@ -154,11 +168,14 @@ Rules:
 - If no pizza menu found, return empty "pizzas" array
 - If delivery status unclear, set offersDelivery to null
 - Prices must be numbers (e.g. 12.99), not strings
-- Return at most 15 pizzas`;
+- Return at most 15 pizzas
+- Include only drinks you see explicitly named on the page (e.g. "Coke 20oz $2.50"). If no drinks found, return empty "drinks" array.
+- Common size strings: "20 oz", "2 L", "Can". Prefer the page's literal wording.`;
 
 interface ExtractedMenu {
   pizzas: PizzaMenuItem[];
   sides: MenuItem[];
+  drinks: Drink[];
   deliveryCues: DeliveryCues;
 }
 
@@ -201,8 +218,44 @@ async function extractMenuFromHtml(
     if (!parsed || typeof parsed !== "object") return null;
     const obj = parsed as Record<string, unknown>;
     if (!Array.isArray(obj.pizzas) || !Array.isArray(obj.sides)) return null;
+    if (obj.drinks !== undefined && !Array.isArray(obj.drinks)) return null;
+    if (obj.drinks === undefined) obj.drinks = [];
     if (!isValidDeliveryCues(obj.deliveryCues)) return null;
-    return obj as unknown as ExtractedMenu;
+
+    // Post-process drinks: generate stable ids from brand+size slug
+    const rawDrinks = (obj.drinks ?? []) as Array<Record<string, unknown>>;
+    const drinks: Drink[] = [];
+    for (const d of rawDrinks) {
+      const name = typeof d.name === "string" ? d.name : "";
+      const brand =
+        typeof d.brand === "string" && d.brand.length > 0 ? d.brand : undefined;
+      const rawSizes = Array.isArray(d.sizes)
+        ? (d.sizes as Array<Record<string, unknown>>)
+        : [];
+      const sizes = rawSizes
+        .filter(
+          (s): s is Record<string, unknown> => !!s && typeof s === "object",
+        )
+        .map((s) => ({
+          id: slug(typeof s.name === "string" ? s.name : ""),
+          name: typeof s.name === "string" ? s.name : "",
+          price: typeof s.price === "number" ? s.price : 0,
+        }))
+        .filter((s) => s.id.length > 0 && s.name.length > 0);
+      if (!name || sizes.length === 0) continue;
+      const idBase = slug(
+        brand ? `${brand}-${sizes[0].name}` : `${name}-${sizes[0].name}`,
+      );
+      if (!idBase) continue;
+      drinks.push({ id: idBase, name, brand, sizes });
+    }
+
+    return {
+      pizzas: obj.pizzas as PizzaMenuItem[],
+      sides: obj.sides as MenuItem[],
+      drinks,
+      deliveryCues: obj.deliveryCues as DeliveryCues,
+    };
   } catch {
     return null;
   }
@@ -282,6 +335,7 @@ export async function enrichEvidence(
       source: "restaurant_website",
       pizzas: extracted.pizzas,
       sides: extracted.sides,
+      drinks: extracted.drinks,
       deliveryCues: extracted.deliveryCues,
     };
     writeCache(restaurant.id, cacheEntry);
@@ -307,6 +361,7 @@ function applyEnrichment(
       ...restaurant.menu,
       pizzas: data.pizzas,
       sides: data.sides.length > 0 ? data.sides : restaurant.menu.sides,
+      drinks: data.drinks.length > 0 ? data.drinks : restaurant.menu.drinks,
     },
   };
 
@@ -328,6 +383,14 @@ function applyEnrichment(
     enriched.deliveryRadius === null
   ) {
     enriched.deliveryRadius = data.deliveryCues.deliveryRadiusMiles;
+  }
+
+  if (data.drinks.length > 0) {
+    logMenuDiscoveryDrinksEvent({
+      restaurant_id: restaurant.id,
+      drinks_count: data.drinks.length,
+      source: "restaurant_website",
+    });
   }
 
   return enriched;

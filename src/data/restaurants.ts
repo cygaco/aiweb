@@ -6,7 +6,14 @@
 
 import { findNearbyDominosStores } from "../connectors/dominos.js";
 import { findNearbyPizzaPlaces } from "../connectors/places.js";
-import type { Drink, Deal, ModifierGroup, PriceMatrix } from "../lib/cart.js";
+import type {
+  Drink,
+  Deal,
+  ModifierGroup,
+  PriceMatrix,
+  DrinkOption,
+  SideOption,
+} from "../lib/cart.js";
 
 export interface MenuItem {
   name: string;
@@ -31,6 +38,48 @@ export interface PizzaMenuItem extends MenuItem {
   dipping_sauces?: ModifierGroup;
   priceMatrix?: PriceMatrix;
 }
+
+/**
+ * Pan-cuisine display-only defaults for pizza places. Surfaced when the
+ * restaurant's real menu lacks drinks/sides. menu_confidence = "medium"
+ * means "category exists, specific item to confirm on the call."
+ */
+export const PIZZA_CUISINE_DEFAULTS: {
+  drinks: DrinkOption[];
+  sides: SideOption[];
+} = {
+  drinks: [
+    {
+      name: "Coke",
+      brand: "Coca-Cola",
+      sizes: [{ name: "20oz" }, { name: "2L" }],
+      menu_confidence: "medium",
+    },
+    {
+      name: "Diet Coke",
+      brand: "Coca-Cola",
+      sizes: [{ name: "20oz" }, { name: "2L" }],
+      menu_confidence: "medium",
+    },
+    {
+      name: "Sprite",
+      brand: "Coca-Cola",
+      sizes: [{ name: "20oz" }, { name: "2L" }],
+      menu_confidence: "medium",
+    },
+    {
+      name: "Water",
+      sizes: [{ name: "20oz bottle" }],
+      menu_confidence: "medium",
+    },
+  ],
+  sides: [
+    { name: "Wings", menu_confidence: "medium" },
+    { name: "Breadsticks", menu_confidence: "medium" },
+    { name: "Cheesy bread", menu_confidence: "medium" },
+    { name: "Garlic knots", menu_confidence: "medium" },
+  ],
+};
 
 export interface Restaurant {
   id: string;
