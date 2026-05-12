@@ -1,12 +1,29 @@
-import type { Restaurant } from "../data/restaurants.js";
+import type { MenuItem, Restaurant } from "../data/restaurants.js";
+import { PIZZA_CUISINE_DEFAULTS } from "../data/restaurants.js";
 import {
   cartTotal,
   type Cart,
   type CartItem,
   type Deal,
+  type Drink,
+  type DrinkOption,
   type ModifierGroup,
   type SelectedModifier,
+  type SideOption,
 } from "./cart.js";
+import { logCustomizationSurfaceEvent } from "./event-log.js";
+
+/**
+ * Surface-emitted shape: a real Drink stamped with high-confidence at the
+ * boundary. NOT a new domain type — exists so the narration contract
+ * ("each item carries menu_confidence") holds for high-confidence entries.
+ */
+export type SurfaceDrink = Drink & { menu_confidence: "high" };
+
+/**
+ * Surface-emitted shape: a real side MenuItem stamped with high-confidence.
+ */
+export type SurfaceSide = MenuItem & { menu_confidence: "high" };
 
 export interface LegacyOrderItem {
   name: string;
@@ -26,8 +43,8 @@ export interface PizzaCustomizationOptions {
 
 export interface CustomizationSurface {
   customization_options?: Record<string, PizzaCustomizationOptions>;
-  drink_options?: Restaurant["menu"]["drinks"];
-  side_options?: Restaurant["menu"]["sides"];
+  drink_options?: (SurfaceDrink | DrinkOption)[];
+  side_options?: (SurfaceSide | SideOption)[];
   applicable_deals?: Deal[];
 }
 
@@ -101,6 +118,7 @@ function pizzaOptions(pizza: Restaurant["menu"]["pizzas"][number]) {
 export function buildCustomizationSurface(
   restaurant: Restaurant,
   cart: Cart,
+  surface: "mcp" | "a2a" | "webapp",
 ): CustomizationSurface {
   const customizationOptions: Record<string, PizzaCustomizationOptions> = {};
 
@@ -118,20 +136,71 @@ export function buildCustomizationSurface(
     customizationOptions[key] = options;
   });
 
-  const surface: CustomizationSurface = {};
+  const surfaceObj: CustomizationSurface = {};
   if (Object.keys(customizationOptions).length > 0) {
-    surface.customization_options = customizationOptions;
+    surfaceObj.customization_options = customizationOptions;
   }
-  if (restaurant.menu.drinks?.length) {
-    surface.drink_options = restaurant.menu.drinks;
+
+  // Drinks: real (high confidence) merged with defaults (medium) for names absent from real.
+  // Spec S-16: case-insensitive NAME match only — no brand-aware deduplication.
+  // Real entries are stamped with menu_confidence: "high" at the surface boundary.
+  const realDrinks: SurfaceDrink[] = (restaurant.menu.drinks ?? []).map(
+    (d) => ({ ...d, menu_confidence: "high" as const }),
+  );
+  const realDrinkNames = new Set(realDrinks.map((d) => d.name.toLowerCase()));
+  const defaultDrinks: DrinkOption[] = PIZZA_CUISINE_DEFAULTS.drinks.filter(
+    (d) => !realDrinkNames.has(d.name.toLowerCase()),
+  );
+  const drinkOptions: (SurfaceDrink | DrinkOption)[] = [
+    ...realDrinks,
+    ...defaultDrinks,
+  ];
+
+  // Sides: same merge pattern as drinks — append defaults whose name doesn't
+  // case-insensitively match any real side (spec S-16, exact name match).
+  // Real entries are stamped with menu_confidence: "high" at the surface boundary.
+  const realSides: SurfaceSide[] = restaurant.menu.sides.map((s) => ({
+    ...s,
+    menu_confidence: "high" as const,
+  }));
+  const realSideNames = new Set(realSides.map((s) => s.name.toLowerCase()));
+  const defaultSides: SideOption[] = PIZZA_CUISINE_DEFAULTS.sides.filter(
+    (s) => !realSideNames.has(s.name.toLowerCase()),
+  );
+  const sideOptions: (SurfaceSide | SideOption)[] = [
+    ...realSides,
+    ...defaultSides,
+  ];
+
+  if (drinkOptions.length > 0) {
+    surfaceObj.drink_options = drinkOptions;
   }
-  if (restaurant.menu.sides.length) {
-    surface.side_options = restaurant.menu.sides;
+  if (sideOptions.length > 0) {
+    surfaceObj.side_options = sideOptions;
   }
   if (restaurant.menu.deals?.length) {
-    surface.applicable_deals = restaurant.menu.deals;
+    surfaceObj.applicable_deals = restaurant.menu.deals;
   }
-  return surface;
+
+  const drinkHigh = drinkOptions.filter(
+    (d): d is SurfaceDrink => d.menu_confidence === "high",
+  ).length;
+  const drinkMed = drinkOptions.length - drinkHigh;
+  const sideHigh = sideOptions.filter(
+    (s): s is SurfaceSide => s.menu_confidence === "high",
+  ).length;
+  const sideMed = sideOptions.length - sideHigh;
+  logCustomizationSurfaceEvent({
+    restaurant_id: restaurant.id,
+    surface,
+    drink_options_count_high: drinkHigh,
+    drink_options_count_medium: drinkMed,
+    side_options_count_high: sideHigh,
+    side_options_count_medium: sideMed,
+    applicable_deals_count: surfaceObj.applicable_deals?.length ?? 0,
+  });
+
+  return surfaceObj;
 }
 
 export function hasCustomizationOpportunities(
@@ -160,7 +229,8 @@ function componentName(component: Deal["components"][number]): string {
   const constraints = component.constraints;
   const count =
     typeof constraints.count === "number" ? `${constraints.count}x ` : "";
-  const size = typeof constraints.size === "string" ? `${constraints.size} ` : "";
+  const size =
+    typeof constraints.size === "string" ? `${constraints.size} ` : "";
   const item =
     typeof constraints.item === "string"
       ? constraints.item.replace(/_/g, " ")
@@ -207,6 +277,25 @@ function requireLineIndex(diff: CartDiff): number {
     throw new Error(`line_index ${diff.line_index} is out of range`);
   }
   return diff.line_index;
+}
+
+/**
+ * A-8 belt-and-suspenders: verify a drink itemId exists in the restaurant's
+ * real menu. DrinkOption defaults (medium confidence) must NOT enter the cart.
+ */
+export function isDrinkOnMenu(restaurant: Restaurant, itemId: string): boolean {
+  return (restaurant.menu.drinks ?? []).some((d) => d.id === itemId);
+}
+
+/**
+ * A-8 belt-and-suspenders: verify a side itemId was derived from the
+ * restaurant's real menu. Side itemIds are formed by slug(restaurantId + "_" + sideName)
+ * matching the same logic used in legacyItemsToCart.
+ */
+export function isSideOnMenu(restaurant: Restaurant, itemId: string): boolean {
+  return restaurant.menu.sides.some(
+    (s) => slug(`${restaurant.id}_${s.name}`) === itemId,
+  );
 }
 
 export function applyCartDiff(

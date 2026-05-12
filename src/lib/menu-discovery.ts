@@ -25,6 +25,8 @@ import type {
   PizzaMenuItem,
   MenuItem,
 } from "../data/restaurants.js";
+import type { Drink } from "./cart.js";
+import { logMenuDiscoveryDrinksEvent } from "./event-log.js";
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,13 @@ function cacheDir(): string {
   return process.env.MENU_CACHE_DIR ?? "runtime/menu-cache";
 }
 
+function slug(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 // ─── Cache ───────────────────────────────────────────────────────────────────
 
 interface CachedMenuResult {
@@ -45,6 +54,7 @@ interface CachedMenuResult {
   source: "restaurant_website";
   pizzas: PizzaMenuItem[];
   sides: MenuItem[];
+  drinks: Drink[];
   deliveryCues: DeliveryCues;
 }
 
@@ -70,12 +80,35 @@ function isValidDeliveryCues(d: unknown): d is DeliveryCues {
   return okOffers && okRadius && okSignal;
 }
 
+function isValidDrink(d: unknown): boolean {
+  if (!d || typeof d !== "object") return false;
+  const obj = d as Record<string, unknown>;
+  if (typeof obj.id !== "string" || obj.id.length === 0) return false;
+  if (typeof obj.name !== "string" || obj.name.length === 0) return false;
+  if (!Array.isArray(obj.sizes) || obj.sizes.length === 0) return false;
+  for (const s of obj.sizes) {
+    if (!s || typeof s !== "object") return false;
+    const sz = s as Record<string, unknown>;
+    if (typeof sz.id !== "string" || sz.id.length === 0) return false;
+    if (typeof sz.name !== "string" || sz.name.length === 0) return false;
+    if (
+      typeof sz.price !== "number" ||
+      !Number.isFinite(sz.price) ||
+      sz.price < 0
+    )
+      return false;
+  }
+  return true;
+}
+
 function isValidCachedMenuResult(raw: unknown): raw is CachedMenuResult {
   if (!raw || typeof raw !== "object") return false;
   const obj = raw as Record<string, unknown>;
   if (typeof obj.discoveredAt !== "string") return false;
   if (obj.source !== "restaurant_website") return false;
   if (!Array.isArray(obj.pizzas) || !Array.isArray(obj.sides)) return false;
+  if (!Array.isArray(obj.drinks)) return false;
+  if (!obj.drinks.every(isValidDrink)) return false;
   if (!isValidDeliveryCues(obj.deliveryCues)) return false;
   return true;
 }
@@ -142,6 +175,9 @@ Return a JSON object with exactly this shape (no markdown, no explanation):
   "sides": [
     { "name": "string", "sizes": [{ "name": "string", "price": number }] }
   ],
+  "drinks": [
+    { "name": "string", "brand": "string|null", "sizes": [{ "name": "string", "price": number }] }
+  ],
   "deliveryCues": {
     "offersDelivery": true | false | null,
     "deliveryRadiusMiles": number | null,
@@ -154,11 +190,14 @@ Rules:
 - If no pizza menu found, return empty "pizzas" array
 - If delivery status unclear, set offersDelivery to null
 - Prices must be numbers (e.g. 12.99), not strings
-- Return at most 15 pizzas`;
+- Return at most 15 pizzas
+- Include only drinks you see explicitly named on the page (e.g. "Coke 20oz $2.50"). If no drinks found, return empty "drinks" array.
+- Common size strings: "20 oz", "2 L", "Can". Prefer the page's literal wording.`;
 
 interface ExtractedMenu {
   pizzas: PizzaMenuItem[];
   sides: MenuItem[];
+  drinks: Drink[];
   deliveryCues: DeliveryCues;
 }
 
@@ -201,8 +240,56 @@ async function extractMenuFromHtml(
     if (!parsed || typeof parsed !== "object") return null;
     const obj = parsed as Record<string, unknown>;
     if (!Array.isArray(obj.pizzas) || !Array.isArray(obj.sides)) return null;
+    if (obj.drinks !== undefined && !Array.isArray(obj.drinks)) return null;
+    if (obj.drinks === undefined) obj.drinks = [];
     if (!isValidDeliveryCues(obj.deliveryCues)) return null;
-    return obj as unknown as ExtractedMenu;
+
+    // Post-process drinks: generate stable ids from brand+size slug
+    const rawDrinks = (obj.drinks ?? []) as Array<Record<string, unknown>>;
+    const drinks: Drink[] = [];
+    for (const d of rawDrinks) {
+      const name = typeof d.name === "string" ? d.name : "";
+      const brand =
+        typeof d.brand === "string" && d.brand.length > 0 ? d.brand : undefined;
+      const rawSizes = Array.isArray(d.sizes)
+        ? (d.sizes as Array<Record<string, unknown>>)
+        : [];
+      const sizes = rawSizes
+        .filter(
+          (s): s is Record<string, unknown> => !!s && typeof s === "object",
+        )
+        .map((s): { id: string; name: string; price: number } | null => {
+          const name = typeof s.name === "string" ? s.name : "";
+          // IN-1: non-numeric or invalid price → drop the size (fail-open).
+          // Coercing to 0 would fabricate a free item — instead treat as invalid.
+          const price =
+            typeof s.price === "number" &&
+            Number.isFinite(s.price) &&
+            s.price >= 0
+              ? s.price
+              : null;
+          const id = slug(name);
+          if (id.length === 0 || name.length === 0 || price === null)
+            return null;
+          return { id, name, price };
+        })
+        .filter(
+          (s): s is { id: string; name: string; price: number } => s !== null,
+        );
+      if (!name || sizes.length === 0) continue;
+      const idBase = slug(
+        brand ? `${brand}-${sizes[0].name}` : `${name}-${sizes[0].name}`,
+      );
+      if (!idBase) continue;
+      drinks.push({ id: idBase, name, brand, sizes });
+    }
+
+    return {
+      pizzas: obj.pizzas as PizzaMenuItem[],
+      sides: obj.sides as MenuItem[],
+      drinks,
+      deliveryCues: obj.deliveryCues as DeliveryCues,
+    };
   } catch {
     return null;
   }
@@ -237,6 +324,9 @@ export async function enrichEvidence(
     deliveryCues: null,
   };
 
+  // TR-1: track total elapsed time from the start of this call.
+  const startMs = Date.now();
+
   // Domino's has its own provider adapter (src/connectors/dominos.ts) with
   // truthful API data. Even if a future commit populates restaurant.website
   // with dominos.com, we don't want a generic marketing page overwriting the
@@ -247,7 +337,13 @@ export async function enrichEvidence(
   const cached = readCache(restaurant.id);
   if (cached) {
     return {
-      enriched: applyEnrichment(restaurant, cached),
+      enriched: applyEnrichment(
+        restaurant,
+        cached,
+        "cache",
+        startMs,
+        _intentStyle,
+      ),
       source: "cache",
       deliveryCues: cached.deliveryCues,
     };
@@ -282,12 +378,19 @@ export async function enrichEvidence(
       source: "restaurant_website",
       pizzas: extracted.pizzas,
       sides: extracted.sides,
+      drinks: extracted.drinks,
       deliveryCues: extracted.deliveryCues,
     };
     writeCache(restaurant.id, cacheEntry);
 
     return {
-      enriched: applyEnrichment(restaurant, cacheEntry),
+      enriched: applyEnrichment(
+        restaurant,
+        cacheEntry,
+        "restaurant_website",
+        startMs,
+        _intentStyle,
+      ),
       source: "restaurant_website",
       deliveryCues: extracted.deliveryCues,
     };
@@ -299,6 +402,9 @@ export async function enrichEvidence(
 function applyEnrichment(
   restaurant: Restaurant,
   data: CachedMenuResult,
+  source: "restaurant_website" | "cache",
+  startMs: number,
+  intentStyle: string | undefined,
 ): Restaurant {
   const enriched: Restaurant = {
     ...restaurant,
@@ -307,6 +413,7 @@ function applyEnrichment(
       ...restaurant.menu,
       pizzas: data.pizzas,
       sides: data.sides.length > 0 ? data.sides : restaurant.menu.sides,
+      drinks: data.drinks.length > 0 ? data.drinks : restaurant.menu.drinks,
     },
   };
 
@@ -328,6 +435,17 @@ function applyEnrichment(
     enriched.deliveryRadius === null
   ) {
     enriched.deliveryRadius = data.deliveryCues.deliveryRadiusMiles;
+  }
+
+  // TR-1: emit full-field event — restaurant_id, drinks_count, source, durationMs, intent_style.
+  if (data.drinks.length > 0) {
+    logMenuDiscoveryDrinksEvent({
+      restaurant_id: restaurant.id,
+      drinks_count: data.drinks.length,
+      source,
+      durationMs: Date.now() - startMs,
+      intent_style: intentStyle ?? null,
+    });
   }
 
   return enriched;

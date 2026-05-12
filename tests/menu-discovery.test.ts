@@ -79,6 +79,7 @@ test("enrichEvidence — cache hit within TTL → returns cache, no network", as
     sides: [
       { name: "Garlic Knots", sizes: [{ name: "Regular", price: 5.99 }] },
     ],
+    drinks: [],
     deliveryCues: {
       offersDelivery: true,
       deliveryRadiusMiles: 5,
@@ -110,6 +111,7 @@ test("enrichEvidence — cache with offersDelivery=false → serviceType becomes
     source: "restaurant_website" as const,
     pizzas: [{ name: "Cheese", sizes: [{ name: "Large", price: 14.99 }] }],
     sides: [],
+    drinks: [],
     deliveryCues: {
       offersDelivery: false,
       deliveryRadiusMiles: null,
@@ -137,6 +139,7 @@ test("enrichEvidence — cache with offersDelivery=null → serviceType unchange
     source: "restaurant_website" as const,
     pizzas: [{ name: "Veggie", sizes: [{ name: "Large", price: 15.99 }] }],
     sides: [],
+    drinks: [],
     deliveryCues: {
       offersDelivery: null,
       deliveryRadiusMiles: null,
@@ -192,6 +195,7 @@ test("enrichEvidence — original restaurant object is not mutated on cache hit"
     source: "restaurant_website" as const,
     pizzas: [{ name: "Supreme", sizes: [{ name: "Large", price: 18.99 }] }],
     sides: [],
+    drinks: [],
     deliveryCues: {
       offersDelivery: true,
       deliveryRadiusMiles: 4,
@@ -225,6 +229,7 @@ test("enrichEvidence — cache hit sets menuSource=restaurant_website on enriche
     source: "restaurant_website" as const,
     pizzas: [{ name: "Hawaiian", sizes: [{ name: "Large", price: 16.99 }] }],
     sides: [],
+    drinks: [],
     deliveryCues: {
       offersDelivery: null,
       deliveryRadiusMiles: null,
@@ -273,4 +278,67 @@ test("enrichEvidence — dominos_* with website set → returns unchanged, no fe
   assert.strictEqual(result.deliveryCues, null);
   // Verify menuSource was NOT set (Domino's is provider-adapter truth, not website-fetched)
   assert.strictEqual(result.enriched.menuSource, undefined);
+});
+
+// T-011 — Drinks extraction tests
+
+test("drinks parity with sides — cache hit returns drinks alongside sides", async () => {
+  const restaurantId = "places_drinks_parity";
+  const cachePath = join(TMP_DIR, `${restaurantId}.json`);
+  const cache = {
+    discoveredAt: new Date().toISOString(),
+    source: "restaurant_website",
+    pizzas: [{ name: "Pepperoni", sizes: [{ name: "Large", price: 16.99 }] }],
+    sides: [{ name: "Wings", sizes: [{ name: "6pc", price: 6.99 }] }],
+    drinks: [
+      {
+        id: "coke-20-oz",
+        name: "Coke",
+        sizes: [{ id: "20-oz", name: "20 oz", price: 2.5 }],
+      },
+    ],
+    deliveryCues: {
+      offersDelivery: true,
+      deliveryRadiusMiles: 5,
+      rawSignal: "delivery",
+    },
+  };
+  writeFileSync(cachePath, JSON.stringify(cache));
+
+  const restaurant: Restaurant = {
+    ...PLACES_NO_WEBSITE,
+    id: restaurantId,
+    website: "https://example.invalid",
+  };
+  const result = await enrichEvidence(restaurant);
+  assert.equal(result.source, "cache");
+  assert.equal(result.enriched.menu.drinks?.length, 1);
+  assert.equal(result.enriched.menu.drinks?.[0].name, "Coke");
+  assert.equal(result.enriched.menu.sides?.length, 1);
+});
+
+test("fail-open when cache entry omits drinks array — validator rejects, falls back to unchanged", async () => {
+  const restaurantId = "places_missing_drinks";
+  const cachePath = join(TMP_DIR, `${restaurantId}.json`);
+  // Intentionally omit drinks field
+  const malformed = {
+    discoveredAt: new Date().toISOString(),
+    source: "restaurant_website",
+    pizzas: [{ name: "Pepperoni", sizes: [{ name: "Large", price: 16.99 }] }],
+    sides: [],
+    deliveryCues: {
+      offersDelivery: true,
+      deliveryRadiusMiles: 5,
+      rawSignal: "delivery",
+    },
+  };
+  writeFileSync(cachePath, JSON.stringify(malformed));
+  const restaurant: Restaurant = {
+    ...PLACES_NO_WEBSITE,
+    id: restaurantId,
+    website: "https://example.invalid",
+  };
+  const result = await enrichEvidence(restaurant);
+  // Validator rejects → cache miss → website fetch fails (invalid URL or no ANTHROPIC_API_KEY) → unchanged
+  assert.equal(result.source, "unchanged");
 });

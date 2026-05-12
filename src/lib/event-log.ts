@@ -64,3 +64,15 @@ export function logCompatibilityOverride(data: unknown): void {
 export function logEnrichmentEvent(data: unknown): void {
   writeEvent("enrichment", data);
 }
+
+export function logMenuDiscoveryDrinksEvent(data: unknown): void {
+  writeEvent("menu-discovery-drinks", data);
+}
+
+export function logCustomizationSurfaceEvent(data: unknown): void {
+  writeEvent("customization-surface-built", data);
+}
+
+export function logA2ACustomizationSourceEvent(data: unknown): void {
+  writeEvent("a2a-customization-source", data);
+}
