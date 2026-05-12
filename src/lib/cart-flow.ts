@@ -1,12 +1,17 @@
-import type { Restaurant } from "../data/restaurants.js";
+import type { MenuItem, Restaurant } from "../data/restaurants.js";
+import { PIZZA_CUISINE_DEFAULTS } from "../data/restaurants.js";
 import {
   cartTotal,
   type Cart,
   type CartItem,
   type Deal,
+  type Drink,
+  type DrinkOption,
   type ModifierGroup,
   type SelectedModifier,
+  type SideOption,
 } from "./cart.js";
+import { logCustomizationSurfaceEvent } from "./event-log.js";
 
 export interface LegacyOrderItem {
   name: string;
@@ -26,8 +31,8 @@ export interface PizzaCustomizationOptions {
 
 export interface CustomizationSurface {
   customization_options?: Record<string, PizzaCustomizationOptions>;
-  drink_options?: Restaurant["menu"]["drinks"];
-  side_options?: Restaurant["menu"]["sides"];
+  drink_options?: (Drink | DrinkOption)[];
+  side_options?: (MenuItem | SideOption)[];
   applicable_deals?: Deal[];
 }
 
@@ -101,6 +106,7 @@ function pizzaOptions(pizza: Restaurant["menu"]["pizzas"][number]) {
 export function buildCustomizationSurface(
   restaurant: Restaurant,
   cart: Cart,
+  surface: "mcp" | "a2a" | "webapp",
 ): CustomizationSurface {
   const customizationOptions: Record<string, PizzaCustomizationOptions> = {};
 
@@ -118,20 +124,72 @@ export function buildCustomizationSurface(
     customizationOptions[key] = options;
   });
 
-  const surface: CustomizationSurface = {};
+  const surfaceObj: CustomizationSurface = {};
   if (Object.keys(customizationOptions).length > 0) {
-    surface.customization_options = customizationOptions;
+    surfaceObj.customization_options = customizationOptions;
   }
-  if (restaurant.menu.drinks?.length) {
-    surface.drink_options = restaurant.menu.drinks;
+
+  // Drinks: real (high confidence) merged with defaults (medium) for names absent from real.
+  // Brand-aware deduplication: suppress a default when any real drink shares the same
+  // name OR brand (e.g. "Coke" default is suppressed when the real menu has "Coca-Cola"
+  // with brand "Coca-Cola").
+  const realDrinks: Drink[] = (restaurant.menu.drinks ?? []).map((d) => ({
+    ...d,
+  }));
+  const realDrinkNamesAndBrands = new Set(
+    realDrinks.flatMap((d) => [
+      d.name.toLowerCase(),
+      ...(d.brand ? [d.brand.toLowerCase()] : []),
+    ]),
+  );
+  const defaultDrinks: DrinkOption[] = PIZZA_CUISINE_DEFAULTS.drinks.filter(
+    (d) =>
+      !realDrinkNamesAndBrands.has(d.name.toLowerCase()) &&
+      !(d.brand && realDrinkNamesAndBrands.has(d.brand.toLowerCase())),
+  );
+  const drinkOptions: (Drink | DrinkOption)[] = [
+    ...realDrinks,
+    ...defaultDrinks,
+  ];
+
+  // Sides: only surface generic defaults when the real menu has NO sides at all.
+  // If a restaurant lists any sides, trust their menu — adding generic defaults
+  // (Breadsticks, Garlic knots) alongside specific real items creates noise.
+  const realSides: MenuItem[] = restaurant.menu.sides.map((s) => ({ ...s }));
+  const defaultSides: SideOption[] =
+    realSides.length === 0 ? PIZZA_CUISINE_DEFAULTS.sides : [];
+  const sideOptions: (MenuItem | SideOption)[] = [
+    ...realSides,
+    ...defaultSides,
+  ];
+
+  if (drinkOptions.length > 0) {
+    surfaceObj.drink_options = drinkOptions;
   }
-  if (restaurant.menu.sides.length) {
-    surface.side_options = restaurant.menu.sides;
+  if (sideOptions.length > 0) {
+    surfaceObj.side_options = sideOptions;
   }
   if (restaurant.menu.deals?.length) {
-    surface.applicable_deals = restaurant.menu.deals;
+    surfaceObj.applicable_deals = restaurant.menu.deals;
   }
-  return surface;
+
+  const drinkHigh = drinkOptions.filter((d): d is Drink => "id" in d).length;
+  const drinkMed = drinkOptions.length - drinkHigh;
+  const sideHigh = sideOptions.filter(
+    (s): s is MenuItem => !("menu_confidence" in s),
+  ).length;
+  const sideMed = sideOptions.length - sideHigh;
+  logCustomizationSurfaceEvent({
+    restaurant_id: restaurant.id,
+    surface,
+    drink_options_count_high: drinkHigh,
+    drink_options_count_medium: drinkMed,
+    side_options_count_high: sideHigh,
+    side_options_count_medium: sideMed,
+    applicable_deals_count: surfaceObj.applicable_deals?.length ?? 0,
+  });
+
+  return surfaceObj;
 }
 
 export function hasCustomizationOpportunities(
@@ -160,7 +218,8 @@ function componentName(component: Deal["components"][number]): string {
   const constraints = component.constraints;
   const count =
     typeof constraints.count === "number" ? `${constraints.count}x ` : "";
-  const size = typeof constraints.size === "string" ? `${constraints.size} ` : "";
+  const size =
+    typeof constraints.size === "string" ? `${constraints.size} ` : "";
   const item =
     typeof constraints.item === "string"
       ? constraints.item.replace(/_/g, " ")

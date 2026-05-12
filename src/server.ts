@@ -140,6 +140,19 @@ const dealSchema = z
 // register, not a re-declared copy that could drift.
 export const deliveryInstructionsSchema = z.string().max(200).optional();
 
+const confirmOnCallItemsSchema = z
+  .array(
+    z.object({
+      name: z.string(),
+      brand: z.string().optional(),
+      size: z.string().optional(),
+    }),
+  )
+  .optional()
+  .describe(
+    "Medium-confidence items the user picked during the upsell turn. Passed to Bland's prompt as 'Also ask the restaurant about: [list]'. NOT added to the cart line items — pricing is unknown until the call confirms.",
+  );
+
 function cartLineSummary(item: CartItem): string {
   if (item.kind === "deal") {
     return `${item.quantity}x ${item.name}`;
@@ -332,6 +345,7 @@ export function createServer(tokenHash?: string): McpServer {
       delivery_instructions: deliveryInstructionsSchema.describe(
         "Free-text instructions for the driver (gate code, vehicle to look for, etc.). Bound into the token.",
       ),
+      confirm_on_call_items: confirmOnCallItemsSchema,
     },
 
     async ({
@@ -465,9 +479,37 @@ BEFORE PROCEEDING TO ORDER: Each returned restaurant has a \`compatibility\` fie
   - \`compatibility.overall === 'no_go'\`: DO NOT call this restaurant. Explain the blocker to the user and pick a \`go\`/\`caution\` alternative or ask how to proceed.
   When \`compatibility.overall === 'caution'\` or \`'no_go'\`, your reply to the user MUST include the verbatim text from \`compatibility.nextStep\`. Don't paraphrase. The nextStep is the agent's resolution-path recommendation.
 
+NARRATION INTEGRITY:
+The tool response contains item arrays you may speak from: \`menu.pizzas[]\`, \`menu.sides[]\`, \`menu.drinks[]\`, plus the customization surface's \`drink_options[]\` and \`side_options[]\`. Each item carries \`menu_confidence: "high" | "medium" | "low"\`. **You may only name dishes, brands, sizes, and prices that appear in one of these arrays — never anything outside them.**
+
+When \`menu_confidence: "high"\` — this exact item is on the restaurant's real menu (sourced from \`restaurant.menu.*\` or live discovery). You may state its name, brand, size, and price verbatim.
+
+When \`menu_confidence: "medium"\` — this item is a typical default for the cuisine, present in the response so you can offer it. You may NAME it (e.g. "Coke 20oz" — the name and size are in the response), but you must NOT claim availability or quote a price. Phrase: *"Most pizza places carry [item-name from response] — I'll confirm on the call."* If the user picks it, treat it as a \`confirm_on_call_items\` flag, not a cart line.
+
+When an item is absent from every response array — do NOT mention it. Do NOT bridge from a real entry ("Coke") to an absent one ("Pepsi"). Suggest categories that ARE in the response, or ask the user.
+
+Brand-equivalent substitutions ("Coke or Pepsi", "Mountain Dew") are NOT allowed unless that brand appears in the response. The agent's job is to surface what we have; the call confirms what we don't.
+
+UPSELL TURN (one concise turn, then confirm):
+
+If \`surface.drink_options\` has entries, list them by name. Distinguish by \`menu_confidence\`:
+  • **High-confidence drinks** (real menu, with prices): "Want a drink? We have Coke 20oz at $2.50, Coke 2L at $4.00, Sprite 20oz at $2.50."
+  • **Medium-confidence drinks** (defaults — names from the response, no prices): "Want a drink? Most pizza places carry Coke, Diet Coke, Sprite, or water in 20oz or 2L. I'll confirm what they have and the price on the call."
+
+If \`surface.side_options\` has entries, same pattern (high → name + price; medium → name + "I'll confirm on the call").
+
+If \`surface.applicable_deals\` has entries, surface them with verified math only.
+
+If the user picks a medium-confidence item:
+  • Acknowledge: "Got it — I'll ask the restaurant about [item-name] on the call."
+  • Pass the item into \`confirm_on_call_items\` on \`update_order\` / \`prepare_order\` / \`place_order\`.
+  • Do NOT add it to the cart line items.
+
+Combine into ONE concise turn. Do NOT list each category as a separate question. Do NOT collapse named choices to abstract categories ("a soda" — wrong). Do NOT punt named items to "resolved on call" when they're in the response — call confirmation is for unknowns and live price drift only.
+
 ADAPTIVE CART FLOW:
 - If the user already specified everything (style, size, modifiers, drink, deal) → skip to confirmation. Do not ask follow-up questions.
-- Otherwise: required clarifications first (size if missing, headcount if preset needs it). Then ONE concise upsell turn combining extras + drinks + sides + deals: 'Want extra cheese, a soda, or to bundle with the family deal ($X total)?' — never list as 4 separate prompts.
+- Otherwise: required clarifications first (size if missing, headcount if preset needs it). Then apply the UPSELL TURN block above.
 - Surface deals only when their components match the cart shape; never claim a savings number unless the math is explicit and verified.
 - Always render the full cart with prices before \`prepare_order\`.
 - Before \`prepare_order\`, ask once: "Any special delivery instructions? (gate code, leave-at-door, vehicle to look for, etc.) — say 'no' if none." Capture verbatim. Pass to \`prepare_order\` and \`place_order\` as \`delivery_instructions\`. Skip if user already volunteered them upstream.
@@ -845,7 +887,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         };
         Object.assign(
           result,
-          buildCustomizationSurface(primaryRestaurant, cart),
+          buildCustomizationSurface(primaryRestaurant, cart, "mcp"),
         );
         if (dietary) {
           (result.suggested_order as Record<string, unknown>).dietary_note =
@@ -884,7 +926,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         };
         Object.assign(
           result,
-          buildCustomizationSurface(primaryRestaurant, cart),
+          buildCustomizationSurface(primaryRestaurant, cart, "mcp"),
         );
       }
       // If occasion preset matches, build from preset
@@ -921,7 +963,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           }
           Object.assign(
             result,
-            buildCustomizationSurface(primaryRestaurant, cart),
+            buildCustomizationSurface(primaryRestaurant, cart, "mcp"),
           );
         }
       }
@@ -987,6 +1029,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         .describe(
           "Inline deal record when restaurant_id lookup is unavailable.",
         ),
+      confirm_on_call_items: confirmOnCallItemsSchema,
     },
 
     async ({
@@ -1146,6 +1189,7 @@ Then call check_order_status with the returned call_id to get the result.`,
         .describe(
           "What the user wanted (used for the second-pass compatibility check and for the ITEM-CONFIRM step in the call when item availability is unknown).",
         ),
+      confirm_on_call_items: confirmOnCallItemsSchema,
     },
 
     async ({
@@ -1162,6 +1206,7 @@ Then call check_order_status with the returned call_id to get the result.`,
       confirmation_token,
       override_compatibility,
       intent_style,
+      confirm_on_call_items,
     }) => {
       // Resolve optional fields from profile if available
       let resolvedAddress = delivery_address;
@@ -1442,6 +1487,7 @@ Then call check_order_status with the returned call_id to get the result.`,
         dietaryRequirements: dietary_requirements,
         itemAvailabilityUnknown,
         intentStyle: intent_style,
+        confirmOnCallItems: confirm_on_call_items,
       };
 
       try {
