@@ -29,11 +29,15 @@ describe("cart customization surface", () => {
 
     assert.ok(surface.customization_options?.["Meat Lovers"]?.crusts);
     assert.ok(surface.customization_options?.["Meat Lovers"]?.toppings);
-    // 4 real drinks (Coca-Cola, Diet Coke, Sprite, Dasani Water) + Water default
-    // (Coke/Diet Coke/Sprite defaults suppressed by brand-aware merge; Dasani Water
-    // != "Water" by name so Water default is kept)
-    assert.equal(surface.drink_options?.length, 5);
-    assert.equal(surface.side_options?.length, 2);
+    // 4 real drinks (Coca-Cola, Diet Coke, Sprite, Dasani Water) + 2 defaults
+    // (case-insensitive name match: "Coca-Cola" != "Coke" so Coke default
+    // kept; "Diet Coke"/"Sprite" suppressed; "Dasani Water" != "Water" so
+    // Water default kept).
+    assert.equal(surface.drink_options?.length, 6);
+    // 2 real sides ("Wings (8pc)", "Cheesy Bread") + 3 defaults
+    // ("wings (8pc)" != "wings" so Wings default kept; "Cheesy Bread" matches
+    // "Cheesy bread"; Breadsticks/Garlic knots not in real menu).
+    assert.equal(surface.side_options?.length, 5);
     assert.equal(surface.applicable_deals?.length, 2);
   });
 });
@@ -153,7 +157,8 @@ describe("customization surface — discriminated union + merge + TR-2 event", (
   // cartTotal accepts CartItem[]; DrinkOption is not a CartItem (no kind/itemId/basePrice).
   // The compile-time check is the wall; tsc --noEmit in CI is the gate.
   test("type-wall: Drink and DrinkOption are distinct shapes (compile-time gate)", () => {
-    // Runtime representation check: real Drink has id; DrinkOption has menu_confidence
+    // Runtime check: real entries narrow on menu_confidence:"high" and have id;
+    // defaults narrow on menu_confidence:"medium" and lack id.
     const restaurant = TEST_RESTAURANTS.find((r) => r.id === "test_vlad")!;
     const cart = legacyItemsToCart(
       [{ name: "Meat Lovers", size: 'Large 14"', quantity: 1, price: 15.99 }],
@@ -161,10 +166,10 @@ describe("customization surface — discriminated union + merge + TR-2 event", (
     );
     const surface = buildCustomizationSurface(restaurant, cart, "mcp");
     const realDrinks = (surface.drink_options ?? []).filter(
-      (d): d is Drink => "id" in d,
+      (d) => d.menu_confidence === "high",
     );
     const defaultDrinks = (surface.drink_options ?? []).filter(
-      (d) => "menu_confidence" in d,
+      (d) => d.menu_confidence !== "high",
     );
     assert.ok(realDrinks.length > 0, "at least one high-confidence real drink");
     assert.ok(
@@ -178,5 +183,17 @@ describe("customization surface — discriminated union + merge + TR-2 event", (
     for (const d of defaultDrinks) {
       assert.ok(!("id" in d), "default drink has no id");
     }
+  });
+
+  test("type-wall: DrinkOption is NOT a Drink (@ts-expect-error compile-time)", () => {
+    // @ts-expect-error — Drink requires id and price; DrinkOption has neither.
+    const bad: Drink = {
+      name: "X",
+      sizes: [{ name: "20oz" }],
+      menu_confidence: "medium",
+    };
+    // If the @ts-expect-error directive is satisfied (i.e. the line WOULD error
+    // without it), the type wall holds. Reference `bad` to satisfy noUnusedLocals.
+    void bad;
   });
 });

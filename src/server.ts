@@ -34,6 +34,8 @@ import { cartTotal, type Cart, type CartItem } from "./lib/cart.js";
 import {
   applyCartDiff,
   buildCustomizationSurface,
+  isDrinkOnMenu,
+  isSideOnMenu,
   legacyItemsToCart,
   type CartDiff,
 } from "./lib/cart-flow.js";
@@ -1046,6 +1048,84 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         const restaurant = restaurant_id
           ? getRestaurantById(restaurant_id)
           : null;
+        // A-8 belt-and-suspenders (redteam RT-003): drink/side lines must
+        // reference items on the restaurant's real menu. Defaults (medium
+        // confidence) route through confirm_on_call_items, not cart lines.
+        if (op === "add" && item) {
+          if (item.kind === "drink") {
+            if (!restaurant) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: JSON.stringify(
+                      {
+                        status: "error",
+                        message:
+                          "Adding a drink line requires restaurant_id so the server can verify it is on the menu.",
+                      },
+                      null,
+                      2,
+                    ),
+                  },
+                ],
+              };
+            }
+            if (!isDrinkOnMenu(restaurant, item.itemId)) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: JSON.stringify(
+                      {
+                        status: "error",
+                        message: `Drink itemId "${item.itemId}" is not on this restaurant's real menu. Medium-confidence defaults must be routed through confirm_on_call_items on prepare_order / place_order, not added as cart lines.`,
+                      },
+                      null,
+                      2,
+                    ),
+                  },
+                ],
+              };
+            }
+          } else if (item.kind === "side") {
+            if (!restaurant) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: JSON.stringify(
+                      {
+                        status: "error",
+                        message:
+                          "Adding a side line requires restaurant_id so the server can verify it is on the menu.",
+                      },
+                      null,
+                      2,
+                    ),
+                  },
+                ],
+              };
+            }
+            if (!isSideOnMenu(restaurant, item.itemId)) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: JSON.stringify(
+                      {
+                        status: "error",
+                        message: `Side itemId "${item.itemId}" is not on this restaurant's real menu. Medium-confidence defaults must be routed through confirm_on_call_items on prepare_order / place_order, not added as cart lines.`,
+                      },
+                      null,
+                      2,
+                    ),
+                  },
+                ],
+              };
+            }
+          }
+        }
         const updated = applyCartDiff(
           {
             op,

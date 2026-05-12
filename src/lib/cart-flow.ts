@@ -13,6 +13,18 @@ import {
 } from "./cart.js";
 import { logCustomizationSurfaceEvent } from "./event-log.js";
 
+/**
+ * Surface-emitted shape: a real Drink stamped with high-confidence at the
+ * boundary. NOT a new domain type — exists so the narration contract
+ * ("each item carries menu_confidence") holds for high-confidence entries.
+ */
+export type SurfaceDrink = Drink & { menu_confidence: "high" };
+
+/**
+ * Surface-emitted shape: a real side MenuItem stamped with high-confidence.
+ */
+export type SurfaceSide = MenuItem & { menu_confidence: "high" };
+
 export interface LegacyOrderItem {
   name: string;
   size: string;
@@ -31,8 +43,8 @@ export interface PizzaCustomizationOptions {
 
 export interface CustomizationSurface {
   customization_options?: Record<string, PizzaCustomizationOptions>;
-  drink_options?: (Drink | DrinkOption)[];
-  side_options?: (MenuItem | SideOption)[];
+  drink_options?: (SurfaceDrink | DrinkOption)[];
+  side_options?: (SurfaceSide | SideOption)[];
   applicable_deals?: Deal[];
 }
 
@@ -130,35 +142,32 @@ export function buildCustomizationSurface(
   }
 
   // Drinks: real (high confidence) merged with defaults (medium) for names absent from real.
-  // Brand-aware deduplication: suppress a default when any real drink shares the same
-  // name OR brand (e.g. "Coke" default is suppressed when the real menu has "Coca-Cola"
-  // with brand "Coca-Cola").
-  const realDrinks: Drink[] = (restaurant.menu.drinks ?? []).map((d) => ({
-    ...d,
-  }));
-  const realDrinkNamesAndBrands = new Set(
-    realDrinks.flatMap((d) => [
-      d.name.toLowerCase(),
-      ...(d.brand ? [d.brand.toLowerCase()] : []),
-    ]),
+  // Spec S-16: case-insensitive NAME match only — no brand-aware deduplication.
+  // Real entries are stamped with menu_confidence: "high" at the surface boundary.
+  const realDrinks: SurfaceDrink[] = (restaurant.menu.drinks ?? []).map(
+    (d) => ({ ...d, menu_confidence: "high" as const }),
   );
+  const realDrinkNames = new Set(realDrinks.map((d) => d.name.toLowerCase()));
   const defaultDrinks: DrinkOption[] = PIZZA_CUISINE_DEFAULTS.drinks.filter(
-    (d) =>
-      !realDrinkNamesAndBrands.has(d.name.toLowerCase()) &&
-      !(d.brand && realDrinkNamesAndBrands.has(d.brand.toLowerCase())),
+    (d) => !realDrinkNames.has(d.name.toLowerCase()),
   );
-  const drinkOptions: (Drink | DrinkOption)[] = [
+  const drinkOptions: (SurfaceDrink | DrinkOption)[] = [
     ...realDrinks,
     ...defaultDrinks,
   ];
 
-  // Sides: only surface generic defaults when the real menu has NO sides at all.
-  // If a restaurant lists any sides, trust their menu — adding generic defaults
-  // (Breadsticks, Garlic knots) alongside specific real items creates noise.
-  const realSides: MenuItem[] = restaurant.menu.sides.map((s) => ({ ...s }));
-  const defaultSides: SideOption[] =
-    realSides.length === 0 ? PIZZA_CUISINE_DEFAULTS.sides : [];
-  const sideOptions: (MenuItem | SideOption)[] = [
+  // Sides: same merge pattern as drinks — append defaults whose name doesn't
+  // case-insensitively match any real side (spec S-16, exact name match).
+  // Real entries are stamped with menu_confidence: "high" at the surface boundary.
+  const realSides: SurfaceSide[] = restaurant.menu.sides.map((s) => ({
+    ...s,
+    menu_confidence: "high" as const,
+  }));
+  const realSideNames = new Set(realSides.map((s) => s.name.toLowerCase()));
+  const defaultSides: SideOption[] = PIZZA_CUISINE_DEFAULTS.sides.filter(
+    (s) => !realSideNames.has(s.name.toLowerCase()),
+  );
+  const sideOptions: (SurfaceSide | SideOption)[] = [
     ...realSides,
     ...defaultSides,
   ];
@@ -173,10 +182,12 @@ export function buildCustomizationSurface(
     surfaceObj.applicable_deals = restaurant.menu.deals;
   }
 
-  const drinkHigh = drinkOptions.filter((d): d is Drink => "id" in d).length;
+  const drinkHigh = drinkOptions.filter(
+    (d): d is SurfaceDrink => d.menu_confidence === "high",
+  ).length;
   const drinkMed = drinkOptions.length - drinkHigh;
   const sideHigh = sideOptions.filter(
-    (s): s is MenuItem => !("menu_confidence" in s),
+    (s): s is SurfaceSide => s.menu_confidence === "high",
   ).length;
   const sideMed = sideOptions.length - sideHigh;
   logCustomizationSurfaceEvent({
@@ -266,6 +277,25 @@ function requireLineIndex(diff: CartDiff): number {
     throw new Error(`line_index ${diff.line_index} is out of range`);
   }
   return diff.line_index;
+}
+
+/**
+ * A-8 belt-and-suspenders: verify a drink itemId exists in the restaurant's
+ * real menu. DrinkOption defaults (medium confidence) must NOT enter the cart.
+ */
+export function isDrinkOnMenu(restaurant: Restaurant, itemId: string): boolean {
+  return (restaurant.menu.drinks ?? []).some((d) => d.id === itemId);
+}
+
+/**
+ * A-8 belt-and-suspenders: verify a side itemId was derived from the
+ * restaurant's real menu. Side itemIds are formed by slug(restaurantId + "_" + sideName)
+ * matching the same logic used in legacyItemsToCart.
+ */
+export function isSideOnMenu(restaurant: Restaurant, itemId: string): boolean {
+  return restaurant.menu.sides.some(
+    (s) => slug(`${restaurant.id}_${s.name}`) === itemId,
+  );
 }
 
 export function applyCartDiff(
