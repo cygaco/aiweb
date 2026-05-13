@@ -197,3 +197,473 @@ describe("customization surface — discriminated union + merge + TR-2 event", (
     void bad;
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S-23 NEW TESTS (SP-20260512-002) — brand suppression + deal helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { dealComponentsMatchCart, dealSavings } from "../src/lib/cart-flow.js";
+import type { Deal, Cart, CartItem } from "../src/lib/cart.js";
+import type { Restaurant } from "../src/data/restaurants.js";
+
+// ── Additional fixtures ───────────────────────────────────────────────────
+
+const VLAD_R = TEST_RESTAURANTS.find((r) => r.id === "test_vlad")!;
+
+// Pepsi-only restaurant (mirrors S-22 but for surface tests)
+const PEPSI_RESTAURANT: Restaurant = {
+  id: "test_pepsi_r",
+  name: "Pepsi Pizza Co.",
+  phone: "+14155559999",
+  address: "SF, CA",
+  lat: 37.775,
+  lng: -122.42,
+  deliveryRadius: 10,
+  estimatedDeliveryMinutes: 35,
+  acceptsCash: true,
+  serviceType: "delivery",
+  menu: {
+    pizzas: [
+      { name: "Pepperoni", sizes: [{ name: 'Large 14"', price: 12.99 }] },
+    ],
+    sides: [{ name: "Wings", sizes: [{ name: "Regular", price: 7.99 }] }],
+    drinks: [
+      {
+        id: "pepsi_20oz",
+        name: "Pepsi",
+        brand: "Pepsi",
+        sizes: [{ id: "20oz", name: "20oz Bottle", price: 2.49 }],
+      },
+      {
+        id: "water_pepsi",
+        name: "Water",
+        sizes: [{ id: "20oz", name: "20oz Bottle", price: 1.5 }],
+      },
+    ],
+  },
+  hours: "11–11",
+  isTest: true,
+};
+
+// No-drinks restaurant
+const NO_DRINKS_RESTAURANT: Restaurant = {
+  id: "test_nodrinks",
+  name: "Dry Pizza",
+  phone: "+14155550000",
+  address: "SF, CA",
+  lat: 37.775,
+  lng: -122.42,
+  deliveryRadius: 10,
+  estimatedDeliveryMinutes: 30,
+  acceptsCash: true,
+  serviceType: "delivery",
+  menu: {
+    pizzas: [{ name: "Cheese", sizes: [{ name: "Large", price: 11.99 }] }],
+    sides: [],
+  },
+  hours: "11–11",
+  isTest: true,
+};
+
+// Unbranded-drinks restaurant
+const UNBRANDED_RESTAURANT: Restaurant = {
+  ...NO_DRINKS_RESTAURANT,
+  id: "test_unbranded",
+  menu: {
+    ...NO_DRINKS_RESTAURANT.menu,
+    drinks: [
+      {
+        id: "house_cola",
+        name: "House Cola",
+        // no brand field — undefined
+        sizes: [{ id: "20oz", name: "20oz", price: 1.99 }],
+      },
+    ],
+  },
+};
+
+// Cart helpers
+function makeCart(overrides: Partial<CartItem>[] = []): Cart {
+  return overrides.map((o) => ({
+    kind: "pizza" as const,
+    itemId: "test_vlad_pepperoni",
+    name: "Pepperoni",
+    sizeLabel: 'Medium 12"',
+    sizeId: "medium_12",
+    quantity: 1,
+    basePrice: 10.99,
+    ...o,
+  }));
+}
+
+// ── S-23 Tests ────────────────────────────────────────────────────────────
+
+describe("S-23: brand suppression", () => {
+  // 1. Real Pepsi entries → Coke/Diet Coke/Sprite defaults dropped, Water retained
+  test("S23-1: Pepsi real drinks → Coke/Diet Coke/Sprite defaults suppressed, Water retained", () => {
+    const cart = legacyItemsToCart(
+      [{ name: "Pepperoni", size: 'Large 14"', quantity: 1, price: 12.99 }],
+      PEPSI_RESTAURANT,
+    );
+    const surface = buildCustomizationSurface(PEPSI_RESTAURANT, cart, "mcp");
+    const drinkNames = (surface.drink_options ?? []).map((d) =>
+      d.name.toLowerCase(),
+    );
+    // Pepsi real drink present
+    assert.ok(drinkNames.some((n) => n.includes("pepsi")));
+    // Coke/Diet Coke/Sprite defaults from coca_cola portfolio suppressed
+    assert.ok(
+      !drinkNames.includes("coke"),
+      "Coke default should be suppressed",
+    );
+    assert.ok(
+      !drinkNames.includes("diet coke"),
+      "Diet Coke default should be suppressed",
+    );
+    assert.ok(
+      !drinkNames.includes("sprite"),
+      "Sprite default should be suppressed",
+    );
+    // Water retained (no brand → never suppressed)
+    assert.ok(drinkNames.some((n) => n.includes("water")));
+  });
+
+  // 2. Real Coca-Cola entries → Coke/Diet Coke/Sprite defaults stay (same portfolio)
+  test("S23-2: Coca-Cola real drinks → same-portfolio defaults (Coke/Sprite) retained", () => {
+    const cart = legacyItemsToCart(
+      [{ name: "Meat Lovers", size: 'Large 14"', quantity: 1, price: 15.99 }],
+      VLAD_R,
+    );
+    const surface = buildCustomizationSurface(VLAD_R, cart, "mcp");
+    const drinkNames = (surface.drink_options ?? []).map((d) =>
+      d.name.toLowerCase(),
+    );
+    // Real Coca-Cola (high confidence) present
+    assert.ok(drinkNames.some((n) => n.includes("coca-cola")));
+    // Coke default (same portfolio — coca_cola) should NOT be suppressed by brand
+    // Note: name-match may suppress it if "Coke" == "Coca-Cola" but they differ
+    // (Coca-Cola != Coke case-insensitively) so Coke default should remain
+    assert.ok(
+      drinkNames.some((n) => n === "coke"),
+      "Coke default should remain (different name from Coca-Cola, same portfolio)",
+    );
+    // Water retained
+    assert.ok(drinkNames.some((n) => n.includes("water")));
+  });
+
+  // 3. No real drinks → all defaults surface unchanged
+  test("S23-3: no real drinks → all defaults surface unchanged", () => {
+    const cart = legacyItemsToCart(
+      [{ name: "Cheese", size: "Large", quantity: 1, price: 11.99 }],
+      NO_DRINKS_RESTAURANT,
+    );
+    const surface = buildCustomizationSurface(
+      NO_DRINKS_RESTAURANT,
+      cart,
+      "mcp",
+    );
+    const drinkNames = (surface.drink_options ?? []).map((d) =>
+      d.name.toLowerCase(),
+    );
+    // All 4 defaults should be present
+    assert.ok(drinkNames.includes("coke"));
+    assert.ok(drinkNames.includes("diet coke"));
+    assert.ok(drinkNames.includes("sprite"));
+    assert.ok(drinkNames.some((n) => n.includes("water")));
+  });
+
+  // 4. Real drink with brand===undefined → no suppression applied
+  test("S23-4: real drink with brand=undefined (unbranded) → no portfolio suppression", () => {
+    const cart = legacyItemsToCart(
+      [{ name: "Cheese", size: "Large", quantity: 1, price: 11.99 }],
+      UNBRANDED_RESTAURANT,
+    );
+    const surface = buildCustomizationSurface(
+      UNBRANDED_RESTAURANT,
+      cart,
+      "mcp",
+    );
+    const drinkNames = (surface.drink_options ?? []).map((d) =>
+      d.name.toLowerCase(),
+    );
+    // Coke/Diet Coke/Sprite defaults should NOT be suppressed (no real portfolio)
+    assert.ok(drinkNames.includes("coke"), "Coke default should remain");
+    assert.ok(drinkNames.includes("sprite"), "Sprite default should remain");
+  });
+
+  // 5. Real drink with unknown portfolio → no suppression of name-portfolio defaults
+  test("S23-5: real drink with regional brand (unknown portfolio) → no suppression of name-portfolio defaults", () => {
+    const regionalRestaurant: Restaurant = {
+      ...NO_DRINKS_RESTAURANT,
+      id: "test_regional",
+      menu: {
+        ...NO_DRINKS_RESTAURANT.menu,
+        drinks: [
+          {
+            id: "nehi_grape",
+            name: "Nehi Grape",
+            brand: "Nehi", // not in BRAND_PORTFOLIOS → unknown
+            sizes: [{ id: "12oz", name: "12oz", price: 1.5 }],
+          },
+        ],
+      },
+    };
+    const cart = legacyItemsToCart(
+      [{ name: "Cheese", size: "Large", quantity: 1, price: 11.99 }],
+      regionalRestaurant,
+    );
+    const surface = buildCustomizationSurface(regionalRestaurant, cart, "mcp");
+    const drinkNames = (surface.drink_options ?? []).map((d) =>
+      d.name.toLowerCase(),
+    );
+    // Unknown portfolio → no suppression of Coke/Sprite/Diet Coke
+    assert.ok(drinkNames.includes("coke"), "Coke default should remain");
+    assert.ok(drinkNames.includes("sprite"), "Sprite default should remain");
+  });
+
+  // 6. suppressed_default_count field present on event log
+  test("S23-6: suppressed_default_count field present on customization-surface-built event", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "cf-s23-"));
+    const evtFile = join(tmp, "events.jsonl");
+    process.env.COMPATIBILITY_EVENTS_FILE = evtFile;
+
+    const cart = legacyItemsToCart(
+      [{ name: "Pepperoni", size: 'Large 14"', quantity: 1, price: 12.99 }],
+      PEPSI_RESTAURANT,
+    );
+    buildCustomizationSurface(PEPSI_RESTAURANT, cart, "mcp");
+
+    const lines = readFileSync(evtFile, "utf8").trim().split("\n");
+    const evt = lines
+      .map(
+        (l) => JSON.parse(l) as { cat: string; data: Record<string, unknown> },
+      )
+      .find((e) => e.cat === "customization-surface-built");
+    assert.ok(evt, "must have customization-surface-built event");
+    assert.ok(
+      "suppressed_default_count" in evt!.data,
+      "event must have suppressed_default_count field",
+    );
+    assert.ok(
+      typeof evt!.data.suppressed_default_count === "number",
+      "suppressed_default_count must be a number",
+    );
+    // Pepsi restaurant should suppress Coke/Diet Coke/Sprite (3 coca_cola defaults)
+    assert.ok(
+      (evt!.data.suppressed_default_count as number) >= 3,
+      `Expected >= 3 suppressed defaults, got ${evt!.data.suppressed_default_count}`,
+    );
+    delete process.env.COMPATIBILITY_EVENTS_FILE;
+  });
+
+  // 7. real_drink_portfolios field present on event log
+  test("S23-7: real_drink_portfolios field present on customization-surface-built event", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "cf-s23-portf-"));
+    const evtFile = join(tmp, "events.jsonl");
+    process.env.COMPATIBILITY_EVENTS_FILE = evtFile;
+
+    const cart = legacyItemsToCart(
+      [{ name: "Pepperoni", size: 'Large 14"', quantity: 1, price: 12.99 }],
+      PEPSI_RESTAURANT,
+    );
+    buildCustomizationSurface(PEPSI_RESTAURANT, cart, "mcp");
+
+    const lines = readFileSync(evtFile, "utf8").trim().split("\n");
+    const evt = lines
+      .map(
+        (l) => JSON.parse(l) as { cat: string; data: Record<string, unknown> },
+      )
+      .find((e) => e.cat === "customization-surface-built");
+    assert.ok(evt, "must have customization-surface-built event");
+    assert.ok(
+      "real_drink_portfolios" in evt!.data,
+      "event must have real_drink_portfolios field",
+    );
+    assert.ok(
+      Array.isArray(evt!.data.real_drink_portfolios),
+      "real_drink_portfolios must be an array",
+    );
+    // Pepsi restaurant → portfolios include "pepsi"
+    assert.ok(
+      (evt!.data.real_drink_portfolios as string[]).includes("pepsi"),
+      "real_drink_portfolios must include pepsi",
+    );
+    delete process.env.COMPATIBILITY_EVENTS_FILE;
+  });
+});
+
+describe("S-23: dealComponentsMatchCart", () => {
+  const vladMixMatch = VLAD_R.menu.deals!.find(
+    (d) => d.id === "vlad_mix_match",
+  )!;
+  const vladFamilyCombo = VLAD_R.menu.deals!.find(
+    (d) => d.id === "vlad_family_combo",
+  )!;
+
+  // 8. dealComponentsMatchCart with mix_match deal and qualifying cart → true
+  test("S23-8: dealComponentsMatchCart — vlad_mix_match + [medium pizza, side] → true", () => {
+    const cart: Cart = [
+      {
+        kind: "pizza",
+        itemId: "test_vlad_pepperoni",
+        name: "Pepperoni",
+        sizeId: "medium_12",
+        sizeLabel: 'Medium 12"',
+        quantity: 1,
+        basePrice: 10.99,
+      },
+      {
+        kind: "side",
+        itemId: "test_vlad_wings_8pc",
+        name: "Wings (8pc)",
+        sizeId: "regular",
+        sizeLabel: "Regular",
+        quantity: 1,
+        basePrice: 8.99,
+      },
+    ];
+    assert.strictEqual(dealComponentsMatchCart(vladMixMatch, cart), true);
+  });
+
+  // 9. dealComponentsMatchCart — large-only cart doesn't meet mix_match
+  test("S23-9: dealComponentsMatchCart — [large pepperoni only] with minItems=2 → false", () => {
+    const cart: Cart = [
+      {
+        kind: "pizza",
+        itemId: "test_vlad_pepperoni",
+        name: "Pepperoni",
+        sizeId: "large_14",
+        sizeLabel: 'Large 14"',
+        quantity: 1,
+        basePrice: 12.99,
+      },
+    ];
+    // vlad_mix_match requires medium pizza + minItems=2 eligible items
+    // large pizza doesn't match medium constraint AND count is 1 < 2
+    assert.strictEqual(dealComponentsMatchCart(vladMixMatch, cart), false);
+  });
+
+  // 10. dealComponentsMatchCart — empty cart → false
+  test("S23-10: dealComponentsMatchCart — empty cart → false", () => {
+    assert.strictEqual(dealComponentsMatchCart(vladMixMatch, []), false);
+    assert.strictEqual(dealComponentsMatchCart(vladFamilyCombo, []), false);
+  });
+
+  // 11. dealSavings — family combo with matching cart → verified: true, savings > 0
+  test("S23-11: dealSavings — vlad_family_combo with matching cart → verified=true, savings>0", () => {
+    const cart: Cart = [
+      {
+        kind: "pizza",
+        itemId: "test_vlad_pepperoni",
+        name: "Pepperoni",
+        sizeId: "large_14",
+        sizeLabel: 'Large 14"',
+        quantity: 2,
+        basePrice: 12.99,
+      },
+      {
+        kind: "side",
+        itemId: "wings_8pc",
+        name: "Wings (8pc)",
+        sizeId: "regular",
+        sizeLabel: "Regular",
+        quantity: 1,
+        basePrice: 8.99,
+      },
+      {
+        kind: "drink",
+        itemId: "coke_2l",
+        name: "Coke 2L",
+        sizeId: "2l",
+        sizeLabel: "2L",
+        quantity: 1,
+        basePrice: 3.99,
+      },
+    ];
+    const result = dealSavings(vladFamilyCombo, cart, VLAD_R);
+    assert.strictEqual(result.verified, true);
+    assert.ok(result.savings !== null && result.savings > 0);
+    assert.match(result.reason, /matched at high confidence|all components/i);
+  });
+
+  // 12. dealSavings — mismatch cart → verified: false, savings: null
+  test("S23-12: dealSavings — vlad_family_combo with mismatch cart → verified=false, savings=null", () => {
+    // Only one large pizza, no side, no drink — family combo needs 2 pizzas + side + drink
+    const cart: Cart = [
+      {
+        kind: "pizza",
+        itemId: "test_vlad_pepperoni",
+        name: "Pepperoni",
+        sizeId: "large_14",
+        sizeLabel: 'Large 14"',
+        quantity: 1,
+        basePrice: 12.99,
+      },
+    ];
+    const result = dealSavings(vladFamilyCombo, cart, VLAD_R);
+    assert.strictEqual(result.verified, false);
+    assert.strictEqual(result.savings, null);
+    assert.ok(result.reason.length > 0);
+  });
+
+  // 13. applicable_deals[].match === 'page_only' on empty cart for all deals
+  test("S23-13: applicable_deals all page_only when cart is empty", () => {
+    const emptyCart: Cart = [];
+    const surface = buildCustomizationSurface(VLAD_R, emptyCart, "mcp");
+    assert.ok(
+      surface.applicable_deals?.length ?? 0 > 0,
+      "vlad should have deals",
+    );
+    for (const entry of surface.applicable_deals ?? []) {
+      assert.strictEqual(
+        entry.match,
+        "page_only",
+        `Deal "${entry.deal.name}" should be page_only on empty cart`,
+      );
+      assert.strictEqual(entry.savings, null);
+    }
+  });
+
+  // 14. applicable_deals[].match === 'components_align' with verified savings when cart matches
+  test("S23-14: applicable_deals components_align + savings != null when cart matches family combo", () => {
+    const cart: Cart = [
+      {
+        kind: "pizza",
+        itemId: "test_vlad_pepperoni",
+        name: "Pepperoni",
+        sizeId: "large_14",
+        sizeLabel: 'Large 14"',
+        quantity: 2,
+        basePrice: 12.99,
+      },
+      {
+        kind: "side",
+        itemId: "wings_8pc",
+        name: "Wings (8pc)",
+        sizeId: "regular",
+        sizeLabel: "Regular",
+        quantity: 1,
+        basePrice: 8.99,
+      },
+      {
+        kind: "drink",
+        itemId: "coke_2l",
+        name: "Coke 2L",
+        sizeId: "2l",
+        sizeLabel: "2L",
+        quantity: 1,
+        basePrice: 3.99,
+      },
+    ];
+    const surface = buildCustomizationSurface(VLAD_R, cart, "mcp");
+    const familyEntry = surface.applicable_deals?.find(
+      (d) => d.deal.id === "vlad_family_combo",
+    );
+    assert.ok(familyEntry, "vlad_family_combo should be in applicable_deals");
+    assert.strictEqual(familyEntry!.match, "components_align");
+    assert.ok(
+      familyEntry!.savings !== null && familyEntry!.savings > 0,
+      `Expected savings > 0, got ${familyEntry!.savings}`,
+    );
+  });
+});
