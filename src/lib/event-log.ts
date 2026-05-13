@@ -76,3 +76,13 @@ export function logCustomizationSurfaceEvent(data: unknown): void {
 export function logA2ACustomizationSourceEvent(data: unknown): void {
   writeEvent("a2a-customization-source", data);
 }
+
+/**
+ * SP-20260512-002 TR-4 — branch taken inside `start_pizza_order`.
+ *
+ * Values: 'presets' | 'intent_ranked' | 'fallback_discovery'
+ *         | 'discovery_only' | 'delegate'
+ */
+export function logStartPizzaOrderBranchEvent(data: unknown): void {
+  writeEvent("start_pizza_order_branch", data);
+}

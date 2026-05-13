@@ -479,7 +479,11 @@ export function getRestaurantById(id: string): Restaurant | null {
  * Find restaurants near an address.
  * - Checks in-memory cache first (5-min TTL)
  * - Runs live Domino's discovery, writes result to cache
- * - Always appends TEST_RESTAURANTS at the end
+ * - Appends TEST_RESTAURANTS at the end unless INCLUDE_TEST_RESTAURANTS=false.
+ *   Default is to include them (preserves dev/demo ergonomics); production
+ *   deploys (fly.toml) set the env var explicitly to false to suppress them.
+ *   Lookups via getRestaurantById / getRestaurantPhone are unaffected — the
+ *   gate is on discovery surface, not on existence.
  */
 export async function findNearbyRestaurants(
   address: string,
@@ -500,5 +504,6 @@ export async function findNearbyRestaurants(
     restaurantCache.set(key, { results: live, cachedAt: Date.now() });
   }
 
-  return [...live, ...TEST_RESTAURANTS];
+  const includeTest = process.env.INCLUDE_TEST_RESTAURANTS !== "false";
+  return includeTest ? [...live, ...TEST_RESTAURANTS] : live;
 }

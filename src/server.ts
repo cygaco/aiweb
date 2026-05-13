@@ -956,6 +956,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
               dietary_note: `Customer requires ${dietary}. Bland will confirm availability before ordering.`,
             }),
             ...(max_budget &&
+              total !== null &&
               total > max_budget && {
                 budget_warning: `Estimated $${total.toFixed(2)} exceeds budget of $${max_budget.toFixed(2)}.`,
               }),

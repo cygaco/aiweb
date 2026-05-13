@@ -27,7 +27,32 @@ export interface Preset {
   needsHeadcount: boolean;
   items: (restaurant: Restaurant, headcount?: number) => OrderItem[];
   suggestedSides?: (restaurant: Restaurant, headcount?: number) => OrderItem[];
-  estimateTotal: (restaurant: Restaurant, headcount?: number) => number;
+  /**
+   * Estimate the total of this preset against a chosen restaurant.
+   *
+   * Returns `null` on restaurants whose `menuSource` is generic — i.e.
+   * neither a `test_*` / `dominos_*` fixture nor an enriched Places entry
+   * tagged `menuSource: 'restaurant_website'`. Generic-template prices
+   * are not evidence; surfacing a synthesized total from them is the
+   * exact dishonesty SP-20260512-002 closes.
+   * SP-20260512-002 S-14 / R-7.
+   */
+  estimateTotal: (restaurant: Restaurant, headcount?: number) => number | null;
+}
+
+/**
+ * A preset's `estimateTotal` is only meaningful for restaurants whose
+ * `menu.*.sizes[].price` is real-menu evidence:
+ *  - `test_*` / `dominos_*` ids — hand-curated or API-sourced.
+ *  - `places_*` ids tagged `menuSource === 'restaurant_website'` — enriched.
+ * Everything else gets a `null` total; the agent narrates "I'll get you the
+ * exact total on the call" (C-2).
+ */
+function restaurantHasRealPrices(restaurant: Restaurant): boolean {
+  if (restaurant.id.startsWith("test_")) return true;
+  if (restaurant.id.startsWith("dominos_")) return true;
+  if (restaurant.menuSource === "restaurant_website") return true;
+  return false;
 }
 
 /**
@@ -190,6 +215,7 @@ export const COLD_PRESETS: Preset[] = [
       return item ? [item] : [];
     },
     estimateTotal: (restaurant) => {
+      if (!restaurantHasRealPrices(restaurant)) return null;
       const items = COLD_PRESETS[0].items(restaurant);
       return totalOf(items);
     },
@@ -233,6 +259,7 @@ export const COLD_PRESETS: Preset[] = [
       return item ? [item] : [];
     },
     estimateTotal: (restaurant, headcount = 6) => {
+      if (!restaurantHasRealPrices(restaurant)) return null;
       const items = COLD_PRESETS[1].items(restaurant, headcount);
       const sides = COLD_PRESETS[1].suggestedSides
         ? COLD_PRESETS[1].suggestedSides(restaurant, headcount)
@@ -271,6 +298,7 @@ export const COLD_PRESETS: Preset[] = [
       return out;
     },
     estimateTotal: (restaurant, headcount = 8) => {
+      if (!restaurantHasRealPrices(restaurant)) return null;
       const items = COLD_PRESETS[2].items(restaurant, headcount);
       return totalOf(items);
     },
@@ -320,6 +348,7 @@ export const COLD_PRESETS: Preset[] = [
       return item ? [item] : [];
     },
     estimateTotal: (restaurant, headcount = 10) => {
+      if (!restaurantHasRealPrices(restaurant)) return null;
       const items = COLD_PRESETS[3].items(restaurant, headcount);
       const sides = COLD_PRESETS[3].suggestedSides
         ? COLD_PRESETS[3].suggestedSides(restaurant, headcount)
