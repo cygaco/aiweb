@@ -80,7 +80,7 @@ export function logA2ACustomizationSourceEvent(data: unknown): void {
 /**
  * SP-20260512-002 TR-4 — branch taken inside `start_pizza_order`.
  *
- * Values: 'presets' | 'intent_ranked' | 'fallback_discovery'
+ * Values: 'presets' | 'intent_ranked' | 'occasion' | 'fallback_discovery'
  *         | 'discovery_only' | 'delegate'
  */
 export function logStartPizzaOrderBranchEvent(data: unknown): void {

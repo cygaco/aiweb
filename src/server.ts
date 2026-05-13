@@ -511,7 +511,7 @@ PRICE HONESTY WALL (CRITICAL):
 When \`suggested_order.narration_total_unknown === true\`, you MUST NOT voice any total — neither verbatim nor approximated. Required phrase: "I'll get you the exact total on the call." Forbidden phrases: "about $X total", "roughly $X", "around $X", "estimated $X total".
 
 DEAL NARRATION GATE (CRITICAL):
-Only voice a deal's savings number when \`applicable_deals[].match === 'components_align' && savings != null\`. Otherwise speak: "they have a deals page — I'll ask about specifics on the call." Forbidden when match !== 'components_align': "save $X with the [deal name]", "they have a deal that saves about $X", "this would be cheaper as the [deal name]".
+Only voice a deal's savings number when \`applicable_deals[].match === 'components_align' && savings != null\`. Otherwise speak: "They have a deals page — I'll ask about specifics on the call." Forbidden when match !== 'components_align': "save $X with the [deal name]", "they have a deal that saves about $X", "this would be cheaper as the [deal name]".
 When the deal does align with verified savings, the format is: "[Deal name] saves $[savings.toFixed(2)] on this cart."
 
 NARRATION INTEGRITY:
@@ -659,6 +659,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
               style: z.string().min(1).max(80),
               size: z.string().max(40).optional(),
             })
+            .strict()
             .optional(),
           sides: z
             .array(
@@ -679,6 +680,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
             .max(8)
             .optional(),
         })
+        .strict()
         .optional()
         .describe(
           "Structured intent from the user (pizza style + optional sides + optional drinks). " +
@@ -1082,42 +1084,55 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
       // Intent-ranked branch: user specified what they want via intent_items or
       // legacy intent_style. intent_items.pizza.style takes precedence (S-8).
       if (effectiveIntentStyle || hasIntent) {
-        const styleToUse = effectiveIntentStyle ?? "pepperoni";
-        const sizeToUse = intent_items?.pizza?.size ?? intent_size;
-        const items = orderFromIntent(primaryRestaurant, {
-          style: styleToUse,
-          size: sizeToUse,
-          quantity: intent_quantity,
-        });
-        const cart = legacyItemsToCart(items, primaryRestaurant);
-        const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-        // S-13: narration_total_unknown flag.
-        const narrationTotalUnknown = cartNarrationTotalUnknown(
-          cart,
-          primaryRestaurant,
-        );
-        const narrationTotalUnknownReason: "generic_menu" | null =
-          narrationTotalUnknown ? "generic_menu" : null;
-        result.suggested_order = {
-          items,
-          cart,
-          estimatedTotal: total,
-          narration_total_unknown: narrationTotalUnknown,
-          narration_total_unknown_reason: narrationTotalUnknownReason,
-          menu_confidence: menuConfidence,
-          note: "User specified what they want — skip presets, go to confirmation.",
-          ...(dietary && {
-            dietary_note: `Customer requires ${dietary}. Bland will confirm availability before ordering.`,
-          }),
-          ...(max_budget &&
-            total > max_budget && {
-              budget_warning: `Estimated $${total.toFixed(2)} exceeds budget of $${max_budget.toFixed(2)}. Suggest a smaller size or fewer items.`,
+        const pizzaIntended = !!(effectiveIntentStyle || intent_items?.pizza);
+        if (pizzaIntended) {
+          const styleToUse = effectiveIntentStyle ?? "pepperoni";
+          const sizeToUse = intent_items?.pizza?.size ?? intent_size;
+          const items = orderFromIntent(primaryRestaurant, {
+            style: styleToUse,
+            size: sizeToUse,
+            quantity: intent_quantity,
+          });
+          const cart = legacyItemsToCart(items, primaryRestaurant);
+          const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+          const narrationTotalUnknown = cartNarrationTotalUnknown(
+            cart,
+            primaryRestaurant,
+          );
+          const narrationTotalUnknownReason: "generic_menu" | null =
+            narrationTotalUnknown ? "generic_menu" : null;
+          result.suggested_order = {
+            items,
+            cart,
+            estimatedTotal: total,
+            narration_total_unknown: narrationTotalUnknown,
+            narration_total_unknown_reason: narrationTotalUnknownReason,
+            menu_confidence: menuConfidence,
+            note: "User specified what they want — skip presets, go to confirmation.",
+            ...(dietary && {
+              dietary_note: `Customer requires ${dietary}. Bland will confirm availability before ordering.`,
             }),
-        };
-        Object.assign(
-          result,
-          buildCustomizationSurface(primaryRestaurant, cart, "mcp"),
-        );
+            ...(max_budget &&
+              total > max_budget && {
+                budget_warning: `Estimated $${total.toFixed(2)} exceeds budget of $${max_budget.toFixed(2)}. Suggest a smaller size or fewer items.`,
+              }),
+          };
+          Object.assign(
+            result,
+            buildCustomizationSurface(primaryRestaurant, cart, "mcp"),
+          );
+        } else {
+          // Drinks/sides-only intent: the user named sides or drinks but no pizza.
+          // Do NOT default to pepperoni — surface the customization options
+          // and let the agent ask the user which pizza they want.
+          const emptyCart: Cart = [];
+          Object.assign(
+            result,
+            buildCustomizationSurface(primaryRestaurant, emptyCart, "mcp"),
+          );
+          result.needs_info =
+            "User specified sides/drinks but no pizza. Ask: 'What pizza would you like with that?' Show individual options (Pepperoni, Meat Lovers, Veggie, Just Cheese).";
+        }
         logStartPizzaOrderBranchEvent({
           branch: "intent_ranked",
           restaurant_id: primaryRestaurant.id,
@@ -1175,7 +1190,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           );
         }
         logStartPizzaOrderBranchEvent({
-          branch: "intent_ranked",
+          branch: "occasion",
           restaurant_id: primaryRestaurant.id,
         });
       }

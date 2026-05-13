@@ -389,7 +389,7 @@ function buildPizzaCheck(
       reason: match
         ? `Generic Places menu template matched "${match.matched}" — not real evidence; real menu unknown.`
         : `"${intentStyle}" not in generic 3-item template; real menu unknown.`,
-      nextStep: `Run menu discovery, or confirm on call: 'Do you carry ${intentStyle}?'`,
+      nextStep: "Run menu discovery or confirm availability on the call.",
     };
   }
 
@@ -438,7 +438,7 @@ export function checkSideAvailability(
       confidence: 0.4,
       source: "places_generic_menu",
       reason: `Generic Places template — real side menu unknown for "${query.name}".`,
-      nextStep: `Confirm on call: 'Do you carry ${query.name}?'`,
+      nextStep: "Confirm availability on the call.",
     };
   }
   const match = findSideMatch(restaurant, query.name);
@@ -486,7 +486,7 @@ export function checkDrinkAvailability(
       confidence: 0.4,
       source: "places_generic_menu",
       reason: `Generic Places template — real drink menu unknown for "${query.name}".`,
-      nextStep: `Confirm on call: 'Do you carry ${query.name}?'`,
+      nextStep: "Confirm availability on the call.",
     };
   }
   const match = findDrinkMatch(restaurant, query);
@@ -506,7 +506,7 @@ export function checkDrinkAvailability(
       confidence: 0.8,
       source: "menu_match",
       reason: `${restaurant.name} carries "${match.matched.name}" but at a different brand than requested (${query.brand}).`,
-      nextStep: `Confirm on call whether ${query.brand} or the alternate brand is acceptable.`,
+      nextStep: "Confirm on call whether the alternate brand is acceptable.",
     };
   }
   if (!match.sizeMatched) {
