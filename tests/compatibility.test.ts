@@ -393,29 +393,6 @@ const PEPSI_ONLY_SHOP: Restaurant = {
   isTest: true,
 };
 
-const DOMINOS_REAL: Restaurant = {
-  ...DOMINOS_LATLNG_ZERO,
-  id: "dominos_real",
-  lat: 37.775,
-  lng: -122.418,
-  deliveryRadius: 5,
-  menu: {
-    pizzas: [{ name: "Pepperoni", sizes: [{ name: "Large", price: 13.99 }] }],
-    sides: [{ name: "Wings", sizes: [{ name: "Regular", price: 8.99 }] }],
-    drinks: [
-      {
-        id: "pepsi_real",
-        name: "Pepsi",
-        brand: "Pepsi",
-        sizes: [
-          { id: "20oz", name: "20oz", price: 2.49 },
-          { id: "2l", name: "2L", price: 3.99 },
-        ],
-      },
-    ],
-  },
-};
-
 // S-22 test 1: side-only intent on real menu → available
 test("S22-1: checkSideAvailability — test_vlad + 'wings' → available (real menu match)", () => {
   const r = checkSideAvailability(VLAD_WITH_DRINKS, { name: "wings" });

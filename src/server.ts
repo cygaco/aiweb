@@ -764,10 +764,23 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         ? (intent_items as IntentItems)
         : (effectiveIntentStyle ?? undefined);
 
+      // S-8 / AC-8.1: shouldRank gates compatibility ranking, sort, and enrichment.
+      // No-intent presets path skips all three — restaurants stay in source order
+      // and primaryRestaurant is restaurants[0] of the original list, not a compat winner.
+      const shouldRank =
+        hasIntent ||
+        !!effectiveIntentStyle ||
+        !!delegate ||
+        !!occasion ||
+        !!discovery_only;
+
       // Geocode user address once for compatibility coverage checks. Falls
       // back to undefined when key is missing or geocode fails — compatibility
-      // layer then emits coverage `requires_address`.
-      const userGeo = await geocodeAddress(resolvedAddress);
+      // layer then emits coverage `requires_address`. Skip when !shouldRank
+      // (presets path doesn't read userGeo).
+      const userGeo = shouldRank
+        ? await geocodeAddress(resolvedAddress)
+        : undefined;
       const userLat = userGeo?.lat;
       const userLng = userGeo?.lng;
 
@@ -779,24 +792,27 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         caution: 1,
         no_go: 2,
       };
-      const annotated = restaurants
-        .map((r) => ({
-          restaurant: r,
-          compatibility: assessCompatibility(
-            r,
-            userLat,
-            userLng,
-            effectiveIntent,
-          ),
-        }))
-        .sort(
-          (a, b) =>
-            VERDICT_ORDER[a.compatibility.overall] -
-              VERDICT_ORDER[b.compatibility.overall] ||
-            b.compatibility.qualityScore - a.compatibility.qualityScore ||
-            b.compatibility.priceKnownCount - a.compatibility.priceKnownCount,
-        );
-      restaurants = annotated.map((a) => a.restaurant);
+      const annotated = shouldRank
+        ? restaurants
+            .map((r) => ({
+              restaurant: r,
+              compatibility: assessCompatibility(
+                r,
+                userLat,
+                userLng,
+                effectiveIntent,
+              ),
+            }))
+            .sort(
+              (a, b) =>
+                VERDICT_ORDER[a.compatibility.overall] -
+                  VERDICT_ORDER[b.compatibility.overall] ||
+                b.compatibility.qualityScore - a.compatibility.qualityScore ||
+                b.compatibility.priceKnownCount -
+                  a.compatibility.priceKnownCount,
+            )
+        : [];
+      if (shouldRank) restaurants = annotated.map((a) => a.restaurant);
       const compatibilityById = new Map(
         annotated.map((a) => [a.restaurant.id, a.compatibility]),
       );
@@ -821,7 +837,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           durationMs: number;
         }
       >();
-      if (ENRICH_COUNT > 0 && topNeedsEnrich) {
+      if (shouldRank && ENRICH_COUNT > 0 && topNeedsEnrich) {
         const cautionRestaurants = annotated
           .filter(
             (a) =>
@@ -883,27 +899,23 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         }
       }
       // Re-sort restaurants by post-enrichment verdict using the full tuple
-      // (verdict, -qualityScore, -priceKnownCount). (S-7)
-      restaurants.sort((a, b) => {
-        const compA = compatibilityById.get(a.id)!;
-        const compB = compatibilityById.get(b.id)!;
-        return (
-          VERDICT_ORDER[compA.overall] - VERDICT_ORDER[compB.overall] ||
-          compB.qualityScore - compA.qualityScore ||
-          compB.priceKnownCount - compA.priceKnownCount
-        );
-      });
+      // (verdict, -qualityScore, -priceKnownCount). (S-7). Only when shouldRank;
+      // presets path never reorders.
+      if (shouldRank) {
+        restaurants.sort((a, b) => {
+          const compA = compatibilityById.get(a.id)!;
+          const compB = compatibilityById.get(b.id)!;
+          return (
+            VERDICT_ORDER[compA.overall] - VERDICT_ORDER[compB.overall] ||
+            compB.qualityScore - compA.qualityScore ||
+            compB.priceKnownCount - compA.priceKnownCount
+          );
+        });
+      }
 
-      // S-8: Whether to decorate restaurant entries with `compatibility`.
-      // Strip when there is no user intent — the presets path doesn't need it
-      // and exposing it with empty item_map is noise. Decorate when intent,
-      // delegate, occasion, or discovery_only is active.
-      const showCompatibility =
-        hasIntent ||
-        !!effectiveIntentStyle ||
-        !!delegate ||
-        !!occasion ||
-        !!discovery_only;
+      // S-8 / AC-8.1: Whether to decorate restaurant entries with `compatibility`.
+      // 1:1 with shouldRank — presets path skips both ranking and decoration.
+      const showCompatibility = shouldRank;
 
       // Build response.
       const result: Record<string, unknown> = {
@@ -1200,13 +1212,18 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           (p) =>
             // Only show group presets if headcount or occasion context exists
             !p.needsHeadcount || !!headcount,
-        ).map((p) => ({
-          id: p.id,
-          label: p.label,
-          description: p.description,
-          needsHeadcount: p.needsHeadcount,
-          estimatedTotal: p.estimateTotal(primaryRestaurant, headcount),
-        }));
+        ).map((p) => {
+          const estimatedTotal = p.estimateTotal(primaryRestaurant, headcount);
+          // AC-14.3: surface `estimated_only` when total is null (generic menus).
+          return {
+            id: p.id,
+            label: p.label,
+            description: p.description,
+            needsHeadcount: p.needsHeadcount,
+            estimatedTotal,
+            estimated_only: estimatedTotal === null,
+          };
+        });
         result.presets_note =
           "These are WHAT-THE-USER-WANTS options — NOT the restaurant's menu. " +
           "Present as 'What are you in the mood for?' Show individual options first. " +

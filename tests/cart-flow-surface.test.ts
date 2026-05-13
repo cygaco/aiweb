@@ -203,7 +203,7 @@ describe("customization surface — discriminated union + merge + TR-2 event", (
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { dealComponentsMatchCart, dealSavings } from "../src/lib/cart-flow.js";
-import type { Deal, Cart, CartItem } from "../src/lib/cart.js";
+import type { Cart, CartItem } from "../src/lib/cart.js";
 import type { Restaurant } from "../src/data/restaurants.js";
 
 // ── Additional fixtures ───────────────────────────────────────────────────
@@ -281,20 +281,6 @@ const UNBRANDED_RESTAURANT: Restaurant = {
     ],
   },
 };
-
-// Cart helpers
-function makeCart(overrides: Partial<CartItem>[] = []): Cart {
-  return overrides.map((o) => ({
-    kind: "pizza" as const,
-    itemId: "test_vlad_pepperoni",
-    name: "Pepperoni",
-    sizeLabel: 'Medium 12"',
-    sizeId: "medium_12",
-    quantity: 1,
-    basePrice: 10.99,
-    ...o,
-  }));
-}
 
 // ── S-23 Tests ────────────────────────────────────────────────────────────
 
