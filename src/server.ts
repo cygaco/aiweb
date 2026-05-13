@@ -34,16 +34,18 @@ import { cartTotal, type Cart, type CartItem } from "./lib/cart.js";
 import {
   applyCartDiff,
   buildCustomizationSurface,
+  cartNarrationTotalUnknown,
   isDrinkOnMenu,
   isSideOnMenu,
   legacyItemsToCart,
   type CartDiff,
 } from "./lib/cart-flow.js";
-import { assessCompatibility } from "./lib/compatibility.js";
+import { assessCompatibility, type IntentItems } from "./lib/compatibility.js";
 import { enrichEvidence, ENRICH_COUNT } from "./lib/menu-discovery.js";
 import {
   logCompatibilityOverride,
   logEnrichmentEvent,
+  logStartPizzaOrderBranchEvent,
 } from "./lib/event-log.js";
 import { geocodeAddress } from "./lib/geo.js";
 
@@ -430,29 +432,52 @@ export function createServer(tokenHash?: string): McpServer {
   server.tool(
     "start_pizza_order",
 
+    // LOCKSTEP: also edit webapp/app/api/chat/route.ts:10 and src/a2a/executor.ts:43 — narration phrases must match for tests/narration-parity.test.ts
     `Find pizza restaurants near an address and build a suggested order.
 
-FIRST — IDENTIFY THE ENTRY POINT, then follow the right path:
+INTENT-FIRST ENTRY — DEFAULT BEHAVIOR:
+When the user opens with vague pizza intent ('order pizza', 'pizza please'), ask 'what are you in the mood for?' BEFORE asking address.
+
+Use this opener verbatim:
+"What are you in the mood for? Pepperoni, meat lovers, veggie, just cheese, or something else? If you want sides or drinks too, name them — I'll find a place that carries everything."
+
+Then call this tool with \`intent_items\` populated:
+  intent_items.pizza.style — pizza style (e.g. "pepperoni", "meat_lovers", "veggie")
+  intent_items.pizza.size  — optional size preference (e.g. "large")
+  intent_items.sides[]     — up to 8 sides, e.g. [{name: "wings"}]
+  intent_items.drinks[]    — up to 8 drinks, e.g. [{name: "Coke", brand: "Coca-Cola", size: "20oz"}]
+
+THREE BRANCHES the tool follows based on intent:
+
+  ▸ PRESETS — when intent_items is absent or empty (and no intent_style/occasion/delegate):
+    Returns COLD_PRESETS list — user preference options, NOT the restaurant's menu items.
+    Present as "What are you in the mood for?" — never as "Here's the menu."
+    No compatibility annotation on restaurants in presets mode.
+
+  ▸ INTENT_RANKED — when intent_items has content (or legacy intent_style is set):
+    Returns restaurants ranked by (verdict → qualityScore → priceKnownCount).
+    Per-restaurant \`compatibility\` field shows delivery/coverage/item checks.
+    Use compatibility.overall to decide path (see COMPATIBILITY section below).
+    Result includes suggested_order for the top-ranked restaurant.
+
+  ▸ FALLBACK_DISCOVERY — when all nearby restaurants are \`no_go\` for the stated intent:
+    result.mode === "fallback_discovery"
+    result.note contains verbatim explanation (show it to user).
+    Preserves per-restaurant compatibility so user sees why each fell short.
+    Do NOT push an order — offer to substitute items or try a different address.
 
 ━━ ENTRY 1: ZERO CONTEXT ("order pizza", "I want pizza", "pizza please") ━━
-  Ask: "What are you in the mood for?" — INDIVIDUAL options only:
-    • Large pepperoni — the classic
-    • Meat lovers
-    • Veggie
-    • Just cheese
-    • Something else (free text)
-    • You pick — I'll surprise you  [call tool with delegate=true]
-    • Feeding a group? [only then show: game day / office / kids party]
-  Ask address. Then call this tool. Do NOT call tool before getting their pick.
+  Ask opener above BEFORE calling tool. Call tool with intent_items populated.
 
 ━━ ENTRY 2: INTENT KNOWN ("pepperoni pizza", "large meat lovers") ━━
-  Skip mood question. Ask address only. Call tool with intent_style set.
+  Skip mood question. Ask address only. Call tool with intent_items.pizza.style set.
 
 ━━ ENTRY 3: GROUP/OCCASION ("kids birthday pizza", "game day for 12") ━━
   Ask address. Ask headcount if not given. Call tool with occasion + headcount.
 
-━━ ENTRY 4: ADDRESS FIRST ("pizza to 123 Main St") ━━
+━━ ENTRY 4 (ADDRESS FIRST — FALLBACK): "pizza to 123 Main St" ━━
   Call tool immediately with address. Ask mood alongside results if intent unknown.
+  Tool returns presets when intent is unspecified — show them to the user.
 
 ━━ ENTRY 5: RESTAURANT SPECIFIC ("order from Domino's") ━━
   Ask intent + address. Call tool with restaurant_hint.
@@ -460,7 +485,7 @@ FIRST — IDENTIFY THE ENTRY POINT, then follow the right path:
 ━━ ENTRY 6: HIGH CONTEXT (intent + address + name + phone all given) ━━
   Parse everything. Call tool. Present ready-to-confirm order. One confirm → done.
 
-━━ ENTRY 7: DISCOVERY ("what pizza places are near me?") ━━
+━━ ENTRY 7 (DISCOVERY — FALLBACK): "what pizza places are near me?" ━━
   Ask address. Call tool with discovery_only=true.
   Show list: name, distance, phone, hours. Do NOT push to order.
   End with: "Want to order from one of these?"
@@ -475,11 +500,19 @@ FIRST — IDENTIFY THE ENTRY POINT, then follow the right path:
 
 AFTER THE TOOL RETURNS:
 
-BEFORE PROCEEDING TO ORDER: Each returned restaurant has a \`compatibility\` field with sub-fields \`delivery\`, \`coverage\`, \`item\`, and \`overall\` plus a top-level \`nextStep\`.
+COMPATIBILITY (present in INTENT_RANKED and DELEGATE modes):
+Each returned restaurant has a \`compatibility\` field with sub-fields \`delivery\`, \`coverage\`, \`item\`, and \`overall\` plus a top-level \`nextStep\`.
   - \`compatibility.overall === 'go'\`: proceed to cart-flow normally.
   - \`compatibility.overall === 'caution'\`: proceed but surface the unknown to the user; resolve via the cheapest safe option (existing data > user clarification > targeted call). The \`nextStep\` string tells the agent which path.
   - \`compatibility.overall === 'no_go'\`: DO NOT call this restaurant. Explain the blocker to the user and pick a \`go\`/\`caution\` alternative or ask how to proceed.
-  When \`compatibility.overall === 'caution'\` or \`'no_go'\`, your reply to the user MUST include the verbatim text from \`compatibility.nextStep\`. Don't paraphrase. The nextStep is the agent's resolution-path recommendation.
+  When \`compatibility.overall === 'caution'\` or \`'no_go'\`, your reply to the user MUST include the verbatim text from \`compatibility.nextStep\`. Don't paraphrase.
+
+PRICE HONESTY WALL (CRITICAL):
+When \`suggested_order.narration_total_unknown === true\`, you MUST NOT voice any total — neither verbatim nor approximated. Required phrase: "I'll get you the exact total on the call." Forbidden phrases: "about $X total", "roughly $X", "around $X", "estimated $X total".
+
+DEAL NARRATION GATE (CRITICAL):
+Only voice a deal's savings number when \`applicable_deals[].match === 'components_align' && savings != null\`. Otherwise speak: "They have a deals page — I'll ask about specifics on the call." Forbidden when match !== 'components_align': "save $X with the [deal name]", "they have a deal that saves about $X", "this would be cheaper as the [deal name]".
+When the deal does align with verified savings, the format is: "[Deal name] saves $[savings.toFixed(2)] on this cart."
 
 NARRATION INTEGRITY:
 The tool response contains item arrays you may speak from: \`menu.pizzas[]\`, \`menu.sides[]\`, \`menu.drinks[]\`, plus the customization surface's \`drink_options[]\` and \`side_options[]\`. Each item carries \`menu_confidence: "high" | "medium" | "low"\`. **You may only name dishes, brands, sizes, and prices that appear in one of these arrays — never anything outside them.**
@@ -500,7 +533,7 @@ If \`surface.drink_options\` has entries, list them by name. Distinguish by \`me
 
 If \`surface.side_options\` has entries, same pattern (high → name + price; medium → name + "I'll confirm on the call").
 
-If \`surface.applicable_deals\` has entries, surface them with verified math only.
+If \`surface.applicable_deals\` has entries, surface them per DEAL NARRATION GATE above.
 
 If the user picks a medium-confidence item:
   • Acknowledge: "Got it — I'll ask the restaurant about [item-name] on the call."
@@ -520,7 +553,7 @@ NEW RESPONSE FIELDS (optional, only when present on the restaurant):
   customization_options: per-pizza crusts, toppings, sauce_options, cheese_options, dipping_sauces.
   drink_options: available drinks and sizes.
   side_options: available sides.
-  applicable_deals: surfaced deals; phase 1 does not compute savings.
+  applicable_deals: surfaced deals with match discriminator and verified savings.
 
 ORDER FLOW EXTENSION:
   start_pizza_order → upsell turn → update_order(diff) → ask for special instructions → show full cart → user confirms → prepare_order → place_order.
@@ -619,6 +652,43 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         .describe(
           "Set true when user says 'you pick', 'surprise me', or delegates the choice. Agent selects the order.",
         ),
+      intent_items: z
+        .object({
+          pizza: z
+            .object({
+              style: z.string().min(1).max(80),
+              size: z.string().max(40).optional(),
+            })
+            .strict()
+            .optional(),
+          sides: z
+            .array(
+              z.object({
+                name: z.string().min(1).max(60),
+              }),
+            )
+            .max(8)
+            .optional(),
+          drinks: z
+            .array(
+              z.object({
+                name: z.string().min(1).max(60),
+                brand: z.string().max(40).optional(),
+                size: z.string().max(40).optional(),
+              }),
+            )
+            .max(8)
+            .optional(),
+        })
+        .strict()
+        .optional()
+        .describe(
+          "Structured intent from the user (pizza style + optional sides + optional drinks). " +
+            "When present with content, drives the intent_ranked branch — restaurants ranked by compatibility. " +
+            "intent_items.pizza.style takes precedence over intent_style when both are supplied. " +
+            "Absent or all-empty (no pizza, sides:[], drinks:[]) → presets fallback branch (no compatibility annotation). " +
+            "Fallback_discovery branch fires when all restaurants are no_go for the stated intent.",
+        ),
     },
 
     async ({
@@ -634,6 +704,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
       dietary,
       discovery_only,
       delegate,
+      intent_items,
     }) => {
       // Resolve delivery address — fall back to saved profile default if requested
       let resolvedAddress = delivery_address;
@@ -674,31 +745,74 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         if (filtered.length > 0) restaurants = filtered;
       }
 
+      // S-8 / S-1: Determine whether the caller expressed structured intent
+      // via intent_items. Empty object and empty arrays both count as no intent.
+      const hasIntent = !!(
+        intent_items?.pizza ||
+        (intent_items?.sides?.length ?? 0) > 0 ||
+        (intent_items?.drinks?.length ?? 0) > 0
+      );
+
+      // Effective intent style: intent_items.pizza.style takes precedence over
+      // legacy intent_style (back-compat). Used for orderFromIntent + enrichment.
+      const effectiveIntentStyle = intent_items?.pizza?.style ?? intent_style;
+
+      // Build the effective IntentItems for assessCompatibility — pass the full
+      // intent_items when hasIntent, fall back to a legacy string when only
+      // intent_style is set, otherwise undefined (no intent).
+      const effectiveIntent: IntentItems | string | undefined = hasIntent
+        ? (intent_items as IntentItems)
+        : (effectiveIntentStyle ?? undefined);
+
+      // S-8 / AC-8.1: shouldRank gates compatibility ranking, sort, and enrichment.
+      // No-intent presets path skips all three — restaurants stay in source order
+      // and primaryRestaurant is restaurants[0] of the original list, not a compat winner.
+      const shouldRank =
+        hasIntent ||
+        !!effectiveIntentStyle ||
+        !!delegate ||
+        !!occasion ||
+        !!discovery_only;
+
       // Geocode user address once for compatibility coverage checks. Falls
       // back to undefined when key is missing or geocode fails — compatibility
-      // layer then emits coverage `requires_address`.
-      const userGeo = await geocodeAddress(resolvedAddress);
+      // layer then emits coverage `requires_address`. Skip when !shouldRank
+      // (presets path doesn't read userGeo).
+      const userGeo = shouldRank
+        ? await geocodeAddress(resolvedAddress)
+        : undefined;
       const userLat = userGeo?.lat;
       const userLng = userGeo?.lng;
 
-      // Per-restaurant compatibility assessment. Sort by overall verdict
-      // (go > caution > no_go) so the agent's first-pick is the best-fit.
+      // Per-restaurant compatibility assessment. Sort by (verdict, -qualityScore,
+      // -priceKnownCount) — verdict is the primary gate; qualityScore orders
+      // within tier; priceKnownCount tiebreaks on pricing confidence. (S-7)
       const VERDICT_ORDER: Record<string, number> = {
         go: 0,
         caution: 1,
         no_go: 2,
       };
-      const annotated = restaurants
-        .map((r) => ({
-          restaurant: r,
-          compatibility: assessCompatibility(r, userLat, userLng, intent_style),
-        }))
-        .sort(
-          (a, b) =>
-            VERDICT_ORDER[a.compatibility.overall] -
-            VERDICT_ORDER[b.compatibility.overall],
-        );
-      restaurants = annotated.map((a) => a.restaurant);
+      const annotated = shouldRank
+        ? restaurants
+            .map((r) => ({
+              restaurant: r,
+              compatibility: assessCompatibility(
+                r,
+                userLat,
+                userLng,
+                effectiveIntent,
+              ),
+            }))
+            .sort(
+              (a, b) =>
+                VERDICT_ORDER[a.compatibility.overall] -
+                  VERDICT_ORDER[b.compatibility.overall] ||
+                b.compatibility.qualityScore - a.compatibility.qualityScore ||
+                b.compatibility.priceKnownCount -
+                  a.compatibility.priceKnownCount,
+            )
+        : [];
+      if (shouldRank) restaurants = annotated.map((a) => a.restaurant);
       const compatibilityById = new Map(
         annotated.map((a) => [a.restaurant.id, a.compatibility]),
       );
@@ -723,7 +837,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           durationMs: number;
         }
       >();
-      if (ENRICH_COUNT > 0 && topNeedsEnrich) {
+      if (shouldRank && ENRICH_COUNT > 0 && topNeedsEnrich) {
         const cautionRestaurants = annotated
           .filter(
             (a) =>
@@ -737,7 +851,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           try {
             const { enriched, source } = await enrichEvidence(
               restaurant,
-              intent_style,
+              effectiveIntentStyle,
             );
             const durationMs = Date.now() - enrichStart;
             enrichmentById.set(restaurant.id, {
@@ -750,14 +864,14 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
               ran: source !== "unchanged",
               source,
               durationMs,
-              intent_style: intent_style ?? null,
+              intent_style: effectiveIntentStyle ?? null,
             });
             if (enriched !== restaurant) {
               const reAssessed = assessCompatibility(
                 enriched,
                 userLat,
                 userLng,
-                intent_style,
+                effectiveIntent,
               );
               compatibilityById.set(restaurant.id, reAssessed);
               const idx = restaurants.indexOf(restaurant);
@@ -778,21 +892,32 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
               ran: true,
               source: "unchanged",
               durationMs,
-              intent_style: intent_style ?? null,
+              intent_style: effectiveIntentStyle ?? null,
               error: "enrichEvidence threw",
             });
           }
         }
       }
-      // Re-sort restaurants by post-enrichment verdict so an enriched
-      // candidate that flips from caution → go ends up at the top.
-      restaurants.sort(
-        (a, b) =>
-          VERDICT_ORDER[compatibilityById.get(a.id)!.overall] -
-          VERDICT_ORDER[compatibilityById.get(b.id)!.overall],
-      );
+      // Re-sort restaurants by post-enrichment verdict using the full tuple
+      // (verdict, -qualityScore, -priceKnownCount). (S-7). Only when shouldRank;
+      // presets path never reorders.
+      if (shouldRank) {
+        restaurants.sort((a, b) => {
+          const compA = compatibilityById.get(a.id)!;
+          const compB = compatibilityById.get(b.id)!;
+          return (
+            VERDICT_ORDER[compA.overall] - VERDICT_ORDER[compB.overall] ||
+            compB.qualityScore - compA.qualityScore ||
+            compB.priceKnownCount - compA.priceKnownCount
+          );
+        });
+      }
 
-      // Build response — every restaurant entry now carries `compatibility`.
+      // S-8 / AC-8.1: Whether to decorate restaurant entries with `compatibility`.
+      // 1:1 with shouldRank — presets path skips both ranking and decoration.
+      const showCompatibility = shouldRank;
+
+      // Build response.
       const result: Record<string, unknown> = {
         delivery_address: resolvedAddress,
         restaurants: restaurants.map((r) => {
@@ -809,12 +934,13 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
               isTest: true,
               note: "Test entry — real phone, answer as restaurant staff.",
             }),
-            compatibility: c,
-            // Top-level nextStep per restaurant entry (PRD AC6 / compliance C-004).
-            // Mirrors compatibility.nextStep so consumers that only read the
-            // top-level fields still see the resolution recommendation.
-            nextStep: c.nextStep,
-            recommended: c.overall !== "no_go",
+            // Compatibility annotation gated on showCompatibility (S-8).
+            ...(showCompatibility && {
+              compatibility: c,
+              // Top-level nextStep per restaurant entry (PRD AC6 / compliance C-004).
+              nextStep: c.nextStep,
+              recommended: c.overall !== "no_go",
+            }),
             // Enrichment trace — populated only for the candidate(s) we
             // actually attempted to enrich. Absence means enrichment didn't
             // run for this entry.
@@ -836,11 +962,62 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         }),
       };
 
+      // S-9: Fallback-discovery mode — fires when the user expressed intent
+      // but every nearby restaurant is no_go. Do NOT push an order through.
+      // Preserve compatibility annotations so the user sees why each fell short.
+      if (
+        (hasIntent || !!effectiveIntentStyle) &&
+        !discovery_only &&
+        !delegate &&
+        restaurants.length > 0 &&
+        restaurants.every(
+          (r) => compatibilityById.get(r.id)!.overall === "no_go",
+        )
+      ) {
+        result.mode = "fallback_discovery";
+        result.note =
+          "No nearby place carries everything you asked for. Here's what's available — want to substitute, or try a different address?";
+        // Ensure compatibility is visible in this mode regardless of showCompatibility gate.
+        result.restaurants = restaurants.map((r) => {
+          const c = compatibilityById.get(r.id)!;
+          return {
+            id: r.id,
+            name: r.name,
+            phone: r.phone,
+            address: r.address,
+            estimatedDeliveryMinutes: r.estimatedDeliveryMinutes,
+            acceptsCash: r.acceptsCash,
+            hours: r.hours,
+            ...(r.isTest && {
+              isTest: true,
+              note: "Test entry — real phone, answer as restaurant staff.",
+            }),
+            compatibility: c,
+            nextStep: c.nextStep,
+            recommended: false,
+          };
+        });
+        logStartPizzaOrderBranchEvent({
+          branch: "fallback_discovery",
+          intent_items_count: {
+            pizza: intent_items?.pizza ? 1 : 0,
+            sides: intent_items?.sides?.length ?? 0,
+            drinks: intent_items?.drinks?.length ?? 0,
+          },
+        });
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      }
+
       // Discovery-only mode: just return restaurants, no order building
       if (discovery_only) {
         result.mode = "discovery";
         result.note =
           "User wants to browse options. Show restaurants with distance, hours, and phone. Ask if they want to order from one.";
+        logStartPizzaOrderBranchEvent({ branch: "discovery_only" });
         return {
           content: [
             { type: "text" as const, text: JSON.stringify(result, null, 2) },
@@ -879,10 +1056,19 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         });
         const cart = legacyItemsToCart(items, primaryRestaurant);
         const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+        // S-13: narration_total_unknown flag — do not voice total on generic menus.
+        const narrationTotalUnknown = cartNarrationTotalUnknown(
+          cart,
+          primaryRestaurant,
+        );
+        const narrationTotalUnknownReason: "generic_menu" | null =
+          narrationTotalUnknown ? "generic_menu" : null;
         result.suggested_order = {
           items,
           cart,
           estimatedTotal: total,
+          narration_total_unknown: narrationTotalUnknown,
+          narration_total_unknown_reason: narrationTotalUnknownReason,
           menu_confidence: menuConfidence,
           delegate_pick: true,
           note: "Agent-selected order. Present as your recommendation: 'Here's what I'd get you — [item] from [restaurant]. Confirm and I'll call.'",
@@ -896,6 +1082,10 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
             `Customer requires ${dietary}. Bland will confirm availability before ordering.`;
           result.dietary = dietary;
         }
+        logStartPizzaOrderBranchEvent({
+          branch: "delegate",
+          restaurant_id: primaryRestaurant.id,
+        });
         return {
           content: [
             { type: "text" as const, text: JSON.stringify(result, null, 2) },
@@ -903,33 +1093,67 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
         };
       }
 
-      // If user specified what they want, build the order immediately
-      if (intent_style) {
-        const items = orderFromIntent(primaryRestaurant, {
-          style: intent_style,
-          size: intent_size,
-          quantity: intent_quantity,
-        });
-        const cart = legacyItemsToCart(items, primaryRestaurant);
-        const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-        result.suggested_order = {
-          items,
-          cart,
-          estimatedTotal: total,
-          menu_confidence: menuConfidence,
-          note: "User specified what they want — skip presets, go to confirmation.",
-          ...(dietary && {
-            dietary_note: `Customer requires ${dietary}. Bland will confirm availability before ordering.`,
-          }),
-          ...(max_budget &&
-            total > max_budget && {
-              budget_warning: `Estimated $${total.toFixed(2)} exceeds budget of $${max_budget.toFixed(2)}. Suggest a smaller size or fewer items.`,
+      // Intent-ranked branch: user specified what they want via intent_items or
+      // legacy intent_style. intent_items.pizza.style takes precedence (S-8).
+      if (effectiveIntentStyle || hasIntent) {
+        const pizzaIntended = !!(effectiveIntentStyle || intent_items?.pizza);
+        if (pizzaIntended) {
+          const styleToUse = effectiveIntentStyle ?? "pepperoni";
+          const sizeToUse = intent_items?.pizza?.size ?? intent_size;
+          const items = orderFromIntent(primaryRestaurant, {
+            style: styleToUse,
+            size: sizeToUse,
+            quantity: intent_quantity,
+          });
+          const cart = legacyItemsToCart(items, primaryRestaurant);
+          const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+          const narrationTotalUnknown = cartNarrationTotalUnknown(
+            cart,
+            primaryRestaurant,
+          );
+          const narrationTotalUnknownReason: "generic_menu" | null =
+            narrationTotalUnknown ? "generic_menu" : null;
+          result.suggested_order = {
+            items,
+            cart,
+            estimatedTotal: total,
+            narration_total_unknown: narrationTotalUnknown,
+            narration_total_unknown_reason: narrationTotalUnknownReason,
+            menu_confidence: menuConfidence,
+            note: "User specified what they want — skip presets, go to confirmation.",
+            ...(dietary && {
+              dietary_note: `Customer requires ${dietary}. Bland will confirm availability before ordering.`,
             }),
-        };
-        Object.assign(
-          result,
-          buildCustomizationSurface(primaryRestaurant, cart, "mcp"),
-        );
+            ...(max_budget &&
+              total > max_budget && {
+                budget_warning: `Estimated $${total.toFixed(2)} exceeds budget of $${max_budget.toFixed(2)}. Suggest a smaller size or fewer items.`,
+              }),
+          };
+          Object.assign(
+            result,
+            buildCustomizationSurface(primaryRestaurant, cart, "mcp"),
+          );
+        } else {
+          // Drinks/sides-only intent: the user named sides or drinks but no pizza.
+          // Do NOT default to pepperoni — surface the customization options
+          // and let the agent ask the user which pizza they want.
+          const emptyCart: Cart = [];
+          Object.assign(
+            result,
+            buildCustomizationSurface(primaryRestaurant, emptyCart, "mcp"),
+          );
+          result.needs_info =
+            "User specified sides/drinks but no pizza. Ask: 'What pizza would you like with that?' Show individual options (Pepperoni, Meat Lovers, Veggie, Just Cheese).";
+        }
+        logStartPizzaOrderBranchEvent({
+          branch: "intent_ranked",
+          restaurant_id: primaryRestaurant.id,
+          intent_items_count: {
+            pizza: intent_items?.pizza ? 1 : 0,
+            sides: intent_items?.sides?.length ?? 0,
+            drinks: intent_items?.drinks?.length ?? 0,
+          },
+        });
       }
       // If occasion preset matches, build from preset
       else if (occasion) {
@@ -943,10 +1167,18 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
             primaryRestaurant,
           );
           const total = preset.estimateTotal(primaryRestaurant, headcount);
+          // S-13: narration_total_unknown — null total from S-14 means unknown.
+          const narrationTotalUnknown =
+            total === null ||
+            cartNarrationTotalUnknown(cart, primaryRestaurant);
+          const narrationTotalUnknownReason: "generic_menu" | null =
+            narrationTotalUnknown ? "generic_menu" : null;
           result.suggested_order = {
             items: [...items, ...sides],
             cart,
             estimatedTotal: total,
+            narration_total_unknown: narrationTotalUnknown,
+            narration_total_unknown_reason: narrationTotalUnknownReason,
             preset: preset.label,
             menu_confidence: menuConfidence,
             note: headcount
@@ -956,6 +1188,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
               dietary_note: `Customer requires ${dietary}. Bland will confirm availability before ordering.`,
             }),
             ...(max_budget &&
+              total !== null &&
               total > max_budget && {
                 budget_warning: `Estimated $${total.toFixed(2)} exceeds budget of $${max_budget.toFixed(2)}.`,
               }),
@@ -968,6 +1201,10 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
             buildCustomizationSurface(primaryRestaurant, cart, "mcp"),
           );
         }
+        logStartPizzaOrderBranchEvent({
+          branch: "occasion",
+          restaurant_id: primaryRestaurant.id,
+        });
       }
       // Otherwise return presets — these are user preference options, not restaurant menu items
       else {
@@ -975,18 +1212,27 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
           (p) =>
             // Only show group presets if headcount or occasion context exists
             !p.needsHeadcount || !!headcount,
-        ).map((p) => ({
-          id: p.id,
-          label: p.label,
-          description: p.description,
-          needsHeadcount: p.needsHeadcount,
-          estimatedTotal: p.estimateTotal(primaryRestaurant, headcount),
-        }));
+        ).map((p) => {
+          const estimatedTotal = p.estimateTotal(primaryRestaurant, headcount);
+          // AC-14.3: surface `estimated_only` when total is null (generic menus).
+          return {
+            id: p.id,
+            label: p.label,
+            description: p.description,
+            needsHeadcount: p.needsHeadcount,
+            estimatedTotal,
+            estimated_only: estimatedTotal === null,
+          };
+        });
         result.presets_note =
           "These are WHAT-THE-USER-WANTS options — NOT the restaurant's menu. " +
           "Present as 'What are you in the mood for?' Show individual options first. " +
           "Only surface group presets (game day, office, kids) if user signals a group context.";
         if (dietary) result.dietary = dietary;
+        logStartPizzaOrderBranchEvent({
+          branch: "presets",
+          restaurant_id: primaryRestaurant.id,
+        });
       }
 
       return {

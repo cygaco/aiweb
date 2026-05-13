@@ -1,3 +1,4 @@
+// LOCKSTEP: also edit src/server.ts:417 and src/a2a/executor.ts:43 — narration phrases must match for tests/narration-parity.test.ts
 import Anthropic from "@anthropic-ai/sdk";
 
 export const runtime = "nodejs";
@@ -36,6 +37,13 @@ If \`surface.drink_options\` has entries, list them by name. Distinguish by \`me
 If \`surface.side_options\` has entries, same pattern (high → name + price; medium → name + "I'll confirm on the call").
 
 If \`surface.applicable_deals\` has entries, surface them with verified math only.
+
+PRICE HONESTY WALL (CRITICAL):
+When \`suggested_order.narration_total_unknown === true\`, you MUST NOT voice any total — neither verbatim nor approximated. Required phrase: "I'll get you the exact total on the call." Forbidden phrases: "about $X total", "roughly $X", "around $X", "estimated $X total".
+
+DEAL NARRATION GATE (CRITICAL):
+Only voice a deal's savings number when \`applicable_deals[].match === 'components_align' && savings != null\`. Otherwise speak: "They have a deals page — I'll ask about specifics on the call." Forbidden when match !== 'components_align': "save $X with the [deal name]", "they have a deal that saves about $X", "this would be cheaper as the [deal name]".
+When the deal does align with verified savings, the format is: "[Deal name] saves $[savings.toFixed(2)] on this cart."
 
 If the user picks a medium-confidence item:
   • Acknowledge: "Got it — I'll ask the restaurant about [item-name] on the call."

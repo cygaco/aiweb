@@ -13,6 +13,9 @@ profiles.db-journal
 profiles.db-wal
 profiles.db-shm
 
+# Local runtime artifacts (profile backups, menu cache, etc.)
+runtime/
+
 # WarpOS install-time backup (local restore point)
 .warpos-backup/
 

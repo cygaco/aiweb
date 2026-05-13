@@ -12,6 +12,7 @@ primary_region = 'sjc'
   ALLOWED_HOSTS = 'aiweb-mcp.fly.dev'
   DATABASE_PATH = '/data/profiles.db'
   HOST = '0.0.0.0'
+  INCLUDE_TEST_RESTAURANTS = 'false'
   NODE_ENV = 'production'
   PORT = '8080'
 
