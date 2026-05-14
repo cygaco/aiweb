@@ -326,6 +326,9 @@ function buildSimTranscript(
 /**
  * Dispatch a call via Bland.ai API.
  * Falls back to simulation mode when BLAND_API_KEY is not set.
+ * When BLAND_HARNESS_MODE is set to "1", always returns a sim_* callId
+ * regardless of whether BLAND_API_KEY is set — this is Layer 2 of the
+ * three-layer harness guard (env layer → source short-circuit → prefix assertion).
  * When TEST_OVERRIDE_PHONE is set, routes every call to that number
  * instead of the real restaurant — use this to test live Bland calls
  * before going live.
@@ -333,6 +336,14 @@ function buildSimTranscript(
 export async function dispatchCall(
   order: PlaceOrderRequest,
 ): Promise<BlandCallResponse> {
+  // LAYER 2 — source short-circuit. Wins even when BLAND_API_KEY is present.
+  // Must remain BEFORE the apiKey check.
+  if (process.env.BLAND_HARNESS_MODE === "1") {
+    const callId = `sim_${Date.now()}`;
+    simCalls.set(callId, { order, createdAt: Date.now() });
+    return { callId, status: "queued" };
+  }
+
   const apiKey = process.env.BLAND_API_KEY;
 
   if (!apiKey) {
@@ -395,7 +406,10 @@ export async function dispatchCall(
 
 /**
  * Check call status and get transcript.
- * Handles simulated calls (sim_*) when no BLAND_API_KEY is set.
+ * Handles simulated calls (sim_*) when no BLAND_API_KEY is set, or
+ * when BLAND_HARNESS_MODE="1" (Layer 2 of three-layer harness guard).
+ * When BLAND_HARNESS_MODE="1", SIM_FAST_FORWARD_MS is subtracted from
+ * the age threshold, allowing near-instant completion in test runs.
  */
 export async function getCallStatus(callId: string): Promise<BlandCallStatus> {
   if (callId.startsWith("sim_")) {
@@ -403,7 +417,13 @@ export async function getCallStatus(callId: string): Promise<BlandCallStatus> {
     if (!sim) throw new Error(`Unknown simulated call: ${callId}`);
 
     const ageMs = Date.now() - sim.createdAt;
-    if (ageMs < 10_000) {
+    // In harness mode, honor SIM_FAST_FORWARD_MS to reduce the 10s threshold.
+    const fastForwardMs =
+      process.env.BLAND_HARNESS_MODE === "1"
+        ? parseInt(process.env.SIM_FAST_FORWARD_MS ?? "0", 10) || 0
+        : 0;
+    const threshold = Math.max(0, 10_000 - fastForwardMs);
+    if (ageMs < threshold) {
       return { callId, status: "in_progress" };
     }
 
