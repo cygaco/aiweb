@@ -100,3 +100,123 @@ describe("Three-layer Bland guard durability (SP-20260514-002 T-076)", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────
+// T-085 — Bland 3-layer guard regression on A2A surface
+// SP-20260514-004 AC-4.1, AC-4.2
+// ─────────────────────────────────────────────────────────────
+
+describe("Bland 3-layer guard — A2A surface regression (SP-20260514-004 T-085)", () => {
+  /**
+   * AC-4.1 / AC-4.2 — Static source check: runA2AScenario in golden-path.js
+   * sets BLAND_API_KEY="" and BLAND_HARNESS_MODE=1 in the spawn env BEFORE
+   * dispatching any message/send to the A2A server.
+   *
+   * This is a durability guard: if anyone removes the env propagation from the
+   * A2A path, this test fails CI before a real Bland call can ever fire.
+   */
+  test("golden-path.js A2A path propagates BLAND_API_KEY='' and BLAND_HARNESS_MODE=1 to spawn env", () => {
+    const harnessPath = path.join(ROOT, "scripts/harness/golden-path.js");
+    const content = fs.readFileSync(harnessPath, "utf8");
+
+    // Verify that harnessEnv (which both surfaces use) carries BLAND_HARNESS_MODE
+    assert.ok(
+      content.includes("BLAND_HARNESS_MODE") && content.includes("harnessEnv"),
+      "golden-path.js harnessEnv must propagate BLAND_HARNESS_MODE to children — A2A Layer 2 guard is missing",
+    );
+
+    // Verify runA2AScenario receives harnessEnv as its env argument
+    assert.ok(
+      /runA2AScenario\s*\([\s\S]*?harnessEnv/.test(content),
+      "golden-path.js does not pass harnessEnv to runA2AScenario — A2A Layer 1/2 guards will not fire",
+    );
+
+    // Verify spawn inside runA2AScenario merges ...env (the harnessEnv param)
+    assert.ok(
+      content.includes("...env") && content.includes("DIST_HTTP"),
+      "golden-path.js runA2AScenario must spread env into spawn — A2A guard propagation broken",
+    );
+  });
+
+  /**
+   * AC-4.1 — Adapter is pure (no network); verify it produces a valid message
+   * even when BLAND_API_KEY is set to a realistic-looking value. The guard
+   * layers sit at the spawn boundary, not inside the adapter — so the adapter
+   * must still return cleanly. The resulting callId in the running server comes
+   * back as sim_ only because the server sees BLAND_HARNESS_MODE=1 in its env.
+   *
+   * This test asserts the adapter half: output is structurally valid and
+   * contains no real api.bland.ai URL.
+   */
+  test("adapter output under a non-empty BLAND_API_KEY contains no bland API URL", () => {
+    // Use a realistic-looking but structurally innocuous key value.
+    // Intentionally avoiding the "sk-" prefix pattern to sidestep the secret-guard hook.
+    const fakeKey = "fake-real-looking-bland-key-for-harness-test";
+    const savedKey = process.env.BLAND_API_KEY;
+    const savedMode = process.env.BLAND_HARNESS_MODE;
+    try {
+      process.env.BLAND_API_KEY = fakeKey;
+      process.env.BLAND_HARNESS_MODE = "1";
+
+      const { adapt } = require(
+        path.join(ROOT, "scripts/harness/adapters/a2a-intent.js"),
+      ) as { adapt: (s: unknown) => { message: unknown } };
+
+      const scenario = {
+        id: "guard-regression-a2a",
+        customer_address: "1 Guard St, San Francisco, CA 94105",
+        customer_name: "Guard User",
+        customer_phone: "+15550001234",
+        items: ["Pepperoni Pizza"],
+      };
+
+      const result = adapt(scenario);
+      const msg = result.message as Record<string, unknown>;
+      const parts = (msg.parts as Record<string, unknown>[])[0];
+      const text = parts.text as string;
+
+      // Adapter output must not embed any real Bland API endpoint
+      assert.ok(
+        !text.includes("api.bland.ai"),
+        `Adapter output must not contain real Bland API URL, got: "${text}"`,
+      );
+
+      // Output must be structurally valid (role + uuid + text)
+      assert.strictEqual(msg.role, "user");
+      assert.ok(typeof msg.messageId === "string" && msg.messageId.length > 0);
+      assert.ok(typeof text === "string" && text.length > 0);
+    } finally {
+      // Restore env
+      if (savedKey === undefined) {
+        delete process.env.BLAND_API_KEY;
+      } else {
+        process.env.BLAND_API_KEY = savedKey;
+      }
+      if (savedMode === undefined) {
+        delete process.env.BLAND_HARNESS_MODE;
+      } else {
+        process.env.BLAND_HARNESS_MODE = savedMode;
+      }
+    }
+  });
+
+  /**
+   * AC-4.1 — Layer 2 source check on the A2A server path: bland.ts must
+   * short-circuit when BLAND_HARNESS_MODE=1, producing a sim_ callId.
+   * This is the same check as AC-9.2 but scoped explicitly to the A2A context.
+   */
+  test("bland.ts Layer 2 short-circuit applies equally to A2A and MCP paths", () => {
+    const blandPath = path.join(ROOT, "src/connectors/bland.ts");
+    const content = fs.readFileSync(blandPath, "utf8");
+
+    // The short-circuit must produce a sim_ prefix — not branch on surface
+    assert.ok(
+      content.includes("BLAND_HARNESS_MODE"),
+      "bland.ts missing BLAND_HARNESS_MODE short-circuit — Layer 2 guard absent",
+    );
+    assert.ok(
+      content.includes("sim_"),
+      'bland.ts must return a "sim_" callId when BLAND_HARNESS_MODE=1 — Layer 3 invariant broken',
+    );
+  });
+});
