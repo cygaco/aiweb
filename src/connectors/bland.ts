@@ -417,12 +417,17 @@ export async function getCallStatus(callId: string): Promise<BlandCallStatus> {
     if (!sim) throw new Error(`Unknown simulated call: ${callId}`);
 
     const ageMs = Date.now() - sim.createdAt;
-    // In harness mode, honor SIM_FAST_FORWARD_MS to reduce the 10s threshold.
-    const fastForwardMs =
-      process.env.BLAND_HARNESS_MODE === "1"
-        ? parseInt(process.env.SIM_FAST_FORWARD_MS ?? "0", 10) || 0
-        : 0;
-    const threshold = Math.max(0, 10_000 - fastForwardMs);
+    // In harness mode, SIM_FAST_FORWARD_MS controls the completion threshold.
+    // SIM_FAST_FORWARD_MS=0 means complete immediately (threshold=0).
+    // Unset or non-harness mode: default 10s threshold.
+    let threshold = 10_000;
+    if (process.env.BLAND_HARNESS_MODE === "1") {
+      const envVal = process.env.SIM_FAST_FORWARD_MS;
+      if (envVal !== undefined && envVal !== "") {
+        // SIM_FAST_FORWARD_MS is the max wait in ms (0 = immediate).
+        threshold = Math.max(0, parseInt(envVal, 10) || 0);
+      }
+    }
     if (ageMs < threshold) {
       return { callId, status: "in_progress" };
     }

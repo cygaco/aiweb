@@ -1,0 +1,137 @@
+{
+  "id": "pizza-plus-drink",
+  "title": "SF + test_vlad + meat lovers + Coke drink",
+  "steps": [
+    {
+      "tool": "start_pizza_order",
+      "args": {
+        "delivery_address": "1 Market St, San Francisco, CA 94105",
+        "customer_name": "Vlad Test",
+        "customer_phone": "+15555550100",
+        "intent_items": {
+          "pizza": { "style": "meat lovers" },
+          "drinks": [{ "name": "Coke", "brand": "Coca-Cola" }]
+        }
+      },
+      "assertions": [
+        { "name": "no_error", "kind": "status_not_error" },
+        {
+          "name": "has_test_vlad",
+          "kind": "restaurant_id_present",
+          "value": "test_vlad"
+        }
+      ],
+      "capture": {
+        "primary_restaurant_id": "$.restaurants.0.id"
+      }
+    },
+    {
+      "tool": "prepare_order",
+      "args": {
+        "restaurant_id": "${primary_restaurant_id}",
+        "cart": [
+          {
+            "kind": "pizza",
+            "itemId": "meat-lovers",
+            "name": "Meat Lovers Pizza",
+            "sizeId": "large",
+            "sizeLabel": "Large",
+            "quantity": 1,
+            "basePrice": 14.99
+          },
+          {
+            "kind": "drink",
+            "itemId": "coke_20oz",
+            "name": "Coke 20oz",
+            "quantity": 1,
+            "basePrice": 2.49
+          }
+        ],
+        "delivery_address": "1 Market St, San Francisco, CA 94105",
+        "customer_name": "Vlad Test",
+        "customer_phone": "+15555550100"
+      },
+      "assertions": [{ "name": "no_error", "kind": "status_not_error" }],
+      "capture": {
+        "confirmation_token": "$.confirmation_token"
+      }
+    },
+    {
+      "tool": "place_order",
+      "args": {
+        "restaurant_name": "Vlad's Pizza Restaurant",
+        "restaurant_id": "${primary_restaurant_id}",
+        "cart": [
+          {
+            "kind": "pizza",
+            "itemId": "meat-lovers",
+            "name": "Meat Lovers Pizza",
+            "sizeId": "large",
+            "sizeLabel": "Large",
+            "quantity": 1,
+            "basePrice": 14.99
+          },
+          {
+            "kind": "drink",
+            "itemId": "coke_20oz",
+            "name": "Coke 20oz",
+            "quantity": 1,
+            "basePrice": 2.49
+          }
+        ],
+        "delivery_address": "1 Market St, San Francisco, CA 94105",
+        "customer_name": "Vlad Test",
+        "customer_phone": "+15555550100",
+        "confirmation_token": "${confirmation_token}"
+      },
+      "assertions": [
+        { "name": "no_error", "kind": "status_not_error" },
+        { "name": "sim_prefix", "kind": "callid_sim_prefix" }
+      ],
+      "capture": {
+        "call_id": "$.call_id"
+      }
+    },
+    {
+      "tool": "check_order_status",
+      "args": {
+        "call_id": "${call_id}"
+      },
+      "polling": {
+        "until": "$.status === 'completed'",
+        "budget_ms": 12000
+      },
+      "assertions": [
+        {
+          "name": "order_confirmed",
+          "kind": "json_path_truthy",
+          "value": "$.order_confirmed"
+        },
+        {
+          "name": "total_quoted_number",
+          "kind": "json_path_typeof",
+          "value": "$.total_quoted",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "events_assertions": [
+    {
+      "name": "compatibility_event_fired",
+      "cat": "compatibility",
+      "min_count": 1
+    },
+    {
+      "name": "branch_event_fired",
+      "cat": "start_pizza_order_branch",
+      "min_count": 1
+    },
+    {
+      "name": "customization_event_fired",
+      "cat": "customization-surface-built",
+      "min_count": 1
+    },
+    { "name": "no_error_events", "cat": "error", "max_count": 0 }
+  ]
+}
