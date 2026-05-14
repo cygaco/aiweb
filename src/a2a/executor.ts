@@ -20,6 +20,7 @@ import { COLD_PRESETS, orderFromIntent } from "../lib/presets.js";
 import {
   dispatchCall,
   getCallStatus,
+  PANIC_STOP_MESSAGE,
   type OrderItem,
   type PlaceOrderRequest,
 } from "../connectors/bland.js";
@@ -639,15 +640,13 @@ export class PizzaAgentExecutor implements AgentExecutor {
       const dispatched = await dispatchCall(orderRequest);
       callId = dispatched.callId;
     } catch (e) {
-      eventBus.publish(
-        status(
-          taskId,
-          contextId,
-          "failed",
-          `Bland dispatch failed: ${e instanceof Error ? e.message : String(e)}`,
-          true,
-        ),
-      );
+      const msg = e instanceof Error ? e.message : String(e);
+      // Panic-stop: surface the operator-facing C-1 string as the task failure message.
+      const failMsg =
+        msg === PANIC_STOP_MESSAGE
+          ? PANIC_STOP_MESSAGE
+          : `Bland dispatch failed: ${msg}`;
+      eventBus.publish(status(taskId, contextId, "failed", failMsg, true));
       return;
     }
 
