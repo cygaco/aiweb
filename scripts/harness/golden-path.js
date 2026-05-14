@@ -6,6 +6,8 @@
  * Tickets: T-070 (driver), T-071 (MCP stdio surface), T-072 (A2A surface),
  *          T-073 (scenario loader), T-075 (events snapshot), T-077 (trace/report),
  *          T-078 (ensureBuild), T-079 (test:golden script)
+ * Sprint: SP-20260514-004
+ * Tickets: T-083 (A2A adapter wire-up — runA2AScenario rewrite)
  *
  * Three-layer Bland guard:
  *   Layer 1: BLAND_API_KEY="" (env, set here before spawning children)
@@ -20,6 +22,10 @@ const fs = require("fs");
 const { spawnSync, spawn } = require("child_process");
 const http = require("http");
 const { randomBytes, randomInt } = require("crypto");
+const {
+  adapt: adaptA2AIntent,
+  AdapterMissingFieldsError,
+} = require("./adapters/a2a-intent");
 
 // ─────────────────────────────────────────────────────────────
 // Constants & paths
@@ -517,6 +523,21 @@ async function a2aJsonRpc(port, method, params, authKey) {
   });
 }
 
+/**
+ * runA2AScenario — T-083 (SP-20260514-004)
+ *
+ * Rewired to use the a2a-intent adapter. Instead of one message/send per
+ * tool step (the old per-step approach that sent tool_call parts and silently
+ * produced input-required without exercising real order intake), this function:
+ *
+ *   1. Calls adapt(scenario) to build a single A2A user-intent message.
+ *   2. Dispatches exactly ONE message/send with the adapter's message payload.
+ *   3. Reads the resulting Task from the JSON-RPC response.
+ *   4. Asserts the final task state matches adapter.expectedTaskState within 5s.
+ *
+ * Failures are recorded in the existing failures[] shape (AC-2.2).
+ * MCP stdio runner (runMcpStdioScenario + runScenarioSteps) is unchanged.
+ */
 async function runA2AScenario(scenario, env, opts, traceFile) {
   const port = pickFreePort();
   const authKey = "harness-test-key-" + randomBytes(8).toString("hex");
@@ -541,15 +562,16 @@ async function runA2AScenario(scenario, env, opts, traceFile) {
     child.stderr.on("data", () => {}); // drain
   }
 
-  let childFailed = false;
-  child.on("exit", (code, signal) => {
-    if (code !== 0 && code !== null) childFailed = true;
+  child.on("exit", (code) => {
+    if (code !== 0 && code !== null) {
+      // child failed — logged via failures[] below if health check failed
+    }
   });
 
   const failures = [];
 
   try {
-    // Wait for health
+    // ── Step 1: Wait for health (5s budget) ─────────────────
     const healthy = await waitForHealth(port, 5000);
     if (!healthy) {
       failures.push({
@@ -560,36 +582,88 @@ async function runA2AScenario(scenario, env, opts, traceFile) {
       return failures;
     }
 
-    const capturedVars = {};
-    const result = await runScenarioSteps(
-      scenario,
-      capturedVars,
-      async (tool, args) => {
-        // A2A JSON-RPC: send as message/send
-        const resp = await a2aJsonRpc(
-          port,
-          "message/send",
-          {
-            message: {
-              role: "user",
-              parts: [{ type: "tool_call", name: tool, arguments: args }],
-            },
-          },
-          authKey,
-        );
-        // A2A response may be wrapped in result.result or direct
-        return resp?.result?.data || resp?.result || resp;
-      },
-      traceFile,
-      "a2a-jsonrpc",
-    );
+    // ── Step 2: Build adapter payload (AC-2.1) ──────────────
+    let adapterResult;
+    try {
+      adapterResult = adaptA2AIntent(scenario);
+    } catch (e) {
+      failures.push({
+        name: "adapter_error",
+        ok: false,
+        detail: e.message,
+      });
+      return failures;
+    }
 
-    failures.push(...result.failures);
+    const { message, expectedTaskState } = adapterResult;
+
+    // ── Step 3: Dispatch ONE message/send (AC-2.1) ──────────
+    const t0 = Date.now();
+    let rpcResp;
+    try {
+      rpcResp = await a2aJsonRpc(port, "message/send", { message }, authKey);
+    } catch (e) {
+      failures.push({
+        name: "message_send_error",
+        ok: false,
+        detail: `message/send failed: ${e.message}`,
+      });
+      return failures;
+    }
+
+    const latencyMs = Date.now() - t0;
+
+    // Trace the dispatch
+    writeTraceLine(traceFile, {
+      ts: new Date().toISOString(),
+      surface: "a2a-jsonrpc",
+      scenario: scenario.id,
+      step: 0,
+      tool: "message/send",
+      args: { message_role: message.role, message_id: message.messageId },
+      response: rpcResp,
+      latency_ms: latencyMs,
+      assertions: [],
+    });
+
+    // ── Step 4: Assert final task state (AC-2.2) ────────────
+    // message/send (blocking=true default) waits for the executor to publish
+    // a final event and returns the Task with its final status.
+    const task = rpcResp?.result;
+    const rpcError = rpcResp?.error;
+
+    if (rpcError) {
+      failures.push({
+        name: "rpc_error",
+        ok: false,
+        detail: `JSON-RPC error: ${rpcError.code} — ${rpcError.message}`,
+      });
+      console.log(
+        `  [00] message/send -> FAIL: rpc_error — ${rpcError.message} (${latencyMs}ms)`,
+      );
+      return failures;
+    }
+
+    const actualState = task?.status?.state;
+    if (actualState !== expectedTaskState) {
+      failures.push({
+        name: "task_state_mismatch",
+        ok: false,
+        detail: `expected task state "${expectedTaskState}" but got "${actualState}" (task: ${JSON.stringify(task?.status)})`,
+      });
+      console.log(
+        `  [00] message/send -> FAIL: task_state_mismatch — expected ${expectedTaskState}, got ${actualState} (${latencyMs}ms)`,
+      );
+    } else {
+      console.log(
+        `  [00] message/send -> ok, task state=${actualState} (${latencyMs}ms)`,
+      );
+    }
   } finally {
     if (!child.killed) {
       child.kill("SIGTERM");
     }
-    // Give it a moment
+    // Give it a moment to clean up
     await new Promise((r) => setTimeout(r, 100));
   }
 
