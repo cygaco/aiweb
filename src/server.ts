@@ -5,10 +5,9 @@
  *
  * Tools:
  * 1. start_pizza_order — find restaurants, show presets, collect info
- * 2. place_order — build Bland prompt, fire the call
- * 3. check_order_status — poll call status, parse transcript
- * 4. get_user_profile — fetch stored profile
- * 5. update_user_profile — save/update stored profile
+ * 2. prepare_order — issue a server-signed confirmation_token for a reviewed cart
+ * 3. place_order — build Bland prompt, fire the call
+ * 4. check_order_status — poll call status, parse transcript
  *
  * The tool descriptions ARE the product. Claude reads them
  * and follows the conversation UX we designed.
@@ -28,7 +27,7 @@ import {
   type OrderItem,
   type PlaceOrderRequest,
 } from "./connectors/bland.js";
-import { getProfile, updateProfile, E164_REGEX } from "./lib/profile-store.js";
+import { E164_REGEX } from "./lib/profile-store.js";
 import { issueToken, verifyToken } from "./lib/confirmation-token.js";
 import { cartTotal, type Cart, type CartItem } from "./lib/cart.js";
 import {
@@ -169,155 +168,6 @@ export function createServer(tokenHash?: string): McpServer {
     name: "ai-web-wave00",
     version: "0.0.1",
   });
-
-  // ─────────────────────────────────────────────
-  // TOOL: get_user_profile
-  // ─────────────────────────────────────────────
-
-  server.tool(
-    "get_user_profile",
-
-    "Fetch the stored user profile for this session. Always call this at the start of an order flow to avoid asking for info already on file (name, phone, address, dietary prefs). Returns empty object if no profile set yet. Never read/write profile data manually in conversation -- always use these tools.",
-
-    {},
-
-    async () => {
-      if (!tokenHash) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                status: "unavailable",
-                message:
-                  "Profile storage is not available in stdio mode. Run via HTTP.",
-              }),
-            },
-          ],
-        };
-      }
-      try {
-        const profile = getProfile(tokenHash);
-        return {
-          content: [
-            { type: "text" as const, text: JSON.stringify(profile, null, 2) },
-          ],
-        };
-      } catch (err) {
-        console.error(
-          "get_user_profile error:",
-          err instanceof Error ? err.message : err,
-        );
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                status: "error",
-                message: "Failed to read profile.",
-              }),
-            },
-          ],
-        };
-      }
-    },
-  );
-
-  // ─────────────────────────────────────────────
-  // TOOL: update_user_profile
-  // ─────────────────────────────────────────────
-
-  server.tool(
-    "update_user_profile",
-
-    "Save or update the user profile. Call this after a successful order when the user agrees to save their info -- always ask before saving. Accepts any subset of: name, phone (E.164 format like +14155551234), default_address, dietary, preferred_restaurant_id, notes. Merges with existing profile. Pass empty string to clear a field.",
-
-    {
-      name: z.string().optional().describe("Customer name."),
-      phone: z
-        .string()
-        .optional()
-        .describe("Phone in E.164 format, e.g. +14155551234."),
-      default_address: z
-        .string()
-        .optional()
-        .describe("Default delivery address."),
-      dietary: z
-        .string()
-        .optional()
-        .describe('Dietary preference, e.g. "vegan", "gluten-free".'),
-      preferred_restaurant_id: z
-        .string()
-        .optional()
-        .describe("Preferred restaurant ID from start_pizza_order results."),
-      notes: z
-        .string()
-        .max(500)
-        .optional()
-        .describe(
-          "Freeform notes about preferences. Max 500 chars. Stored verbatim.",
-        ),
-    },
-
-    async ({
-      name,
-      phone,
-      default_address,
-      dietary,
-      preferred_restaurant_id,
-      notes,
-    }) => {
-      if (!tokenHash) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                status: "error",
-                message:
-                  "Profile storage is not available in stdio mode. Run via HTTP.",
-              }),
-            },
-          ],
-        };
-      }
-      try {
-        const updated = updateProfile(tokenHash, {
-          name,
-          phone,
-          default_address,
-          dietary,
-          preferred_restaurant_id,
-          notes,
-        });
-        return {
-          content: [
-            { type: "text" as const, text: JSON.stringify(updated, null, 2) },
-          ],
-        };
-      } catch (err) {
-        // Only forward known user-facing validation messages (E.164 phone format).
-        // Everything else (DB / crypto errors) gets a generic message to avoid
-        // leaking internals to the MCP caller.
-        const msg = err instanceof Error ? err.message : "";
-        const userFacing = /E\.164|Invalid phone/i.test(msg);
-        if (!userFacing) {
-          console.error("update_user_profile error:", msg);
-        }
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                status: "error",
-                message: userFacing ? msg : "Failed to update profile.",
-              }),
-            },
-          ],
-        };
-      }
-    },
-  );
 
   // ─────────────────────────────────────────────
   // TOOL: prepare_order — issue a confirmation_token
@@ -583,20 +433,14 @@ CONFIRM — show full cart:
   Items + sizes | Restaurant | Est. total | Est. delivery | Address | Name | Phone | Cash
   Wait for explicit yes. NEVER call place_order without confirmation.
 
-Pass use_profile_defaults=true if user has not specified an address -- the tool will use their saved address if available.`,
+Always pass delivery_address explicitly — there is no saved-profile fallback on this surface.`,
 
     {
       delivery_address: z
         .string()
         .optional()
         .describe(
-          "Delivery address. Can be partial — will be validated. Omit when use_profile_defaults=true and profile has a saved address.",
-        ),
-      use_profile_defaults: z
-        .boolean()
-        .optional()
-        .describe(
-          "Set true to use the saved profile address when the user has not specified one.",
+          "Delivery address. Can be partial — will be validated. Required for any non-discovery call.",
         ),
       intent_style: z
         .string()
@@ -693,7 +537,6 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
 
     async ({
       delivery_address,
-      use_profile_defaults,
       intent_style,
       intent_size,
       intent_quantity,
@@ -706,17 +549,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
       delegate,
       intent_items,
     }) => {
-      // Resolve delivery address — fall back to saved profile default if requested
-      let resolvedAddress = delivery_address;
-      if (!resolvedAddress && use_profile_defaults && tokenHash) {
-        try {
-          const profile = getProfile(tokenHash);
-          if (profile.default_address)
-            resolvedAddress = profile.default_address;
-        } catch {
-          // profile store unavailable — continue without defaults
-        }
-      }
+      const resolvedAddress = delivery_address;
 
       if (!resolvedAddress) {
         return {
@@ -726,7 +559,7 @@ Pass use_profile_defaults=true if user has not specified an address -- the tool 
               text: JSON.stringify({
                 status: "error",
                 message:
-                  "Please provide a delivery_address, or set use_profile_defaults=true if you have a saved address on file.",
+                  "Please provide a delivery_address — there is no saved-profile fallback.",
               }),
             },
           ],
@@ -1468,19 +1301,19 @@ Then call check_order_status with the returned call_id to get the result.`,
         .string()
         .optional()
         .describe(
-          "Full delivery address. If omitted, falls back to saved profile address.",
+          "Full delivery address. Required — there is no saved-profile fallback on this surface.",
         ),
       customer_name: z
         .string()
         .optional()
         .describe(
-          "Name for the order. If omitted, falls back to saved profile name.",
+          "Name for the order. Required — there is no saved-profile fallback on this surface.",
         ),
       customer_phone: z
         .string()
         .optional()
         .describe(
-          "Phone for delivery updates. If omitted, falls back to saved profile phone.",
+          "Phone for delivery updates. Required — there is no saved-profile fallback on this surface.",
         ),
       delivery_instructions: deliveryInstructionsSchema.describe(
         "Gate code, apt number, 'leave at door', etc.",
@@ -1534,22 +1367,13 @@ Then call check_order_status with the returned call_id to get the result.`,
       intent_style,
       confirm_on_call_items,
     }) => {
-      // Resolve optional fields from profile if available
-      let resolvedAddress = delivery_address;
-      let resolvedName = customer_name;
-      let resolvedPhone = customer_phone;
-
-      if (tokenHash) {
-        try {
-          const profile = getProfile(tokenHash);
-          if (!resolvedAddress && profile.default_address)
-            resolvedAddress = profile.default_address;
-          if (!resolvedName && profile.name) resolvedName = profile.name;
-          if (!resolvedPhone && profile.phone) resolvedPhone = profile.phone;
-        } catch {
-          // profile store unavailable — continue without defaults
-        }
-      }
+      // No saved-profile fallback on this surface — caller must supply
+      // delivery_address / customer_name / customer_phone every order.
+      // (HTTP/MCP profile surface removed in SP-20260514-001 due to
+      // cross-user data-leak in the single-bearer auth model.)
+      const resolvedAddress = delivery_address;
+      const resolvedName = customer_name;
+      const resolvedPhone = customer_phone;
 
       const missing: string[] = [];
       if (!resolvedAddress) missing.push("delivery_address");
@@ -1564,7 +1388,7 @@ Then call check_order_status with the returned call_id to get the result.`,
               text: JSON.stringify(
                 {
                   status: "error",
-                  message: `Missing required fields: ${missing.join(", ")}. Please provide them or save them to your profile first using update_user_profile.`,
+                  message: `Missing required fields: ${missing.join(", ")}. Please provide them in this call — there is no saved-profile fallback.`,
                   missing_fields: missing,
                 },
                 null,

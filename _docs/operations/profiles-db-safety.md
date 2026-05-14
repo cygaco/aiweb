@@ -1,5 +1,7 @@
 # profiles.db — safety, hygiene, and wipe protocol
 
+> **Scope (2026-05-14):** This document applies to the stdio-only profile.db after SP-20260514-001. The HTTP/MCP profile surface (the `get_user_profile` / `update_user_profile` MCP tools and the order-flow fallbacks) was removed. The production `/data/profiles.db` on the Fly volume is orphaned but retained; a wipe is deferred to a separate guarded-ops ticket. The Fly-volume wipe protocol below remains the reference if/when that ticket is opened.
+
 Operational reference for the SQLite profile store backing the aiweb-pizza MCP server. Read before clearing data, switching environments, running demos, or deploying.
 
 ## What it is
