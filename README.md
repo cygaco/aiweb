@@ -153,3 +153,7 @@ Tool definitions never change.
 - [ ] Multiple connector types (API, Playwright, voice)
 - [ ] Stripe MPP for card payments
 - [ ] Deploy to Railway as hosted MCP server
+
+### Notes — auth + user profile
+
+The HTTP/MCP surface uses a single operator-issued bearer (`WARP_MCP_KEY`) for authentication. Because every caller shares this bearer, there is no per-user identity at the `/mcp` or `/a2a` boundary today. As a result, the previous `get_user_profile` / `update_user_profile` MCP tools and the saved-profile fallbacks for delivery address / name / phone have been removed (SP-20260514-001). HTTP/MCP callers must supply `delivery_address`, `customer_name`, and `customer_phone` in every `place_order` call. Stdio mode retains the profile library as a single-user-per-process convenience (see `src/stdio.ts`). Re-introduction of a network-reachable profile is tracked in `ROADMAP.md` under "Per-user auth + profile re-introduction."

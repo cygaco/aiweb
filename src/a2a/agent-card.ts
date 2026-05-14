@@ -27,7 +27,7 @@ export const agentCard: AgentCard = {
       type: "http",
       scheme: "bearer",
       description:
-        "Bearer token issued by the operator. Each token is bound to one customer profile via sha256 hash.",
+        "Bearer token issued by the operator. Required for /a2a task submission and /mcp; rate-limited per-bearer. No per-user data binding — the same operator-level bearer authorizes every caller in this deployment.",
     },
   },
   security: [{ bearer: [] }],
