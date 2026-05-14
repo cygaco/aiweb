@@ -158,6 +158,33 @@ Tool definitions never change.
 ✓ Smart defaults reduce 9 minutes of menu indecision to one confirmation
 ✓ Works with any restaurant that answers the phone
 
+## Run the golden path
+
+`npm run test:golden` runs three scripted scenarios (pizza-only, pizza-plus-side,
+pizza-plus-drink) against both the MCP stdio surface and the A2A JSON-RPC surface.
+The Bland.ai call is mocked via three independent guard layers — no real call dispatches.
+
+**Command:**
+```bash
+npm run test:golden
+# or target a single surface / scenario:
+node scripts/harness/golden-path.js --surface mcp-stdio --scenario pizza-only
+```
+
+**Environment set automatically by the harness (before spawning any child):**
+- `BLAND_API_KEY=""` — Layer 1: empty key so the connector's apiKey check fails
+- `BLAND_HARNESS_MODE=1` — Layer 2: source short-circuit in `src/connectors/bland.ts`
+- `SIM_FAST_FORWARD_MS=0` — fast sim_* status transitions (~3s per scenario)
+- `INCLUDE_TEST_RESTAURANTS=true` — exposes the `test_vlad` fixture restaurant
+
+**Exit codes:** 0 = all scenarios passed, 1 = one or more failed.
+
+**Trace output:** `runtime/golden-runs/<ISO>.jsonl` (gitignored, one line per tool call).
+
+**Add a new scenario:** drop a JSON file in `tests/golden-path-harness/scripts/` following
+the shape in `pizza-only.json`, then pass `--scenario <your-id>` or add it to the
+`VALID_SCENARIOS` list in `scripts/harness/golden-path.js`.
+
 ## Post-MVP
 
 - [ ] Real restaurant discovery (Google Places API)

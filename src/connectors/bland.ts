@@ -334,6 +334,13 @@ function buildSimTranscript(
 
 /**
  * Dispatch a call via Bland.ai API.
+ * Two pre-dispatch guards run before the apiKey check, in priority order:
+ *   1. EMERGENCY_DISABLE_BLAND (SP-20260514-003 T-051) — operator panic-stop.
+ *      When set to "true"/"1", logs panic-stop event and throws PANIC_STOP_MESSAGE.
+ *      Wins even over harness mode — operators outrank tests.
+ *   2. BLAND_HARNESS_MODE (SP-20260514-002 T-069) — Layer 2 of three-layer
+ *      harness guard (env → source short-circuit → sim_ prefix). When set to
+ *      "1", always returns a sim_* callId regardless of BLAND_API_KEY.
  * Falls back to simulation mode when BLAND_API_KEY is not set.
  * When TEST_OVERRIDE_PHONE is set, routes every call to that number
  * instead of the real restaurant — use this to test live Bland calls
@@ -342,8 +349,9 @@ function buildSimTranscript(
 export async function dispatchCall(
   order: PlaceOrderRequest,
 ): Promise<BlandCallResponse> {
-  // SP-20260514-003 T-051 — emergency kill-switch.
+  // GUARD 1 — operator panic-stop (SP-20260514-003 T-051).
   // When set, refuses ALL new Bland dispatches without making any HTTP request.
+  // Runs first: operator safety outranks harness-mode short-circuit.
   const disableFlag = String(process.env.EMERGENCY_DISABLE_BLAND ?? "")
     .trim()
     .toLowerCase();
@@ -356,6 +364,15 @@ export async function dispatchCall(
       orderSummary: `${itemCount} item(s) to ${order.deliveryAddress}`,
     });
     throw new Error(PANIC_STOP_MESSAGE);
+  }
+
+  // GUARD 2 — harness source short-circuit (SP-20260514-002 T-069).
+  // Layer 2 of three-layer Bland guard. Wins over a real BLAND_API_KEY so a
+  // stray dev .env cannot bypass the harness. Must remain BEFORE apiKey check.
+  if (process.env.BLAND_HARNESS_MODE === "1") {
+    const callId = `sim_${Date.now()}`;
+    simCalls.set(callId, { order, createdAt: Date.now() });
+    return { callId, status: "queued" };
   }
 
   const apiKey = process.env.BLAND_API_KEY;
@@ -420,7 +437,10 @@ export async function dispatchCall(
 
 /**
  * Check call status and get transcript.
- * Handles simulated calls (sim_*) when no BLAND_API_KEY is set.
+ * Handles simulated calls (sim_*) when no BLAND_API_KEY is set, or
+ * when BLAND_HARNESS_MODE="1" (Layer 2 of three-layer harness guard).
+ * When BLAND_HARNESS_MODE="1", SIM_FAST_FORWARD_MS is subtracted from
+ * the age threshold, allowing near-instant completion in test runs.
  */
 export async function getCallStatus(callId: string): Promise<BlandCallStatus> {
   if (callId.startsWith("sim_")) {
@@ -428,7 +448,18 @@ export async function getCallStatus(callId: string): Promise<BlandCallStatus> {
     if (!sim) throw new Error(`Unknown simulated call: ${callId}`);
 
     const ageMs = Date.now() - sim.createdAt;
-    if (ageMs < 10_000) {
+    // In harness mode, SIM_FAST_FORWARD_MS controls the completion threshold.
+    // SIM_FAST_FORWARD_MS=0 means complete immediately (threshold=0).
+    // Unset or non-harness mode: default 10s threshold.
+    let threshold = 10_000;
+    if (process.env.BLAND_HARNESS_MODE === "1") {
+      const envVal = process.env.SIM_FAST_FORWARD_MS;
+      if (envVal !== undefined && envVal !== "") {
+        // SIM_FAST_FORWARD_MS is the max wait in ms (0 = immediate).
+        threshold = Math.max(0, parseInt(envVal, 10) || 0);
+      }
+    }
+    if (ageMs < threshold) {
       return { callId, status: "in_progress" };
     }
 
