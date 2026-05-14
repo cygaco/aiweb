@@ -92,6 +92,16 @@ function deriveIntentText(scenario) {
  * Derives the structured data fields for the A2A message's data part.
  * These are the fields extractInput() can parse from a `data` part.
  * Note: we do NOT include confirmed:true so the executor returns input-required quickly.
+ *
+ * Data-part contract with PizzaAgentExecutor.extractInput():
+ *   - address, name, phone → straight through
+ *   - intent_style         → passed to orderFromIntent() — must be a string like "meat lovers"
+ *   - cart                 → must be a Cart (CartItem[]) — NOT raw scenario {qty,name} entries
+ *   - items                → must be OrderItem[] (objects with name/size/qty/price fields)
+ *
+ * Scenario items[] is a string[] used for the text part (human-readable intent).
+ * We NEVER put raw string arrays into the data part — the executor's legacyItemsToCart
+ * would crash on item.name = undefined. Instead we derive intent_style from items[0].
  */
 function deriveDataFields(scenario) {
   const data = {
@@ -100,18 +110,25 @@ function deriveDataFields(scenario) {
     phone: scenario.customer_phone,
   };
 
-  // Items or cart - pick up from scenario
-  if (scenario.cart && scenario.cart.length > 0) {
-    data.cart = scenario.cart;
-  } else if (scenario.items && scenario.items.length > 0) {
-    data.items = scenario.items;
-  }
-
-  // intent_style from items if scenario has an items field that's a string array
-  // or infer from cart item names
+  // Scenario-level intent_style takes priority (explicit override)
   if (scenario.intent_style) {
     data.intent_style = scenario.intent_style;
+  } else if (scenario.items && scenario.items.length > 0) {
+    // items[] is a string array in scenario JSONs. Derive intent_style from the
+    // first item (the primary pizza). Strip "Pizza"/"pizza" suffix, lowercase.
+    // e.g. "Meat Lovers Pizza" → "meat lovers", "Cheese Pizza" → "cheese".
+    const firstItem =
+      typeof scenario.items[0] === "string"
+        ? scenario.items[0]
+        : (scenario.items[0].name ?? "pepperoni");
+    data.intent_style = firstItem
+      .toLowerCase()
+      .replace(/\s*pizza\s*$/i, "")
+      .trim();
   }
+  // NOTE: we do NOT include scenario.cart here. Scenario cart is {qty,name}[]
+  // which is NOT a CartItem[] shape. The executor will build the cart via
+  // intent_style → orderFromIntent() → legacyItemsToCart() using real menu data.
 
   return data;
 }

@@ -1025,12 +1025,16 @@ async function main() {
       const runtimeMs = Date.now() - t0;
 
       // Events tail assertion
+      // A2A surface uses a2a_events_assertions (may be empty/absent); the A2A
+      // executor does not fire the MCP-specific events (compatibility, branch, etc.)
+      // so reusing mcp events_assertions on A2A would always fail.
       try {
         const tailEvents = readEventsTail(eventsSnapshot);
-        const evFails = runEventsAssertions(
-          scenario.events_assertions,
-          tailEvents,
-        );
+        const evAssertions =
+          surface === "a2a-jsonrpc"
+            ? (scenario.a2a_events_assertions ?? [])
+            : (scenario.events_assertions ?? []);
+        const evFails = runEventsAssertions(evAssertions, tailEvents);
         failures.push(...evFails);
       } catch (e) {
         failures.push({

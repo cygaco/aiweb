@@ -1,6 +1,10 @@
 {
   "id": "pizza-only",
   "title": "SF + test_vlad + meat lovers (golden master)",
+  "customer_address": "1 Market St, San Francisco, CA 94105",
+  "customer_name": "Vlad Test",
+  "customer_phone": "+15555550100",
+  "items": ["Meat Lovers Pizza"],
   "steps": [
     {
       "tool": "start_pizza_order",
