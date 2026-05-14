@@ -5,7 +5,6 @@ import { hostHeaderValidation } from "@modelcontextprotocol/sdk/server/middlewar
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import rateLimit from "express-rate-limit";
 import { createServer } from "./server.js";
-import { initProfileStore, HEX_64 } from "./lib/profile-store.js";
 import { buildA2AHandlers } from "./a2a/server.js";
 
 const PORT = parseInt(process.env.PORT ?? "8080", 10);
@@ -20,20 +19,6 @@ if (!WARP_MCP_KEY) {
   console.error("FATAL: WARP_MCP_KEY not set. Refusing to start.");
   process.exit(1);
 }
-
-if (!process.env.PROFILE_ENCRYPTION_SECRET) {
-  console.error("FATAL: PROFILE_ENCRYPTION_SECRET not set. Refusing to start.");
-  process.exit(1);
-}
-
-if (!HEX_64.test(process.env.PROFILE_ENCRYPTION_SECRET)) {
-  console.error(
-    "FATAL: PROFILE_ENCRYPTION_SECRET must be 64 hex chars (32 bytes). Generate with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
-  );
-  process.exit(1);
-}
-
-initProfileStore();
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -100,7 +85,18 @@ app.use(express.json());
 // without the public Host header, so they must be registered BEFORE host
 // validation and BEFORE auth.
 app.get("/", (_req, res) => {
-  res.status(200).type("text/plain").send("aiweb-mcp");
+  // C-4: legal-links index (SP-20260514-003 T-052).
+  // Plaintext so Fly health probes and curious devs both get something useful.
+  const body = [
+    "aiweb-mcp — experimental pizza-ordering concierge.",
+    "",
+    "This is alpha software. Do not place real orders unattended.",
+    "",
+    "Contact:  contact@agentsforall.co",
+    "Terms:    https://aiweb-mcp.fly.dev/tos",
+    "Privacy:  https://aiweb-mcp.fly.dev/privacy",
+  ].join("\n");
+  res.status(200).type("text/plain").send(body);
 });
 
 app.get("/healthz", (_req, res) => {

@@ -11,6 +11,7 @@ The AI Web — Wave 00 pizza concierge. This file is the single roadmap for the 
 - **Last sprint:** YC application sprint, 2026-05-06 → 07 — compatibility-layer feature shipped + four-gate gauntlet closeable. Full story in `yc-application.md`.
 - **Open issues:** 5 in `issues.md` (1 fixed, 3 deferred non-blocking, 1 deferred-with-fix-path = ISS-005 / RT-201).
 - **Open WarpOS-propagation flags:** 13 in `warpos-to-update.md`. Drained on `/warp:promote` or `/warp:release`.
+- **Launch readiness:** see `_docs/launch/MVP-P0-INVENTORY.md`.
 
 ---
 
@@ -93,7 +94,13 @@ See `issues.md` for full schema. Priority order:
 - [ ] **Per-size modifier pricing** — extra cheese typically costs $1 on a small but $3 on a large. Today our `Modifier.priceDelta` is a flat number. Schema upgrade: `priceDelta: number | { sizeId: string; price: number }[]`.
 - [ ] **Tax / fees / tip handling** — Wave 00 quotes "approximate total" via Bland; doesn't capture tax line items, delivery fees, or tip. Real-world commerce needs all three.
 
+### Auth + identity
+
+- [ ] **Per-user auth + profile re-introduction** — multi-week project. Add a signup or magic-link flow that issues per-user JWTs; an identity store keyed by verified user id; per-user tokenHash deriving from JWT claims (not from the shared WARP_MCP_KEY); JWT validation at the /mcp and /a2a boundaries; multi-user integration tests that prove caller A cannot read caller B's profile. Re-enables ROADMAP "Profile depth" items (preferred_drinks, preferred_modifiers, structured address fields) cleanly on top of real identity instead of retrofitting onto a broken auth model.
+
 ### Profile depth
+
+> **Status (2026-05-14):** HTTP/MCP profile surface removed in SP-20260514-001 due to a structural cross-user data-leak in the single-bearer auth model. Re-introduction blocked behind "Per-user auth + profile re-introduction" (see Auth + identity above).
 
 - [ ] **`UserProfile.preferred_drinks` and `preferred_modifiers`** — flagged in the intake-upgrade plan as an optional future. Once we have N>10 active users, mine their order history to infer defaults; cuts the upsell turn for repeat users.
 - [ ] **Address parsing into structured fields** (street/unit/city/state/zip) — today address is a single opaque string. Structured fields enable better Bland prompts, smarter delivery-radius checks, and address verification at intake time.
@@ -103,6 +110,7 @@ See `issues.md` for full schema. Priority order:
 - [ ] **Per-restaurant pronunciation profile** — some chain names are mispronounced by Bland TTS. Add a `Restaurant.speakable_name` field that overrides `name` in the call prompt. Same pattern as `speakableAddress`, applied to restaurant name.
 - [ ] **Phonetic respelling for unusual menu items** — items like "Calzone", "Stromboli", "Bruschetta" sometimes get mangled. Optional `MenuItem.speakable_name` for the prompt.
 - [ ] **SSML upgrade** — Bland may add SSML support; switch from English-spelled-out abbreviations to actual `<phoneme>` / `<say-as>` tags when available.
+- [ ] **Claude places the order call itself** — make the AI able to order by calling the restaurant directly, instead of handing off to Bland.ai. Claude becomes the voice agent on the line (via Claude voice or a similar real-time speech surface), reads the cart, handles ITEM-CONFIRM, captures the confirmation. Removes Bland as a runtime dependency, brings narration honesty into the call itself, and lets the same compatibility-layer rules govern the call. Significant integration work — needs a real-time TTS + STT loop, latency budget, telephony provider, and a deterministic recovery flow when the call goes sideways.
 
 ### Compliance + commerce
 

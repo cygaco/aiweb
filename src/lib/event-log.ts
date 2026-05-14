@@ -86,3 +86,16 @@ export function logA2ACustomizationSourceEvent(data: unknown): void {
 export function logStartPizzaOrderBranchEvent(data: unknown): void {
   writeEvent("start_pizza_order_branch", data);
 }
+
+/**
+ * SP-20260514-003 T-051 — EMERGENCY_DISABLE_BLAND panic-stop.
+ *
+ * Written exactly once per dispatchCall invocation that is blocked by
+ * the kill-switch. Fields:
+ *   callSite: 'server' | 'a2a' | 'unknown'  (set by caller via BLAND_CALL_SITE env)
+ *   restaurantName: string
+ *   orderSummary: string   (item count + address, no PII beyond what's in the order)
+ */
+export function logPanicStopEvent(data: unknown): void {
+  writeEvent("panic-stop", data);
+}

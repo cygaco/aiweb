@@ -4,6 +4,20 @@
 
 MCP server that connects to Claude (or any MCP client), takes pizza orders through conversation, and places them by having an AI voice agent (Bland.ai) call the restaurant. Payment is cash on delivery — no credit cards, no checkout sessions, no bot detection.
 
+## Known launch-readiness gaps
+
+The AI Web is pre-launch alpha. Before relying on it, know that:
+
+- **No per-user authentication yet.** A single shared API key (`WARP_MCP_KEY`) authorizes every caller, and every caller's profile collapses to the same row. Plan A (`SP-20260514-001`) is auditing the safe path forward.
+- **No real payment flow.** Cash on delivery only. Credit-card support is a deliberate post-launch decision.
+- **No managed observability yet.** Errors and events log to `runtime/events.jsonl` on a single Fly volume. No log shipping, error tracking, or alerting.
+- **No autonomous test harness in CI yet.** Plan B (`SP-20260514-002`) is building the golden-path harness so future changes don't regress live demos.
+- **One real restaurant connector in production.** Domino's only; `INCLUDE_TEST_RESTAURANTS=false` gates fixture restaurants out. The Domino's coverage check currently short-circuits to "unknown" because store lat/lng=0 (ROADMAP Known Risk #3).
+- **No panic-stop yet for in-flight calls.** This sprint adds `EMERGENCY_DISABLE_BLAND` to refuse new dispatches; in-flight call cancellation is still manual.
+- **Placeholder legal surface only.** `/tos` and `/privacy` are honest experimental disclosures, not lawyer-reviewed terms.
+
+See `_docs/launch/MVP-P0-INVENTORY.md` for the full P0/P1/P2 inventory with sized estimates and proposed follow-up sprints. Contact: contact@agentsforall.co.
+
 ## How It Works
 
 ```
@@ -153,3 +167,7 @@ Tool definitions never change.
 - [ ] Multiple connector types (API, Playwright, voice)
 - [ ] Stripe MPP for card payments
 - [ ] Deploy to Railway as hosted MCP server
+
+### Notes — auth + user profile
+
+The HTTP/MCP surface uses a single operator-issued bearer (`WARP_MCP_KEY`) for authentication. Because every caller shares this bearer, there is no per-user identity at the `/mcp` or `/a2a` boundary today. As a result, the previous `get_user_profile` / `update_user_profile` MCP tools and the saved-profile fallbacks for delivery address / name / phone have been removed (SP-20260514-001). HTTP/MCP callers must supply `delivery_address`, `customer_name`, and `customer_phone` in every `place_order` call. Stdio mode retains the profile library as a single-user-per-process convenience (see `src/stdio.ts`). Re-introduction of a network-reachable profile is tracked in `ROADMAP.md` under "Per-user auth + profile re-introduction."
