@@ -1,6 +1,10 @@
 {
   "id": "pizza-plus-side",
   "title": "SF + test_vlad + meat lovers + wings side",
+  "customer_address": "1 Market St, San Francisco, CA 94105",
+  "customer_name": "Vlad Test",
+  "customer_phone": "+15555550100",
+  "items": ["Meat Lovers Pizza", "Wings (8pc)"],
   "steps": [
     {
       "tool": "start_pizza_order",
