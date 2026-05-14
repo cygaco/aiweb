@@ -85,7 +85,18 @@ app.use(express.json());
 // without the public Host header, so they must be registered BEFORE host
 // validation and BEFORE auth.
 app.get("/", (_req, res) => {
-  res.status(200).type("text/plain").send("aiweb-mcp");
+  // C-4: legal-links index (SP-20260514-003 T-052).
+  // Plaintext so Fly health probes and curious devs both get something useful.
+  const body = [
+    "aiweb-mcp — experimental pizza-ordering concierge.",
+    "",
+    "This is alpha software. Do not place real orders unattended.",
+    "",
+    "Contact:  contact@agentsforall.co",
+    "Terms:    https://aiweb-mcp.fly.dev/tos",
+    "Privacy:  https://aiweb-mcp.fly.dev/privacy",
+  ].join("\n");
+  res.status(200).type("text/plain").send(body);
 });
 
 app.get("/healthz", (_req, res) => {

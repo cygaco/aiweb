@@ -13,7 +13,23 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <footer
+          style={{
+            marginTop: "2rem",
+            padding: "1rem",
+            borderTop: "1px solid #eee",
+            fontSize: "0.85rem",
+            textAlign: "center",
+            color: "#666",
+          }}
+        >
+          <a href="/tos">Terms of Service</a>
+          {" · "}
+          <a href="/privacy">Privacy Policy</a>
+        </footer>
+      </body>
     </html>
   );
 }
