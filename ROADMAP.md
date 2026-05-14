@@ -11,6 +11,7 @@ The AI Web — Wave 00 pizza concierge. This file is the single roadmap for the 
 - **Last sprint:** YC application sprint, 2026-05-06 → 07 — compatibility-layer feature shipped + four-gate gauntlet closeable. Full story in `yc-application.md`.
 - **Open issues:** 5 in `issues.md` (1 fixed, 3 deferred non-blocking, 1 deferred-with-fix-path = ISS-005 / RT-201).
 - **Open WarpOS-propagation flags:** 13 in `warpos-to-update.md`. Drained on `/warp:promote` or `/warp:release`.
+- **Launch readiness:** see `_docs/launch/MVP-P0-INVENTORY.md`.
 
 ---
 
