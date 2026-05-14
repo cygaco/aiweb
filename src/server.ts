@@ -1,13 +1,14 @@
 /**
  * The AI Web — Wave 00 MCP Server
  *
- * Three tools. One connector. Real pizza.
+ * Five tools. One connector. Real pizza.
  *
  * Tools:
  * 1. start_pizza_order — find restaurants, show presets, collect info
  * 2. prepare_order — issue a server-signed confirmation_token for a reviewed cart
- * 3. place_order — build Bland prompt, fire the call
- * 4. check_order_status — poll call status, parse transcript
+ * 3. update_order — apply cart diffs (add/remove items, modifiers, swap to deal)
+ * 4. place_order — build Bland prompt, fire the call
+ * 5. check_order_status — poll call status, parse transcript
  *
  * The tool descriptions ARE the product. Claude reads them
  * and follows the conversation UX we designed.
@@ -24,6 +25,7 @@ import { COLD_PRESETS, orderFromIntent, pizzasNeeded } from "./lib/presets.js";
 import {
   dispatchCall,
   getCallStatus,
+  PANIC_STOP_MESSAGE,
   type OrderItem,
   type PlaceOrderRequest,
 } from "./connectors/bland.js";
@@ -1678,6 +1680,22 @@ Then call check_order_status with the returned call_id to get the result.`,
           ],
         };
       } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        // Panic-stop: surface paused status with the operator-facing C-1 string.
+        if (msg === PANIC_STOP_MESSAGE) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  { status: "paused", message: PANIC_STOP_MESSAGE },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
         return {
           content: [
             {
@@ -1685,7 +1703,7 @@ Then call check_order_status with the returned call_id to get the result.`,
               text: JSON.stringify(
                 {
                   status: "error",
-                  message: `Failed to call restaurant: ${error instanceof Error ? error.message : "Unknown error"}`,
+                  message: `Failed to call restaurant: ${msg}`,
                   suggestion:
                     "Check that BLAND_API_KEY is set and the restaurant phone number is valid.",
                 },

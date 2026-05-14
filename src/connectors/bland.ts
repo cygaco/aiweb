@@ -11,6 +11,15 @@ import {
   type CartItem,
   type SelectedModifier,
 } from "../lib/cart.js";
+import { logPanicStopEvent } from "../lib/event-log.js";
+
+/**
+ * Operator-facing message returned when EMERGENCY_DISABLE_BLAND is active.
+ * Must NOT leak the env-var name to end-users — it surfaces through
+ * existing error pathways (MCP tool response, A2A task failed message).
+ */
+export const PANIC_STOP_MESSAGE =
+  "Ordering is temporarily paused for safety reasons. No call was placed. Please retry shortly or contact contact@agentsforall.co.";
 
 export interface OrderItem {
   name: string;
@@ -333,6 +342,22 @@ function buildSimTranscript(
 export async function dispatchCall(
   order: PlaceOrderRequest,
 ): Promise<BlandCallResponse> {
+  // SP-20260514-003 T-051 — emergency kill-switch.
+  // When set, refuses ALL new Bland dispatches without making any HTTP request.
+  const disableFlag = String(process.env.EMERGENCY_DISABLE_BLAND ?? "")
+    .trim()
+    .toLowerCase();
+  if (disableFlag === "true" || disableFlag === "1") {
+    const callSite = String(process.env.BLAND_CALL_SITE ?? "unknown");
+    const itemCount = order.cart?.length ?? order.items?.length ?? 0;
+    logPanicStopEvent({
+      callSite,
+      restaurantName: order.restaurantName,
+      orderSummary: `${itemCount} item(s) to ${order.deliveryAddress}`,
+    });
+    throw new Error(PANIC_STOP_MESSAGE);
+  }
+
   const apiKey = process.env.BLAND_API_KEY;
 
   if (!apiKey) {
