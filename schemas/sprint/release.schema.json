@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/release/v1",
+  "title": "WarpOS Sprint v0.1 — Release Record",
+  "description": "Release artifact written by /sprint:release. Lives under paths.sprintReleases.",
+  "type": "object",
+  "required": ["schema", "id", "sprint", "status", "created_at", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "const": "warpos/sprint/release/v1" },
+    "id": { "type": "string", "pattern": "^RL-[0-9]{8}-[0-9]{3}$" },
+    "sprint": { "type": "string" },
+    "title": { "type": "string" },
+    "version": {
+      "type": "string",
+      "description": "Downstream-project version label. Free-text — sprint v0.1 does not assume semver."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "preparing",
+        "checks_in_progress",
+        "approval_pending",
+        "ready_to_deploy",
+        "deploying",
+        "deployed",
+        "verified",
+        "monitoring",
+        "rolled_back",
+        "blocked",
+        "aborted"
+      ]
+    },
+    "checklist": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tickets_done_or_deferred": { "type": "boolean" },
+        "blocking_issues_resolved": { "type": "boolean" },
+        "requirements_satisfied": { "type": "boolean" },
+        "copy_satisfied": { "type": "boolean" },
+        "inputs_satisfied": { "type": "boolean" },
+        "trace_satisfied": { "type": "boolean" },
+        "acceptance_criteria_satisfied": { "type": "boolean" },
+        "qa_passed": { "type": "boolean" },
+        "redteam_passed": { "type": "boolean" },
+        "external_services_ready": { "type": "boolean" },
+        "credentials_present": { "type": "boolean" },
+        "release_notes_written": { "type": "boolean" },
+        "docs_updated": { "type": "boolean" },
+        "analytics_updated": { "type": "boolean" },
+        "migration_plan": { "type": "boolean" },
+        "rollback_plan": { "type": "boolean" },
+        "approval_recorded": { "type": "boolean" },
+        "post_release_monitoring_plan": { "type": "boolean" }
+      }
+    },
+    "approval_ref": { "type": ["string", "null"] },
+    "changelog_path": { "type": ["string", "null"] },
+    "release_report_path": { "type": ["string", "null"] },
+    "linked_tickets": { "type": "array", "items": { "type": "string" } },
+    "linked_issues": { "type": "array", "items": { "type": "string" } },
+    "linked_external_services": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "deployment_environment": { "type": "string" },
+    "deployment_target": {
+      "type": "string",
+      "description": "Free-text target — e.g. 'production', 'staging', 'internal-canary'."
+    },
+    "deployed_at": { "type": ["string", "null"], "format": "date-time" },
+    "deployed_by": { "type": ["string", "null"] },
+    "rollback_at": { "type": ["string", "null"], "format": "date-time" },
+    "rollback_reason": { "type": ["string", "null"] },
+    "retrospective_ref": { "type": ["string", "null"] },
+    "learning_candidates": { "type": "array", "items": { "type": "string" } },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

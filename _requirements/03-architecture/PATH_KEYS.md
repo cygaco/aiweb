@@ -9,6 +9,7 @@ Markdown convention: reference paths as `paths.X` in prose. Code: `const { PATHS
 | Key | Path | Kind | Owner | Mutable | Introduced | Notes |
 |---|---|---|---|---|---|---|
 | `adrIndex` | `.claude/agents/00-alex/.system/policy/adr/INDEX.md` | md | project | yes | 0.0.0 |  |
+| `agentDispatchGuide` | `.claude/project/reference/agent-dispatch-guide.md` | md | framework | no | 0.3.0 |  |
 | `agents` | `.claude/agents` | dir | framework | no | 0.0.0 |  |
 | `agentSystem` | `.claude/agents/00-alex/.system` | dir | framework | no | 0.0.0 |  |
 | `architectureRoot` | `_requirements/03-architecture` | dir | framework | yes | 0.2.0 | Track B 2026-05-03 introduced this key to replace many hardc |
@@ -16,6 +17,8 @@ Markdown convention: reference paths as `paths.X` in prose. Code: `const { PATHS
 | `betaEvents` | `.claude/agents/00-alex/.system/beta/events.jsonl` | jsonl | runtime | yes | 0.0.0 |  |
 | `betaSourceData` | `.claude/agents/00-alex/.system/beta/beta-source-data.md` | md | runtime | yes | 0.0.0 |  |
 | `betaSystem` | `.claude/agents/00-alex/.system/beta` | dir | framework | yes | 0.0.0 |  |
+| `briefs` | `_docs/briefs` | dir | project | yes | 0.5.1 |  |
+| `briefsCurrent` | `_docs/briefs` | dir | runtime | yes | 0.5.1 |  |
 | `commands` | `.claude/commands` | dir | framework | no | 0.0.0 |  |
 | `content` | `.claude/content` | dir | runtime | yes | 0.0.0 |  |
 | `currentStage` | `.claude/agents/00-alex/.system/policy/current-stage.md` | md | project | yes | 0.0.0 |  |
@@ -23,6 +26,9 @@ Markdown convention: reference paths as `paths.X` in prose. Code: `const { PATHS
 | `decisionPolicy` | `.claude/agents/00-alex/.system/policy/decision-policy.md` | md | project | yes | 0.0.0 |  |
 | `decisions` | `.claude/project/decisions` | dir | runtime | yes | 0.1.0 |  |
 | `designSystemRoot` | `_requirements/01-design-system` | dir | framework | yes | 0.2.0 |  |
+| `dispatchCompletionsFile` | `.claude/runtime/dispatch-completions.jsonl` | jsonl | runtime | yes | 0.3.0 |  |
+| `dispatchDeathsFile` | `.claude/runtime/dispatch-deaths.jsonl` | jsonl | runtime | yes | 0.3.0 |  |
+| `dispatchLocks` | `.claude/runtime/dispatch-locks` | dir | runtime | yes | 0.3.0 |  |
 | `docsRoot` | `_docs` | dir | project | yes | 0.2.0 | Track B 2026-05-03 renamed docs -> _docs. Now contains only  |
 | `dreams` | `.claude/dreams` | dir | runtime | yes | 0.0.0 |  |
 | `events` | `.claude/project/events` | dir | runtime | yes | 0.0.0 |  |
@@ -51,7 +57,14 @@ Markdown convention: reference paths as `paths.X` in prose. Code: `const { PATHS
 | `patterns` | `patterns` | dir | framework | no | 0.0.0 |  |
 | `plans` | `.claude/runtime/plans` | dir | runtime | yes | 0.0.0 |  |
 | `policy` | `.claude/agents/00-alex/.system/policy` | dir | project | yes | 0.0.0 |  |
+| `providerAutofixLib` | `scripts/warpos/lib/provider-autofix.js` | js | framework | no | 0.5.1 |  |
+| `providerFailureModes` | `.claude/agents/00-alex/.system/policy/provider-failure-modes.json` | json | framework | no | 0.5.1 | Provider failure-mode catalog (SP-20260513-002). 10 entries, |
+| `providerFallbackPolicy` | `.claude/agents/00-alex/.system/policy/provider-fallback.json` | json | framework | no | 0.3.0 |  |
+| `providerRcaLib` | `scripts/warpos/lib/provider-rca.js` | js | framework | no | 0.5.1 |  |
+| `providerSmokeSkill` | `scripts/warpos/provider-smoke.js` | js | framework | no | 0.5.1 | Provider smoke driver (SP-20260513-002). Run direct or via p |
+| `providerTmp` | `.claude/runtime/.provider-tmp` | dir | runtime | yes | 0.3.0 |  |
 | `providerTrace` | `.claude/project/decisions/provider-trace.jsonl` | jsonl | runtime | yes | 0.1.0 |  |
+| `reasoningFrameworks` | `.claude/project/reference/reasoning-frameworks.md` | md | framework | no | 0.5.1 | Classification table, framework router, fix-quality levels ( |
 | `recurringIssuesFile` | `.claude/project/memory/recurring-issues.jsonl` | jsonl | runtime | yes | 0.0.0 |  |
 | `reference` | `.claude/project/reference` | dir | framework | no | 0.0.0 |  |
 | `requirements` | `_requirements` | dir | project | yes | 0.0.0 |  |
@@ -61,13 +74,38 @@ Markdown convention: reference paths as `paths.X` in prose. Code: `const { PATHS
 | `research` | `_docs/research` | dir | project | yes | 0.0.0 |  |
 | `runtime` | `.claude/runtime` | dir | runtime | yes | 0.0.0 |  |
 | `settings` | `.claude/settings.json` | json | project | yes | 0.0.0 |  |
+| `skillCatalog` | `.claude/runtime/skill-catalog.json` | json | generated | yes | 0.5.1 | Generated compact index of every user-invocable slash comman |
 | `skillUsageFile` | `.claude/project/events/skill-usage.jsonl` | jsonl | runtime | yes | 0.1.3 |  |
 | `specGraph` | `.claude/project/maps/SPEC_GRAPH.json` | json | generated | yes | 0.0.0 |  |
 | `specsRoot` | `_requirements/04-features` | dir | project | yes | 0.1.0 | replaces `manifest.projectPaths.specs (originally docs/05-features, then requirements/05-features, then requirements/04-features)` |
+| `sprintActiveRegistry` | `.claude/project/sprint/active-sprints.yaml` | yaml | runtime | yes | 0.5.0 | Sprint Workflow v0.2 — top-level registry of every live spri |
+| `sprintApprovals` | `.claude/project/sprint/approvals` | dir | runtime | yes | 0.4.0 |  |
+| `sprintCheckpoints` | `.claude/project/sprint/checkpoints` | dir | runtime | yes | 0.4.0 |  |
+| `sprintCurrent` | `.claude/project/sprint/current-sprint.yaml` | yaml | runtime | yes | 0.4.0 |  |
+| `sprintDecisions` | `.claude/project/sprint/decisions` | dir | runtime | yes | 0.4.0 | Sprint-scope decisions. Distinct from paths.decisions (proje |
+| `sprintExternalServices` | `.claude/project/sprint/external-services` | dir | runtime | yes | 0.4.0 |  |
+| `sprintHistory` | `.claude/project/sprint/history` | dir | runtime | yes | 0.4.0 |  |
+| `sprintIssues` | `.claude/project/sprint/issues` | dir | runtime | yes | 0.4.0 | Structured per-issue yaml. Per-project bug inbox issues.md ( |
+| `sprintIssuesLedger` | `issues.md` | md | project | yes | 0.4.0 | Human-readable per-project bug inbox at repo root. Distinct  |
+| `sprintPlanContracts` | `.claude/project/sprint/plan-contracts` | dir | runtime | yes | 0.4.0 |  |
+| `sprintProgress` | `.claude/project/sprint/sprint-progress.yaml` | yaml | runtime | yes | 0.4.0 |  |
+| `sprintRalph` | `.claude/project/sprint/ralph` | dir | runtime | yes | 0.4.0 |  |
+| `sprintReference` | `.claude/project/reference/sprint-workflow.md` | md | framework | no | 0.4.0 |  |
+| `sprintReleases` | `.claude/project/sprint/releases` | dir | runtime | yes | 0.4.0 |  |
+| `sprintRequirements` | `.claude/project/sprint/requirements` | dir | runtime | yes | 0.4.0 | Sprint-scope requirement bundles (PRD/STORIES/COPY/INPUTS/TR |
+| `sprintRoot` | `.claude/project/sprint` | dir | runtime | yes | 0.4.0 | Sprint Workflow v0.1 — downstream live tracker root. Created |
+| `sprintRouting` | `.claude/agents/00-alex/.system/policy/sprint-routing.json` | json | framework | no | 0.4.0 |  |
+| `sprintSchemas` | `schemas/sprint` | dir | framework | no | 0.4.0 |  |
+| `sprintSprints` | `.claude/project/sprint/sprints` | dir | runtime | yes | 0.5.0 | Sprint Workflow v0.2 — directory containing per-sprint subdi |
+| `sprintTemplates` | `framework/templates/sprint` | dir | framework | no | 0.4.0 |  |
+| `sprintTickets` | `.claude/project/sprint/tickets` | dir | runtime | yes | 0.4.0 |  |
 | `store` | `.claude/agents/store.json` | json | runtime | yes | 0.0.0 |  |
 | `systemsFile` | `.claude/project/memory/systems.jsonl` | jsonl | runtime | yes | 0.0.0 |  |
 | `toolsFile` | `.claude/project/events/tools.jsonl` | jsonl | runtime | yes | 0.0.0 |  |
 | `tracesFile` | `.claude/project/memory/traces.jsonl` | jsonl | runtime | yes | 0.0.0 |  |
+| `warposFlagLedger` | `warpos-to-update.md` | md | project | yes | 0.3.0 |  |
+| `warposPromotedArchive` | `warpos-promoted-archive.md` | md | project | yes | 0.3.0 |  |
+| `warposPromoteReports` | `.warpos/promote-reports` | dir | runtime | yes | 0.3.0 |  |
 
 ## Owner classification
 

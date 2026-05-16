@@ -10,7 +10,9 @@ const ROOT = path.resolve(__dirname, "..", "..");
 
 function loadPaths() {
   try {
-    return JSON.parse(fs.readFileSync(path.join(ROOT, ".claude", "paths.json"), "utf8"));
+    return JSON.parse(
+      fs.readFileSync(path.join(ROOT, ".claude", "paths.json"), "utf8"),
+    );
   } catch {
     return {};
   }
@@ -18,7 +20,10 @@ function loadPaths() {
 
 function ledgerPath() {
   const paths = loadPaths();
-  return path.join(ROOT, paths.decisionLedger || ".claude/project/decisions/decision-ledger.jsonl");
+  return path.join(
+    ROOT,
+    paths.decisionLedger || ".claude/project/decisions/decision-ledger.jsonl",
+  );
 }
 
 function readEntries() {
@@ -58,7 +63,9 @@ function appendDecision(fields) {
   const file = ledgerPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const entry = {
-    id: fields.id || `DEC-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`,
+    id:
+      fields.id ||
+      `DEC-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`,
     ts: fields.ts || new Date().toISOString(),
     class: fields.class || fields.riskClass || "B",
     owner: fields.owner || "alpha",
@@ -67,10 +74,22 @@ function appendDecision(fields) {
     why: fields.why || "",
     reversible: fields.reversible === true || fields.reversible === "true",
     reversalPlan: fields.reversalPlan || fields["reversal-plan"] || "",
-    expiresOrReviewAfter: fields.expiresOrReviewAfter || fields["review-after"] || null,
-    topic_tags: fields.tags ? String(fields.tags).split(",").map((s) => s.trim()).filter(Boolean) : [],
+    expiresOrReviewAfter:
+      fields.expiresOrReviewAfter || fields["review-after"] || null,
+    topic_tags: fields.tags
+      ? String(fields.tags)
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
     source: fields.source || "manual",
   };
+  // Sprint v0.2: tag every new decision with the active sprint id when
+  // known. Resolution order: explicit fields.sprint_id → env
+  // WARPOS_SPRINT_ID → null. Pre-existing rows without the field keep
+  // parsing (AC-14.3).
+  const sid = fields.sprint_id || process.env.WARPOS_SPRINT_ID || null;
+  if (sid) entry.sprint_id = sid;
   fs.appendFileSync(file, JSON.stringify(entry) + "\n", "utf8");
   return entry;
 }
@@ -79,23 +98,52 @@ function validate(entries) {
   const findings = [];
   for (const e of entries) {
     if (e._invalid) {
-      findings.push({ severity: "red", message: `invalid JSON on line ${e.line}: ${e.error}` });
+      findings.push({
+        severity: "red",
+        message: `invalid JSON on line ${e.line}: ${e.error}`,
+      });
       continue;
     }
-    for (const key of ["id", "ts", "class", "owner", "topic", "decision", "why", "reversible", "reversalPlan"]) {
+    for (const key of [
+      "id",
+      "ts",
+      "class",
+      "owner",
+      "topic",
+      "decision",
+      "why",
+      "reversible",
+      "reversalPlan",
+    ]) {
       if (e[key] === undefined || e[key] === "") {
-        findings.push({ severity: "red", message: `${e.id || "(missing id)"} missing ${key}` });
+        findings.push({
+          severity: "red",
+          message: `${e.id || "(missing id)"} missing ${key}`,
+        });
       }
     }
     if (!["A", "B", "C"].includes(e.class)) {
-      findings.push({ severity: "red", message: `${e.id} has invalid class ${e.class}` });
+      findings.push({
+        severity: "red",
+        message: `${e.id} has invalid class ${e.class}`,
+      });
     }
   }
-  const bc = entries.filter((e) => e && !e._invalid && ["B", "C"].includes(e.class));
+  const bc = entries.filter(
+    (e) => e && !e._invalid && ["B", "C"].includes(e.class),
+  );
   if (bc.length === 0) {
-    findings.push({ severity: "red", message: "decision ledger has no Class B/C entries" });
+    findings.push({
+      severity: "red",
+      message: "decision ledger has no Class B/C entries",
+    });
   }
-  return { ok: findings.length === 0, entries: entries.length, classBC: bc.length, findings };
+  return {
+    ok: findings.length === 0,
+    entries: entries.length,
+    classBC: bc.length,
+    findings,
+  };
 }
 
 function main() {
@@ -109,8 +157,11 @@ function main() {
   if (args.json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    for (const f of result.findings) console.log(`[${f.severity.toUpperCase()}] ${f.message}`);
-    console.log(`decision-ledger: ${result.entries} entries, ${result.classBC} Class B/C, ${result.ok ? "PASS" : "FAIL"}`);
+    for (const f of result.findings)
+      console.log(`[${f.severity.toUpperCase()}] ${f.message}`);
+    console.log(
+      `decision-ledger: ${result.entries} entries, ${result.classBC} Class B/C, ${result.ok ? "PASS" : "FAIL"}`,
+    );
   }
   process.exit(result.ok ? 0 : 2);
 }

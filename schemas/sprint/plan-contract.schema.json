@@ -1,0 +1,284 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/plan-contract/v1",
+  "title": "WarpOS Sprint v0.1 — Plan Contract",
+  "description": "Durable artifact written by /sprint:plan. Single source of truth between brief founder intent and downstream design/execution. Evidence-labeled. Approval-aware. Crash-recoverable.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "created_at",
+    "updated_at",
+    "sprint",
+    "source_request",
+    "source_request_verbatim",
+    "request_type",
+    "interpreted_intent",
+    "user_or_business_outcome",
+    "affected_surfaces",
+    "current_behavior",
+    "desired_behavior",
+    "scope",
+    "scope_variants",
+    "assumptions",
+    "open_questions",
+    "non_goals",
+    "requirement_areas",
+    "high_level_story_candidates",
+    "granular_story_candidates",
+    "workstream_candidates",
+    "preliminary_ticket_candidates",
+    "external_service_dependencies",
+    "approval_boundaries",
+    "design_required",
+    "execution_allowed_without_design",
+    "recommended_mode",
+    "mode_invocation_required_by_user",
+    "lane",
+    "beta_review",
+    "plan_quality",
+    "next_recommended_command",
+    "resume_instructions",
+    "tracker_paths",
+    "reports",
+    "created_by",
+    "updated_by"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "const": "warpos/sprint/plan-contract/v1" },
+    "id": { "type": "string", "pattern": "^PC-[0-9]{8}-[0-9]{4}$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "sprint": {
+      "type": "string",
+      "description": "Sprint id this Plan Contract belongs to."
+    },
+    "source_request": {
+      "type": "string",
+      "description": "Brief paraphrase of the request (may be cleaned up)."
+    },
+    "source_request_verbatim": {
+      "type": "string",
+      "description": "Original user message preserved exactly."
+    },
+    "request_type": {
+      "type": "string",
+      "enum": [
+        "feature_add",
+        "feature_modify",
+        "feature_remove",
+        "bug_fix",
+        "research",
+        "architecture_change",
+        "refactor",
+        "qa",
+        "release",
+        "docs",
+        "operating_loop",
+        "integration",
+        "external_service_setup"
+      ]
+    },
+    "interpreted_intent": { "type": "string" },
+    "user_or_business_outcome": { "type": "string" },
+    "affected_surfaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["surface", "evidence_level"],
+        "additionalProperties": false,
+        "properties": {
+          "surface": { "type": "string" },
+          "evidence_level": { "$ref": "#/definitions/evidenceLevel" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "current_behavior": {
+      "type": "object",
+      "required": ["evidence_level"],
+      "additionalProperties": false,
+      "properties": {
+        "evidence_level": { "$ref": "#/definitions/evidenceLevel" },
+        "notes": { "type": "string" }
+      }
+    },
+    "desired_behavior": { "type": "string" },
+    "scope": {
+      "type": "object",
+      "required": ["size", "risk_level"],
+      "additionalProperties": false,
+      "properties": {
+        "size": { "type": "string", "enum": ["xs", "s", "m", "l", "xl"] },
+        "risk_level": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"]
+        },
+        "complexity_drivers": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "scope_variants": {
+      "type": "object",
+      "required": ["minimal_safe", "recommended", "expanded"],
+      "additionalProperties": false,
+      "properties": {
+        "minimal_safe": { "$ref": "#/definitions/scopeVariant" },
+        "recommended": { "$ref": "#/definitions/scopeVariant" },
+        "expanded": { "$ref": "#/definitions/scopeVariant" }
+      }
+    },
+    "assumptions": {
+      "type": "object",
+      "required": ["safe", "unsafe", "needs_user_or_beta_review"],
+      "additionalProperties": false,
+      "properties": {
+        "safe": { "type": "array", "items": { "type": "string" } },
+        "unsafe": { "type": "array", "items": { "type": "string" } },
+        "needs_user_or_beta_review": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "object",
+      "required": ["blocking", "non_blocking"],
+      "additionalProperties": false,
+      "properties": {
+        "blocking": { "type": "array", "items": { "type": "string" } },
+        "non_blocking": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "non_goals": { "type": "array", "items": { "type": "string" } },
+    "requirement_areas": { "type": "array", "items": { "type": "string" } },
+    "high_level_story_candidates": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "granular_story_candidates": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "workstream_candidates": { "type": "array", "items": { "type": "string" } },
+    "preliminary_ticket_candidates": {
+      "type": "object",
+      "required": ["allowed", "notes"],
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "type": "boolean",
+          "description": "Default false. Only true for explicitly tiny low-risk fixes per documentation_scale=xs."
+        },
+        "candidates": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      }
+    },
+    "external_service_dependencies": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["none_expected", "possible", "required", "blocked"]
+        },
+        "required": { "type": "array", "items": { "type": "string" } },
+        "possible": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      }
+    },
+    "approval_boundaries": { "type": "array", "items": { "type": "string" } },
+    "design_required": { "type": "boolean" },
+    "execution_allowed_without_design": { "type": "boolean" },
+    "recommended_mode": {
+      "type": "string",
+      "enum": ["solo", "adhoc", "oneshot", "no_recommendation"]
+    },
+    "mode_invocation_required_by_user": { "type": "boolean", "const": true },
+    "lane": {
+      "type": "object",
+      "required": ["type", "value", "isolation_notes"],
+      "additionalProperties": false,
+      "description": "Lane (v0.2). Inherited by current-sprint.lane and read by /sprint:execute. `default` shares the working tree; `worktree` runs Ralph inside a git worktree; `branch` is light isolation. Default is { type: default, value: null, isolation_notes: '' }.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["default", "worktree", "branch"]
+        },
+        "value": { "type": ["string", "null"] },
+        "isolation_notes": { "type": "string" }
+      }
+    },
+    "beta_review": {
+      "type": "object",
+      "required": ["required"],
+      "additionalProperties": false,
+      "properties": {
+        "required": { "type": "boolean" },
+        "likely_founder_rejection_risks": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "overbuild_risks": { "type": "array", "items": { "type": "string" } },
+        "missing_context_risks": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "plan_quality": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "needs_design",
+            "needs_user_clarification",
+            "blocked"
+          ]
+        },
+        "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+        "evidence_gaps": { "type": "array", "items": { "type": "string" } },
+        "fail_reasons": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "next_recommended_command": { "type": "string" },
+    "resume_instructions": { "type": "string" },
+    "tracker_paths": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Map of relative tracker file pointers (current-sprint.yaml, sprint-progress.yaml, plan-contracts/<id>.yaml, etc.) so a fresh agent can locate state without context."
+    },
+    "reports": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Map of report names → report file paths produced by /sprint:plan."
+    },
+    "created_by": { "type": "string" },
+    "updated_by": { "type": "string" }
+  },
+  "definitions": {
+    "evidenceLevel": {
+      "type": "string",
+      "enum": [
+        "verified_from_repo",
+        "inferred_from_repo",
+        "assumed_from_request",
+        "unknown"
+      ]
+    },
+    "scopeVariant": {
+      "type": "object",
+      "required": ["summary"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": { "type": "string" },
+        "tradeoffs": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -36,7 +36,11 @@ const OUT = path.join(ROOT, ".claude", "framework-manifest.json");
 // Phase 1C — manifest schema v2.
 // Each asset gains:
 //   id              stable identity for diffing across renames: <kind>.<scope>.<name>
-//   sha256          12-char content hash (drift detection in /warp:update)
+//   sha256          full 64-char sha256 (LF-normalized for text assets,
+//                   raw for binary). Pre-0.7.0 capsules emitted a 12-char
+//                   prefix; read-path back-compat lives in update.js via
+//                   hashMatches. T-20260514-070 dropped the .slice(0, 12)
+//                   truncation here.
 //   mergeStrategy   how /warp:update reconciles upstream changes for this asset
 //   owner           framework | generated | runtime | project (lifecycle policy)
 //   introducedIn    semver where it first shipped (read from version.json or "0.0.0")
@@ -69,13 +73,25 @@ const EXCLUDE_RELATIVE_PREFIXES = [
   ".claude/scheduled_tasks.lock",
   ".claude/agents/store.json", // alpha heartbeat marker — per-project
   ".claude/.session_index.json",
+  // SP-20260514-001 R-4 / T-20260514-074 — migrations stop shipping as
+  // installed assets. They are referenced via capsule release.json#migrations[]
+  // and run via scripts/warpos/migrations-loader.js. Including them in
+  // assets[] caused the apply→flag-stale→delete→re-copy loop.
+  // The canonical migration source lives at `migrations/` (top-level), not
+  // `framework/migrations/` — historical path from before the framework/
+  // subtree split.
+  "migrations/",
 ];
 
 function isExcluded(relPath) {
   // Release capsules ship their metadata, notes, and migrations. The manifest
   // snapshot and checksums inside each capsule are generated from this manifest,
   // so including them would make `manifest -> capsule -> manifest` unstable.
-  if (/^warpos\/releases\/[^/]+\/(framework-manifest|checksums)\.json$/.test(relPath)) {
+  if (
+    /^warpos\/releases\/[^/]+\/(framework-manifest|checksums)\.json$/.test(
+      relPath,
+    )
+  ) {
     return true;
   }
   return EXCLUDE_RELATIVE_PREFIXES.some(
@@ -112,9 +128,17 @@ const DEFAULT_OWNER_BY_KIND = {
   framework_doc: "framework",
 };
 
-function sha256OfFile(absPath) {
-  const buf = fs.readFileSync(absPath);
-  return crypto.createHash("sha256").update(buf).digest("hex").slice(0, 12);
+// SP-20260514-001 R-1 / T-20260514-070 — full 64-char sha256 via the central
+// content-hash module. Text assets are LF-normalized (extension allowlist);
+// binary assets get rawHash. destPath governs the classification so the
+// semantics travel with the on-disk path, not the canonical source path.
+const cHash = require("./warpos/lib/content-hash");
+
+function sha256OfFile(absPath, destPath) {
+  if (cHash.isTextAsset(destPath || absPath)) {
+    return cHash.contentHash(absPath, { text: true });
+  }
+  return cHash.rawHash(absPath);
 }
 
 // Stable id: <kind>.<scope>.<name>. Scope is the relative path with the kind's
@@ -161,6 +185,13 @@ const ASSET_DIRS = [
   { src: "scripts/preflight", kind: "preflight_tool" },
   { src: "scripts/requirements", kind: "requirements_engine" },
   { src: "scripts/paths", kind: "paths_engine" },
+  // 0.4.2 fix-forward: scripts/sprint/ (Sprint Workflow v0.1 engine) and
+  // scripts/dispatch/ (dispatch infrastructure) were missing from the
+  // scan list — so product repos installing 0.4.0/0.4.1 received the
+  // slash commands but not the backing scripts. Adding both as
+  // first-class kinds.
+  { src: "scripts/sprint", kind: "sprint_engine" },
+  { src: "scripts/dispatch", kind: "dispatch_engine" },
   { src: "schemas", kind: "schema" },
   { src: "migrations", kind: "migration" },
   { src: "framework/releases", kind: "release_capsule" },
@@ -246,7 +277,9 @@ function decorateAsset(asset) {
     asset.src,
     asset.srcRoot || asset.src.split("/")[0],
   );
-  const sha256 = fs.existsSync(absSrc) ? sha256OfFile(absSrc) : null;
+  const sha256 = fs.existsSync(absSrc)
+    ? sha256OfFile(absSrc, asset.dest || asset.src)
+    : null;
   const owner = asset.owner || DEFAULT_OWNER_BY_KIND[kind] || "framework";
   const mergeStrategy =
     asset.mergeStrategy ||

@@ -109,7 +109,7 @@ function makeLockPath(dir) {
   return path.join(dir, `${process.pid}-${ts}-${rnd}.lock`);
 }
 
-function tryAcquireOnce(dir, max) {
+function tryAcquireOnce(dir, max, meta) {
   const now = Date.now();
   pruneStale(dir, now);
   if (activeCount(dir, now) >= max) return null;
@@ -118,7 +118,26 @@ function tryAcquireOnce(dir, max) {
   const filePath = makeLockPath(dir);
   try {
     const fd = fs.openSync(filePath, "wx");
-    fs.writeSync(fd, `${process.pid} ${now}\n`);
+    // Phase 0 (workstream C): lock body is now JSON metadata. Readers tolerate
+    // the legacy "<pid> <ts>" form for backward compatibility — only this
+    // writer produces the new shape. Failure to serialize falls back to the
+    // legacy text so the lock still functions.
+    let payload;
+    try {
+      const enriched = Object.assign(
+        {
+          pid: process.pid,
+          start_time: new Date(now).toISOString(),
+          start_ms: now,
+          cwd: process.cwd(),
+        },
+        meta || {},
+      );
+      payload = JSON.stringify(enriched) + "\n";
+    } catch {
+      payload = `${process.pid} ${now}\n`;
+    }
+    fs.writeSync(fd, payload);
     fs.closeSync(fd);
   } catch {
     return null;
@@ -155,7 +174,7 @@ async function acquireSlot(provider, opts = {}) {
 
   let attempt = 0;
   while (true) {
-    const lock = tryAcquireOnce(dir, max);
+    const lock = tryAcquireOnce(dir, max, opts.meta);
     if (lock) return lock;
     if (Date.now() >= deadline) return null;
     // Bounded jittered backoff: 500ms ± 0-200ms. Avoids thundering-herd when
@@ -184,7 +203,7 @@ function acquireSlotSync(provider, opts = {}) {
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
   while (true) {
-    const lock = tryAcquireOnce(dir, max);
+    const lock = tryAcquireOnce(dir, max, opts.meta);
     if (lock) return lock;
     if (Date.now() >= deadline) return null;
     attempt++;
@@ -224,10 +243,123 @@ function sleepSync(ms) {
   }
 }
 
+// ── Inspection / pruning ─────────────────────────────────────
+//
+// Phase 0 workstream C. These helpers power scripts/dispatch/prune-dead-locks.js
+// and any health check that needs to enumerate or surgically remove locks
+// without re-implementing the directory layout.
+
+function readLockMeta(lockPath) {
+  try {
+    const raw = fs.readFileSync(lockPath, "utf8").trim();
+    if (!raw) return null;
+    if (raw.startsWith("{")) {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        // Fall through to legacy parser.
+      }
+    }
+    // Legacy form: "<pid> <ms>\n"
+    const [pidStr, msStr] = raw.split(/\s+/);
+    const pid = parseInt(pidStr, 10);
+    const start_ms = parseInt(msStr, 10);
+    if (!Number.isFinite(pid)) return null;
+    return {
+      pid,
+      start_ms: Number.isFinite(start_ms) ? start_ms : null,
+      legacy: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function pidAlive(pid) {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // ESRCH = no such process; EPERM = process exists but we lack signal rights
+    // (treat as alive — better to leave the lock than wrongly delete it).
+    if (e && e.code === "EPERM") return true;
+    return false;
+  }
+}
+
+function listLocks(provider) {
+  const dir = lockDir(provider);
+  return readLockMtimes(dir).map((e) => ({
+    ...e,
+    meta: readLockMeta(e.full),
+  }));
+}
+
+function listAllLockDirs() {
+  try {
+    return fs
+      .readdirSync(LOCK_ROOT, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Eager prune: remove any lock whose owning PID is dead. Also calls the lazy
+ * mtime-based pruneStale() so the result is "all currently-live work only".
+ * Returns a summary { scanned, dead, stale }.
+ *
+ * Safe to call from session-start, /warp:health, /warp:setup, and any other
+ * non-hot path. Idempotent.
+ */
+function pruneDeadLocks(opts = {}) {
+  const now = Date.now();
+  const minAgeMs = typeof opts.minAgeMs === "number" ? opts.minAgeMs : 5_000;
+  const summary = { scanned: 0, dead: 0, stale: 0, byProvider: {} };
+  for (const provider of listAllLockDirs()) {
+    const dir = lockDir(provider);
+    pruneStale(dir, now); // mtime-based legacy prune
+    const before = readLockMtimes(dir).length;
+    for (const entry of readLockMtimes(dir)) {
+      summary.scanned++;
+      // Don't yank locks that are still warm — under heavy contention a lock
+      // can be written just before its meta is read by another process.
+      if (now - entry.mtimeMs < minAgeMs) continue;
+      const meta = readLockMeta(entry.full);
+      if (!meta) continue;
+      if (!pidAlive(meta.pid)) {
+        try {
+          fs.unlinkSync(entry.full);
+          summary.dead++;
+        } catch {
+          /* race with another pruner */
+        }
+      }
+    }
+    const after = readLockMtimes(dir).length;
+    const removed = Math.max(0, before - after);
+    summary.byProvider[provider] = {
+      before,
+      after,
+      removed,
+    };
+  }
+  return summary;
+}
+
 module.exports = {
   acquireSlot,
   acquireSlotSync,
   releaseSlot,
+  readLockMeta,
+  listLocks,
+  listAllLockDirs,
+  pruneDeadLocks,
+  pidAlive,
   DEFAULT_CAPS,
   STALE_AFTER_MS,
+  LOCK_ROOT,
 };

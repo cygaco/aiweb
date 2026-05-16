@@ -1,0 +1,83 @@
+schema: warpos/sprint/current-sprint/v1
+id: "{{sprint_id}}"
+title: "{{sprint_title}}"
+objective: "{{sprint_objective}}"
+status: not_started
+created_at: "{{created_at}}"
+updated_at: "{{updated_at}}"
+source_request: ""
+interpreted_intent: ""
+plan_contract: null
+risk_level: low
+approval_state: none_required
+current_phase: idle
+recommended_mode: no_recommendation
+mode_invocation_required_by_user: true
+external_services:
+  identified: []
+  blocked: []
+  ready: []
+  mocked: []
+  deferred: []
+tickets:
+  proposed: []
+  planned: []
+  designed: []
+  ready_for_execution: []
+  in_progress: []
+  blocked: []
+  waiting_on_human: []
+  waiting_on_external_service: []
+  in_review: []
+  qa_failed: []
+  redteam_failed: []
+  done: []
+  released: []
+  deferred: []
+  abandoned: []
+  reopened: []
+  superseded: []
+requirements:
+  prd: null
+  high_level_stories: null
+  granular_stories: null
+  copy: null
+  inputs: null
+  trace: null
+  acceptance_criteria: null
+  qa_plan: null
+  redteam_plan: null
+  release_plan: null
+checks:
+  lint: { status: not_run, last_run: null, evidence: "" }
+  typecheck: { status: not_run, last_run: null, evidence: "" }
+  tests: { status: not_run, last_run: null, evidence: "" }
+  build: { status: not_run, last_run: null, evidence: "" }
+  qa: { status: not_run, last_run: null, evidence: "" }
+  redteam: { status: not_run, last_run: null, evidence: "" }
+approvals:
+  plan: { required: false, state: not_required, ref: null }
+  design: { required: false, state: not_required, ref: null }
+  execution: { required: false, state: not_required, ref: null }
+  release: { required: false, state: not_required, ref: null }
+  external_services: { required: false, state: not_required, ref: null }
+reports:
+  plan: null
+  design: null
+  execution: null
+  release: null
+ralph:
+  active: false
+  current_ticket: null
+  current_loop: null
+  status: idle
+  last_checkpoint: null
+  next_action: null
+crash_recovery:
+  last_checkpoint: null
+  resume_command: "/sprint:plan"
+  resume_summary: "Tracker initialized. No sprint started yet. Run /sprint:plan to begin."
+  active_files: []
+  dirty_state: false
+  blockers: []
+  safe_to_continue: true

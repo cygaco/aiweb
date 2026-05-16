@@ -1,0 +1,186 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/ticket/v1",
+  "title": "WarpOS Sprint v0.1 — Ticket",
+  "description": "Smallest unit of executable sprint work. Lives below requirements/stories/COPY/INPUTS/TRACE/acceptance-criteria. Reopenable with history.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "type",
+    "status",
+    "sprint",
+    "created_at",
+    "updated_at",
+    "risk_level",
+    "approval_required",
+    "source_request",
+    "plan_contract",
+    "description",
+    "acceptance_criteria"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "const": "warpos/sprint/ticket/v1" },
+    "id": { "type": "string", "pattern": "^T-[0-9]{8}-[0-9]{3}$" },
+    "title": { "type": "string" },
+    "type": {
+      "type": "string",
+      "enum": [
+        "feature",
+        "bug",
+        "research",
+        "design",
+        "qa",
+        "redteam",
+        "refactor",
+        "docs",
+        "release",
+        "decision",
+        "chore",
+        "trace",
+        "copy",
+        "input",
+        "integration",
+        "external_service_setup",
+        "approval",
+        "checkpoint"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "proposed",
+        "planned",
+        "designed",
+        "ready_for_execution",
+        "in_progress",
+        "blocked",
+        "waiting_on_human",
+        "waiting_on_external_service",
+        "in_review",
+        "qa_failed",
+        "redteam_failed",
+        "done",
+        "released",
+        "reopened",
+        "deferred",
+        "abandoned",
+        "superseded"
+      ]
+    },
+    "sprint": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "owner": { "type": ["string", "null"] },
+    "owner_agent": { "type": ["string", "null"] },
+    "risk_level": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "approval_required": { "type": "boolean" },
+    "approval_state": {
+      "type": "string",
+      "enum": ["not_required", "pending", "approved", "rejected", "waived"]
+    },
+    "source_request": { "type": "string" },
+    "plan_contract": {
+      "type": "string",
+      "description": "Pointer to plan-contracts/<id>.yaml"
+    },
+    "linked_requirements": { "type": "array", "items": { "type": "string" } },
+    "linked_high_level_story": { "type": ["string", "null"] },
+    "linked_granular_story": { "type": ["string", "null"] },
+    "linked_prd": { "type": ["string", "null"] },
+    "linked_copy": { "type": "array", "items": { "type": "string" } },
+    "linked_inputs": { "type": "array", "items": { "type": "string" } },
+    "linked_trace": { "type": "array", "items": { "type": "string" } },
+    "linked_acceptance_criteria": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "linked_issues": { "type": "array", "items": { "type": "string" } },
+    "linked_decisions": { "type": "array", "items": { "type": "string" } },
+    "linked_external_services": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "linked_files": { "type": "array", "items": { "type": "string" } },
+    "linked_tests": { "type": "array", "items": { "type": "string" } },
+    "linked_commits": { "type": "array", "items": { "type": "string" } },
+    "linked_prs": { "type": "array", "items": { "type": "string" } },
+    "linked_release": { "type": ["string", "null"] },
+    "description": { "type": "string" },
+    "user_value": { "type": "string" },
+    "business_value": { "type": "string" },
+    "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+    "non_goals": { "type": "array", "items": { "type": "string" } },
+    "implementation_notes": { "type": "string" },
+    "qa_notes": { "type": "string" },
+    "redteam_notes": { "type": "string" },
+    "trace_notes": { "type": "string" },
+    "blocked_by": { "type": "array", "items": { "type": "string" } },
+    "blocks": { "type": "array", "items": { "type": "string" } },
+    "fix_attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["attempt", "at", "outcome"],
+        "additionalProperties": false,
+        "properties": {
+          "attempt": { "type": "integer", "minimum": 1 },
+          "at": { "type": "string", "format": "date-time" },
+          "approach": { "type": "string" },
+          "outcome": {
+            "type": "string",
+            "enum": ["passed", "failed", "partial", "abandoned"]
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "ralph_progress": {
+      "type": ["string", "null"],
+      "description": "Pointer to ralph/<sprint>/<ticket>.yaml"
+    },
+    "completion_evidence": { "type": "array", "items": { "type": "string" } },
+    "reopen_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["reopened_at", "reason", "previous_status"],
+        "additionalProperties": false,
+        "properties": {
+          "reopened_at": { "type": "string", "format": "date-time" },
+          "reopened_by": { "type": "string" },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "regression_found",
+              "acceptance_criteria_missed",
+              "requirement_changed",
+              "copy_changed",
+              "input_changed",
+              "trace_mismatch",
+              "test_failed_after_merge",
+              "release_revealed_issue",
+              "user_rejected",
+              "beta_rejected",
+              "dependency_changed",
+              "external_service_changed",
+              "supersede_was_wrong",
+              "spec_drift",
+              "telemetry_failure",
+              "other"
+            ]
+          },
+          "previous_status": { "type": "string" },
+          "previous_resolution": { "type": "string" },
+          "new_required_outcome": { "type": "string" },
+          "linked_issue": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

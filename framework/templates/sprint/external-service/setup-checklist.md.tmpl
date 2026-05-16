@@ -1,0 +1,62 @@
+# External Service Setup — {{service_name}}
+
+**ESD:** `{{esd_id}}`
+**Sprint:** `{{sprint_id}}`
+**Category:** `{{service_category}}`
+**Status:** `{{status}}`
+
+## Why we need it
+
+{{purpose}}
+
+## Human setup (outside the terminal)
+
+> These steps cannot be done by the agent. A human must perform them
+> and update the ESD `human_setup_steps[].status` when complete.
+
+- [ ] Sign up for an account at the provider
+- [ ] Confirm billing setup (if `billing_required: true`)
+- [ ] Generate credentials in the provider dashboard
+- [ ] Approve OAuth/app permissions (if `oauth_required: true`)
+- [ ] Configure domain/DNS (if `domain_dns_required: true`)
+- [ ] Pass compliance/legal review (if `compliance_review_required: true`)
+- [ ] Decide sandbox vs production tier
+
+## Terminal setup (after credentials are available)
+
+> These steps can run inside the agent once credentials are present.
+
+- [ ] Add required env vars to local `.env` (NAMES ONLY in this repo;
+      values stay in `.env`, which must be gitignored)
+- [ ] Install provider SDK *only if* the existing routing system
+      supports it AND the user has approved
+- [ ] Implement adapter for the service
+- [ ] Add mock implementation for tests (see `mock_strategy`)
+- [ ] Wire ESD events into TRACE
+- [ ] Update QA plan with provider-specific checks
+
+## Required env vars
+
+| Name | Secret | Description |
+|---|---|---|
+| {{env_var_1_name}} | true | {{env_var_1_description}} |
+
+> Never write `secret: true` env-var values into this repo. The ESD
+> only tracks names and metadata. Secret values live in `.env`, secret
+> managers, or platform vault — not in tracker files.
+
+## Mock strategy
+
+{{mock_strategy}}
+
+## Approval
+
+If `approval_required: true`, the approval must be recorded in
+`.claude/project/sprint/approvals/<id>.yaml` and referenced from
+`approval_ref` before any terminal setup step runs.
+
+## Documentation scaling
+
+This file is mandatory for any sprint with an active ESD. For
+`documentation_scale: xs` the file may be trimmed to the env var table
+and the approval reference.

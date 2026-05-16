@@ -202,7 +202,7 @@ const GATES = [
     const targetVersion = versionFile.version;
     const capsuleDir = path.join(
       REPO_ROOT,
-      "warpos",
+      "framework",
       "releases",
       targetVersion,
     );
@@ -409,7 +409,7 @@ const GATES = [
     }
     const capsule = path.join(
       REPO_ROOT,
-      "warpos",
+      "framework",
       "releases",
       v.version,
       "release.json",

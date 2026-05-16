@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/issue/v1",
+  "title": "WarpOS Sprint v0.1 — Issue",
+  "description": "Structured per-issue YAML. Distinct from paths.recurringIssuesFile (SYSTEM-level recurring issues). Lives under paths.sprintIssues. Human-readable companion: issues.md (paths.sprintIssuesLedger).",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "status",
+    "severity",
+    "source",
+    "discovered_at",
+    "expected",
+    "actual"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "const": "warpos/sprint/issue/v1" },
+    "id": { "type": "string", "pattern": "^I-[0-9]{8}-[0-9]{3}$" },
+    "title": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "in_progress",
+        "fixed",
+        "verified",
+        "deferred",
+        "abandoned",
+        "duplicate",
+        "superseded",
+        "waiting_on_human",
+        "waiting_on_external_service"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "manual_report",
+        "test_failure",
+        "qa_finding",
+        "redteam_finding",
+        "release_finding",
+        "telemetry",
+        "user_report",
+        "agent_observation",
+        "other"
+      ]
+    },
+    "discovered_at": { "type": "string", "format": "date-time" },
+    "discovered_during": {
+      "type": "string",
+      "description": "Phase/command/ticket that surfaced it."
+    },
+    "related_feature": { "type": ["string", "null"] },
+    "related_ticket": { "type": ["string", "null"] },
+    "related_sprint": { "type": ["string", "null"] },
+    "related_external_service": { "type": ["string", "null"] },
+    "steps_to_reproduce": { "type": "array", "items": { "type": "string" } },
+    "expected": { "type": "string" },
+    "actual": { "type": "string" },
+    "suspected_cause": { "type": "string" },
+    "fix_attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["attempt", "at", "outcome"],
+        "additionalProperties": false,
+        "properties": {
+          "attempt": { "type": "integer", "minimum": 1 },
+          "at": { "type": "string", "format": "date-time" },
+          "approach": { "type": "string" },
+          "outcome": {
+            "type": "string",
+            "enum": ["passed", "failed", "partial", "abandoned"]
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "files_touched": { "type": "array", "items": { "type": "string" } },
+    "current_recommendation": { "type": "string" },
+    "resolution": { "type": "string" },
+    "resolution_date": { "type": ["string", "null"], "format": "date-time" },
+    "promoted_to_ticket": { "type": ["string", "null"] },
+    "issues_md_block": {
+      "type": ["string", "null"],
+      "description": "Anchor or line-range in issues.md if a human-readable copy exists."
+    }
+  }
+}

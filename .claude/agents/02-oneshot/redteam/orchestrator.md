@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash, Agent
 disallowedTools: Edit, Write
 model: sonnet
 provider: gemini
-provider_model: gemini-3.1-pro
+provider_model: gemini-3.1-pro-preview
 provider_fallback: claude
 maxTurns: 60
 color: red

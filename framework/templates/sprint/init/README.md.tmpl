@@ -1,0 +1,52 @@
+# {{project_name}} — Sprint Tracker
+
+This directory is your project's **live** sprint tracker. The framework
+WarpOS ships the schemas and templates; everything in this directory is
+written by `/sprint:*` commands as you actually run sprints.
+
+Do not edit `current-sprint.yaml` or `sprint-progress.yaml` by hand
+unless you know what you're doing — they are the source of truth for
+crash recovery and resume.
+
+## What lives where
+
+| Path | Purpose |
+|---|---|
+| `current-sprint.yaml` | Live current sprint state |
+| `sprint-progress.yaml` | Crash recovery checkpoint — read on resume |
+| `plan-contracts/<id>.yaml` | One Plan Contract per `/sprint:plan` |
+| `requirements/<sprint>/...` | PRD, stories, COPY, INPUTS, TRACE, AC, QA, redteam, release plans |
+| `tickets/<id>.yaml` | One file per ticket |
+| `issues/<id>.yaml` | Structured per-issue YAML; human-readable companion is repo-root `issues.md` |
+| `external-services/<id>.yaml` | Third-party service readiness records |
+| `approvals/<id>.yaml` | Approval decisions |
+| `decisions/<id>.yaml` | Sprint-scope decisions |
+| `releases/<id>.yaml` | Release artifacts |
+| `ralph/<sprint>/progress.yaml` | Active Ralph loop state |
+| `checkpoints/<sprint>-<n>.yaml` | Frozen checkpoints |
+| `history/<sprint>/` | Closed sprint archive |
+
+## Getting started
+
+```
+/sprint:plan "<brief plain-language request>"
+```
+
+Then follow the next-recommended-command in the produced Plan Contract.
+
+## Resume after a crash
+
+```
+/sprint:plan        # for a fresh start
+# or read sprint-progress.yaml#resume_command and run that instead
+```
+
+See `_docs/sprint/CRASH_RECOVERY.md` in the WarpOS framework for the
+full resume procedure.
+
+## Adoption note
+
+This tracker is downstream live state. It is intentionally NOT shipped
+inside the WarpOS framework repo itself — only the templates and
+schemas are. See `_docs/sprint/FRAMEWORK_VS_DOWNSTREAM.md` for the
+boundary.

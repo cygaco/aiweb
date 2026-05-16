@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/sprint-history/v1",
+  "title": "WarpOS Sprint v0.1 — Sprint History Entry",
+  "description": "Frozen archive of one closed/abandoned sprint. Lives under paths.sprintHistory.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "objective",
+    "source_request",
+    "outcome",
+    "closed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "const": "warpos/sprint/sprint-history/v1" },
+    "id": { "type": "string" },
+    "title": { "type": "string" },
+    "objective": { "type": "string" },
+    "source_request": { "type": "string" },
+    "interpreted_intent": { "type": "string" },
+    "plan_contract": { "type": ["string", "null"] },
+    "final_scope": { "type": "string" },
+    "outcome": {
+      "type": "string",
+      "enum": ["shipped", "shipped_with_carries", "closed_no_ship", "abandoned"]
+    },
+    "tickets_completed": { "type": "array", "items": { "type": "string" } },
+    "tickets_deferred": { "type": "array", "items": { "type": "string" } },
+    "tickets_abandoned": { "type": "array", "items": { "type": "string" } },
+    "tickets_reopened": { "type": "array", "items": { "type": "string" } },
+    "issues_found": { "type": "array", "items": { "type": "string" } },
+    "issues_fixed": { "type": "array", "items": { "type": "string" } },
+    "issues_deferred": { "type": "array", "items": { "type": "string" } },
+    "external_services_resolved": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "external_services_deferred": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "requirements_changed": { "type": "array", "items": { "type": "string" } },
+    "copy_changed": { "type": "array", "items": { "type": "string" } },
+    "inputs_changed": { "type": "array", "items": { "type": "string" } },
+    "trace_changed": { "type": "array", "items": { "type": "string" } },
+    "tests_run": { "type": "array", "items": { "type": "string" } },
+    "releases": { "type": "array", "items": { "type": "string" } },
+    "beta_decisions": { "type": "array", "items": { "type": "string" } },
+    "human_approvals": { "type": "array", "items": { "type": "string" } },
+    "key_tradeoffs": { "type": "array", "items": { "type": "string" } },
+    "final_outcome_notes": { "type": "string" },
+    "should_be_remembered": { "type": "array", "items": { "type": "string" } },
+    "crash_recovery_events": { "type": "array", "items": { "type": "string" } },
+    "started_at": { "type": "string", "format": "date-time" },
+    "closed_at": { "type": "string", "format": "date-time" }
+  }
+}

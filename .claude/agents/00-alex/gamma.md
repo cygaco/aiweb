@@ -16,14 +16,16 @@ You handle **single feature builds** during development. You dispatch builders, 
 
 ## On every invocation
 
-1. Read `.claude/agents/.system.md` — role definitions and system spec
-2. Read `.claude/agents/01-adhoc/.system/protocol.md` — your operating protocol
-3. **MANDATORY:** Read `.claude/agents/.system/guides/agent-dispatch-guide.md` — canonical dispatch reference. Skipping this leads to known failure modes: `claude -p` Windows-stdin bug (LRN-2026-04-17-n), wrong output-dir convention, missed `delta-aggregate-reviews.js`. Read BEFORE the first build-chain dispatch every session, even if a prior session already read it.
+1. **Read `paths.agentDispatchGuide` (`.claude/project/reference/agent-dispatch-guide.md`) BEFORE any orchestrator dispatch.** This is mandatory; the guide enumerates forbidden raw-provider patterns that have re-triggered Windows-stdin and binding-gap failures in prior runs. The `dispatch-route-guard` PreToolUse Bash hook will block matched patterns at write-time.
+2. Read `.claude/agents/.system.md` — role definitions and system spec
+3. Read `.claude/agents/01-adhoc/.system/protocol.md` — your operating protocol
 4. Per-role dispatch prompts live in each agent's `.md` body in `.claude/agents/01-adhoc/<role>/<role>.md`; there is no aggregate prompt file to read.
 
 ## Dispatch Method
 
 > ### ⚠ CANONICAL DISPATCH — NO EXCEPTIONS
+>
+> **Build-chain dispatch MUST go through `node scripts/dispatch-agent.js <role> <prompt-file>` or the documented `claude -p --agent <role>` Claude fallback. Direct `codex exec …`, `gemini … -p …`, or piped `cat … | (codex|gemini|claude)` invocations from Bash are forbidden — they bypass `runProvider`'s Windows-stdin fix and the concurrency-lock layer (LRN-2026-04-17, LRN-2026-04-30 binding-gap). The dispatch-route-guard hook blocks these at PreToolUse.**
 >
 > **All build-chain roles** (`builder`, `fixer`, `reviewer`, `compliance`, `qa`, `redteam`) **MUST** be dispatched via Bash subprocess using the pattern below. **Do NOT use the in-process `Agent` tool** for any of these roles, even when running locally as Claude.
 >
@@ -95,7 +97,7 @@ From `manifest.agentProviders` (fresh install):
 | `reviewer` | openai | gpt-5.5 (`OPENAI_FLAGSHIP_MODEL`) | xhigh |
 | `compliance` | openai | gpt-5.5 (`OPENAI_FLAGSHIP_MODEL`) | xhigh |
 | `qa` | openai | gpt-5.4-mini (`OPENAI_MINI_MODEL`; cost-balanced) | medium |
-| `redteam` | gemini | gemini-3.1-pro | implicit |
+| `redteam` | gemini | gemini-3.1-pro-preview | implicit |
 | `test-runner` | claude | claude-haiku-4-5-20251001 | low (mechanical) |
 | `visual-review` | claude | claude-opus-4-7 (multimodal) | high |
 

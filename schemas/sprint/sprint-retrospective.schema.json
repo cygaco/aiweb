@@ -1,0 +1,299 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/sprint-retrospective/v1",
+  "title": "WarpOS Sprint v0.2 — Sprint Retrospective",
+  "description": "Per-sprint analytical artifact written by /sprint:retrospective. Lives at paths.sprintHistory/<sprint-id>/retro.yaml alongside the frozen sprint-history.yaml. Sibling to sprint-history.schema.json — history is the registry of closed sprints (frozen archive), retro is the analytical synthesis (wins, misses, friction, action items). See PRD SP-20260513-004 Design Decision #1.",
+  "type": "object",
+  "required": [
+    "schema",
+    "sprint_id",
+    "plan_contract_id",
+    "outcomes_shipped",
+    "outcomes_missed",
+    "plan_quality_actual",
+    "scope_variant_actual",
+    "friction_points",
+    "action_items",
+    "signed_off_by",
+    "signed_off_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "warpos/sprint/sprint-retrospective/v1"
+    },
+    "sprint_id": {
+      "type": "string",
+      "pattern": "^SP-[0-9]{8}-[0-9]{3}$",
+      "description": "Sprint this retro belongs to. Must match an entry in paths.sprintActiveRegistry or a sprint already moved to paths.sprintHistory."
+    },
+    "plan_contract_id": {
+      "type": ["string", "null"],
+      "description": "Plan Contract id (PC-YYYYMMDD-NNNN) the sprint was planned against. May be null when --no-plan-contract was passed for a legacy/imported sprint."
+    },
+    "synthesis_mode": {
+      "type": "string",
+      "enum": ["llm", "skeleton"],
+      "description": "How this retro's body was produced. `llm` = synthesized from tracker evidence via paths.sprintRouting#policies.release. `skeleton` = placeholder content emitted via --no-synth or a synthesis-failure fallback. /sprint:retrospective --retry-synth only proceeds when this field is `skeleton`."
+    },
+    "summary": {
+      "type": "string",
+      "description": "One-paragraph overview of how the sprint went. Section heading: `## Summary` per COPY C-1."
+    },
+    "outcomes_shipped": {
+      "type": "array",
+      "description": "Outcomes the sprint actually delivered. Each item ties back to a ticket, release record, or merged PR. Section heading: `## Outcomes Shipped vs Planned` per COPY C-1.",
+      "items": {
+        "type": "object",
+        "required": ["outcome"],
+        "additionalProperties": false,
+        "properties": {
+          "outcome": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "planned": { "type": "boolean" }
+        }
+      }
+    },
+    "outcomes_missed": {
+      "type": "array",
+      "description": "Outcomes the Plan Contract or PRD scoped that did NOT ship. Section heading: `## Outcomes Shipped vs Planned` per COPY C-1.",
+      "items": {
+        "type": "object",
+        "required": ["outcome"],
+        "additionalProperties": false,
+        "properties": {
+          "outcome": { "type": "string" },
+          "reason": { "type": "string" },
+          "disposition": {
+            "type": "string",
+            "enum": ["deferred", "abandoned", "rescoped", "blocked", "unknown"]
+          }
+        }
+      }
+    },
+    "plan_quality_actual": {
+      "type": "object",
+      "description": "Predictions-vs-reality comparison against plan_quality in the Plan Contract. Section heading: `## Plan Quality — Predictions vs Reality` per COPY C-1.",
+      "required": ["predicted_status", "actual_status"],
+      "additionalProperties": false,
+      "properties": {
+        "predicted_status": {
+          "type": "string",
+          "description": "plan_quality.status from the Plan Contract at /sprint:plan time."
+        },
+        "actual_status": {
+          "type": "string",
+          "description": "How the plan actually held up in execution: held|drifted|broke|unknown."
+        },
+        "predicted_confidence": { "type": "string" },
+        "evidence_gaps_predicted": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "evidence_gaps_actual": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "scope_variant_actual": {
+      "type": "object",
+      "description": "Which scope variant the plan picked vs which actually shipped. Section heading: `## Scope Variant Adherence` per COPY C-1.",
+      "required": ["planned_variant", "actual_variant"],
+      "additionalProperties": false,
+      "properties": {
+        "planned_variant": {
+          "type": "string",
+          "enum": ["minimal_safe", "recommended", "expanded", "unknown"]
+        },
+        "actual_variant": {
+          "type": "string",
+          "enum": [
+            "minimal_safe",
+            "recommended",
+            "expanded",
+            "mixed",
+            "unknown"
+          ]
+        },
+        "adhered": { "type": "boolean" },
+        "drift_notes": { "type": "string" }
+      }
+    },
+    "surprises": {
+      "type": "array",
+      "description": "Things the team did not anticipate at /sprint:plan time. Section heading: `## Surprises` per COPY C-1.",
+      "items": {
+        "type": "object",
+        "required": ["surprise"],
+        "additionalProperties": false,
+        "properties": {
+          "surprise": { "type": "string" },
+          "impact": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "friction_points": {
+      "type": "array",
+      "description": "Specific points of friction during the sprint — what slowed work down. Section heading: `## Friction Points` per COPY C-1.",
+      "items": {
+        "type": "object",
+        "required": ["friction"],
+        "additionalProperties": false,
+        "properties": {
+          "friction": { "type": "string" },
+          "category": {
+            "type": "string",
+            "enum": [
+              "tooling",
+              "process",
+              "spec",
+              "approval",
+              "external_service",
+              "ai_model",
+              "infrastructure",
+              "team",
+              "scope",
+              "other"
+            ]
+          },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          }
+        }
+      }
+    },
+    "action_items": {
+      "type": "array",
+      "description": "Concrete changes to apply in the next sprint. Section heading: `## Action Items for Next Sprint` per COPY C-1.",
+      "items": {
+        "type": "object",
+        "required": ["action"],
+        "additionalProperties": false,
+        "properties": {
+          "action": { "type": "string" },
+          "owner": { "type": "string" },
+          "due_by": { "type": "string" },
+          "linked_friction": { "type": "string" }
+        }
+      }
+    },
+    "tickets_completed": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ticket ids that landed (status=done|released)."
+    },
+    "tickets_deferred": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tickets_abandoned": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tickets_reopened": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "issues_encountered": {
+      "type": "array",
+      "description": "Issues opened during the sprint. Section heading: `## Issues Encountered` per COPY C-1.",
+      "items": {
+        "type": "object",
+        "required": ["issue_id"],
+        "additionalProperties": false,
+        "properties": {
+          "issue_id": { "type": "string" },
+          "title": { "type": "string" },
+          "disposition": {
+            "type": "string",
+            "enum": ["fixed", "deferred", "wontfix", "open", "unknown"]
+          },
+          "linked_ticket": { "type": "string" }
+        }
+      }
+    },
+    "beta_decisions_reviewed": {
+      "type": "array",
+      "description": "Beta judgment-model decisions that mattered this sprint. Section heading: `## Beta Decisions Reviewed` per COPY C-1.",
+      "items": {
+        "type": "object",
+        "required": ["decision"],
+        "additionalProperties": false,
+        "properties": {
+          "decision": { "type": "string" },
+          "verdict": {
+            "type": "string",
+            "enum": ["DECIDE", "DIRECTIVE", "ESCALATE", "unknown"]
+          },
+          "outcome": { "type": "string" }
+        }
+      }
+    },
+    "key_tradeoffs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Decisions where two paths existed and we picked one. Section heading: `## Key Tradeoffs` per COPY C-1."
+    },
+    "learning_candidates": {
+      "type": "array",
+      "description": "Lessons worth promoting to paths.learningsFile via /learn:integrate. Retros do NOT auto-promote — this is a candidate list. Section heading: `## Learning Candidates` per COPY C-1.",
+      "items": {
+        "type": "object",
+        "required": ["learning"],
+        "additionalProperties": false,
+        "properties": {
+          "learning": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "promote_via": {
+            "type": "string",
+            "enum": ["learn:integrate", "manual", "deferred"]
+          }
+        }
+      }
+    },
+    "release_record_ref": {
+      "type": ["string", "null"],
+      "description": "Release id (RL-YYYYMMDD-NNN) tied to this sprint, when one exists."
+    },
+    "synthesis_metadata": {
+      "type": "object",
+      "description": "Bookkeeping for the synthesis call itself — model class used, duration, fallback reasons. Read by future /check:patterns cross-sprint trend analysis.",
+      "additionalProperties": false,
+      "properties": {
+        "model_class": { "type": "string" },
+        "provider": { "type": "string" },
+        "model_id": { "type": "string" },
+        "duration_ms": { "type": "integer" },
+        "output_chars": { "type": "integer" },
+        "fallback_reason": { "type": ["string", "null"] }
+      }
+    },
+    "signed_off_by": {
+      "type": "string",
+      "description": "Who signed off on the retro. Defaults to `alpha` when the script writes it. Operator can amend to `user` after review."
+    },
+    "signed_off_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "retro_metadata": {
+      "type": "object",
+      "description": "Misc bookkeeping — when the retro was synthesized, the script version, related history file pointer.",
+      "additionalProperties": false,
+      "properties": {
+        "synthesized_at": { "type": "string", "format": "date-time" },
+        "writer_version": { "type": "string" },
+        "history_record": { "type": "string" },
+        "force_overwrite": { "type": "boolean" }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

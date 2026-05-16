@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/ralph-progress/v1",
+  "title": "WarpOS Sprint v0.1 — Ralph Loop Progress",
+  "description": "Persistent state for a Ralph-style plan/act/test/review/record/checkpoint loop. Written/updated by /sprint:execute. Read on resume.",
+  "type": "object",
+  "required": [
+    "schema",
+    "sprint",
+    "current_loop",
+    "phase",
+    "started_at",
+    "updated_at",
+    "status",
+    "next_action"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "const": "warpos/sprint/ralph-progress/v1" },
+    "sprint": { "type": "string" },
+    "ticket": { "type": ["string", "null"] },
+    "current_loop": { "type": "integer", "minimum": 0 },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "plan",
+        "act",
+        "test",
+        "review",
+        "record",
+        "checkpoint",
+        "stopped"
+      ]
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "status": {
+      "type": "string",
+      "enum": [
+        "running",
+        "paused",
+        "blocked",
+        "stopped_clean",
+        "stopped_approval_required",
+        "stopped_human_setup_required",
+        "stopped_repeated_failure",
+        "stopped_scope_expansion",
+        "stopped_destructive_action_needed",
+        "stopped_production_deploy_needed",
+        "stopped_beta_warning",
+        "stopped_unclear_intent",
+        "completed"
+      ]
+    },
+    "completed_tasks": { "type": "array", "items": { "type": "string" } },
+    "remaining_tasks": { "type": "array", "items": { "type": "string" } },
+    "blockers": { "type": "array", "items": { "type": "string" } },
+    "failed_attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["attempt", "at", "approach", "outcome"],
+        "additionalProperties": false,
+        "properties": {
+          "attempt": { "type": "integer", "minimum": 1 },
+          "at": { "type": "string", "format": "date-time" },
+          "approach": { "type": "string" },
+          "outcome": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "last_checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ran_at": { "type": ["string", "null"], "format": "date-time" },
+        "passing": { "type": "array", "items": { "type": "string" } },
+        "failing": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "next_action": { "type": "string" },
+    "external_dependency_status": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "stop_reason": { "type": ["string", "null"] },
+    "resume_instructions": { "type": "string" },
+    "checkpoint_pointers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordered list of paths.sprintCheckpoints/<file>.yaml pointers — oldest first."
+    }
+  }
+}

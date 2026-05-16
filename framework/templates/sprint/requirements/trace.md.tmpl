@@ -1,0 +1,36 @@
+<!-- requirement-format-legacy -->
+# TRACE Requirements — {{sprint_title}}
+
+**Sprint:** `{{sprint_id}}`
+**PRD:** `{{prd_path}}`
+
+> TRACE captures the observability, traceability, event capture, decision
+> logging, and requirement-to-code linkage layer. The point of TRACE is
+> to answer: why did this exist, where did the requirement come from,
+> what changed because of it, what external dependency or approval was
+> required, how was it tested, what shipped, and what should persist as
+> a learning.
+
+## Trace Map
+
+| Source | Requirement | Story | COPY | INPUT | ESD | Ticket | Code | Test | Release | Learning |
+|---|---|---|---|---|---|---|---|---|---|---|
+| {{source_request_short}} | R-1 | S-1 | C-1 | IN-1 | — | T-… | {{code_file_1}} | {{test_file_1}} | — | — |
+
+## TR-1 — {{trace_1_id}}
+
+**Event:** {{trace_1_event}}
+**When:** {{trace_1_when}}
+**Captured fields:** {{trace_1_fields}}
+**Linked requirement:** `R-1`
+**Linked story:** `S-1`
+**Why we capture this:** {{trace_1_why}}
+
+## TR-2 — {{trace_2_id}}
+
+**Event:** {{trace_2_event}}
+**When:** {{trace_2_when}}
+**Captured fields:** {{trace_2_fields}}
+**Linked requirement:** `R-2`
+**Linked story:** `S-2`
+**Why we capture this:** {{trace_2_why}}

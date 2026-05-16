@@ -1,0 +1,80 @@
+schema: warpos/sprint/plan-contract/v1
+id: "{{plan_contract_id}}"
+created_at: "{{created_at}}"
+updated_at: "{{updated_at}}"
+sprint: "{{sprint_id}}"
+source_request: "{{source_request}}"
+source_request_verbatim: |
+  {{source_request_verbatim}}
+request_type: "{{request_type}}"
+interpreted_intent: "{{interpreted_intent}}"
+user_or_business_outcome: "{{user_or_business_outcome}}"
+affected_surfaces:
+  - surface: "{{surface_1}}"
+    evidence_level: "{{surface_1_evidence}}"
+    notes: "{{surface_1_notes}}"
+current_behavior:
+  evidence_level: "{{current_behavior_evidence}}"
+  notes: "{{current_behavior_notes}}"
+desired_behavior: "{{desired_behavior}}"
+scope:
+  size: "{{scope_size}}"
+  risk_level: "{{scope_risk}}"
+  complexity_drivers: []
+scope_variants:
+  minimal_safe:
+    summary: "{{minimal_safe_summary}}"
+    tradeoffs: []
+  recommended:
+    summary: "{{recommended_summary}}"
+    tradeoffs: []
+  expanded:
+    summary: "{{expanded_summary}}"
+    tradeoffs: []
+assumptions:
+  safe: []
+  unsafe: []
+  needs_user_or_beta_review: []
+open_questions:
+  blocking: []
+  non_blocking: []
+non_goals: []
+requirement_areas: []
+high_level_story_candidates: []
+granular_story_candidates: []
+workstream_candidates: []
+preliminary_ticket_candidates:
+  allowed: false
+  candidates: []
+  notes: "Tickets are minted during /sprint:design unless this is documentation_scale=xs."
+external_service_dependencies:
+  status: "{{esd_status}}"
+  required: []
+  possible: []
+  notes: ""
+approval_boundaries: []
+design_required: true
+execution_allowed_without_design: false
+recommended_mode: "no_recommendation"
+mode_invocation_required_by_user: true
+beta_review:
+  required: false
+  likely_founder_rejection_risks: []
+  overbuild_risks: []
+  missing_context_risks: []
+plan_quality:
+  status: "{{plan_quality_status}}"
+  confidence: "{{plan_quality_confidence}}"
+  evidence_gaps: []
+  fail_reasons: []
+next_recommended_command: "{{next_recommended_command}}"
+resume_instructions: |
+  {{resume_instructions}}
+tracker_paths:
+  current_sprint: ".claude/project/sprint/current-sprint.yaml"
+  sprint_progress: ".claude/project/sprint/sprint-progress.yaml"
+  plan_contract: ".claude/project/sprint/plan-contracts/{{plan_contract_id}}.yaml"
+reports:
+  plan: ".claude/project/sprint/plan-contracts/{{plan_contract_id}}.report.md"
+created_by: "alpha"
+updated_by: "alpha"

@@ -4,7 +4,7 @@
   "_doc": "Path identity registry. Source of truth for project-relative paths. Consumed by scripts/paths/build.js, which derives: (1) .claude/paths.json (flat key→string used by hooks at runtime), (2) scripts/hooks/lib/paths.generated.js (fallback when paths.json missing), (3) scripts/path-lint.rules.generated.json (regex arrays for path-lint critical+warn), (4) schemas/paths.schema.json (validator), (5) requirements/03-architecture/PATH_KEYS.md (human reference). To rename a path: edit here, run scripts/paths/build.js, commit all generated artifacts together.",
   "_field_meaning": {
     "path": "Project-relative path from repo root, forward slashes",
-    "kind": "dir | file | jsonl | json | md | js — drives schema validators + lint rules",
+    "kind": "dir | file | jsonl | json | yaml | md | js — drives schema validators + lint rules",
     "owner": "framework (shipped by WarpOS) | generated (built by tooling) | runtime (session-written state) | project (user/team-owned content)",
     "mutable": "true if files inside are written during normal operation; affects release scrubbing + retention policy",
     "aliases": "alternative spellings/keys still accepted at the consumer boundary (warn-on-use)",
@@ -529,6 +529,321 @@
       "mutable": false,
       "introducedIn": "0.0.0",
       "docsToken": "paths.loggerLib"
+    },
+    "agentDispatchGuide": {
+      "path": ".claude/project/reference/agent-dispatch-guide.md",
+      "kind": "md",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.3.0",
+      "docsToken": "paths.agentDispatchGuide"
+    },
+    "dispatchLocks": {
+      "path": ".claude/runtime/dispatch-locks",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.3.0",
+      "docsToken": "paths.dispatchLocks"
+    },
+    "dispatchDeathsFile": {
+      "path": ".claude/runtime/dispatch-deaths.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.3.0",
+      "docsToken": "paths.dispatchDeathsFile"
+    },
+    "dispatchCompletionsFile": {
+      "path": ".claude/runtime/dispatch-completions.jsonl",
+      "kind": "jsonl",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.3.0",
+      "docsToken": "paths.dispatchCompletionsFile"
+    },
+    "providerTmp": {
+      "path": ".claude/runtime/.provider-tmp",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.3.0",
+      "docsToken": "paths.providerTmp"
+    },
+    "providerFallbackPolicy": {
+      "path": ".claude/agents/00-alex/.system/policy/provider-fallback.json",
+      "kind": "json",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.3.0",
+      "docsToken": "paths.providerFallbackPolicy"
+    },
+    "warposFlagLedger": {
+      "path": "warpos-to-update.md",
+      "kind": "md",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.3.0",
+      "docsToken": "paths.warposFlagLedger"
+    },
+    "warposPromotedArchive": {
+      "path": "warpos-promoted-archive.md",
+      "kind": "md",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.3.0",
+      "docsToken": "paths.warposPromotedArchive"
+    },
+    "warposPromoteReports": {
+      "path": ".warpos/promote-reports",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.3.0",
+      "docsToken": "paths.warposPromoteReports"
+    },
+    "sprintRoot": {
+      "path": ".claude/project/sprint",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintRoot",
+      "_note": "Sprint Workflow v0.1 — downstream live tracker root. Created on demand by scripts/sprint/init.js. NOT seeded in the framework repo."
+    },
+    "sprintCurrent": {
+      "path": ".claude/project/sprint/current-sprint.yaml",
+      "kind": "yaml",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintCurrent"
+    },
+    "sprintProgress": {
+      "path": ".claude/project/sprint/sprint-progress.yaml",
+      "kind": "yaml",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintProgress"
+    },
+    "sprintActiveRegistry": {
+      "path": ".claude/project/sprint/active-sprints.yaml",
+      "kind": "yaml",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.5.0",
+      "docsToken": "paths.sprintActiveRegistry",
+      "_note": "Sprint Workflow v0.2 — top-level registry of every live sprint. Lifts the single-current-sprint singleton. Written by scripts/sprint/init.js on first run; updated by /sprint:plan when new sprints are created. Replaces the singleton constraint declared in v0.1's current-sprint schema."
+    },
+    "sprintSprints": {
+      "path": ".claude/project/sprint/sprints",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.5.0",
+      "docsToken": "paths.sprintSprints",
+      "_note": "Sprint Workflow v0.2 — directory containing per-sprint subdirs (sprints/<SP-id>/current.yaml + progress.yaml). Replaces v0.1 singletons after T-20260512-002 migration."
+    },
+    "sprintHistory": {
+      "path": ".claude/project/sprint/history",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintHistory"
+    },
+    "sprintPlanContracts": {
+      "path": ".claude/project/sprint/plan-contracts",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintPlanContracts"
+    },
+    "sprintTickets": {
+      "path": ".claude/project/sprint/tickets",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintTickets"
+    },
+    "sprintIssues": {
+      "path": ".claude/project/sprint/issues",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintIssues",
+      "_note": "Structured per-issue yaml. Per-project bug inbox issues.md (paths.sprintIssuesLedger) is the human-readable companion."
+    },
+    "sprintIssuesLedger": {
+      "path": "issues.md",
+      "kind": "md",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintIssuesLedger",
+      "_note": "Human-readable per-project bug inbox at repo root. Distinct from paths.recurringIssuesFile (SYSTEM-level recurring issues in jsonl)."
+    },
+    "sprintExternalServices": {
+      "path": ".claude/project/sprint/external-services",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintExternalServices"
+    },
+    "sprintReleases": {
+      "path": ".claude/project/sprint/releases",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintReleases"
+    },
+    "sprintApprovals": {
+      "path": ".claude/project/sprint/approvals",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintApprovals"
+    },
+    "sprintDecisions": {
+      "path": ".claude/project/sprint/decisions",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintDecisions",
+      "_note": "Sprint-scope decisions. Distinct from paths.decisions (project-wide decision ledger dir) and paths.decisionLedger (jsonl)."
+    },
+    "sprintRalph": {
+      "path": ".claude/project/sprint/ralph",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintRalph"
+    },
+    "sprintCheckpoints": {
+      "path": ".claude/project/sprint/checkpoints",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintCheckpoints"
+    },
+    "sprintRequirements": {
+      "path": ".claude/project/sprint/requirements",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintRequirements",
+      "_note": "Sprint-scope requirement bundles (PRD/STORIES/COPY/INPUTS/TRACE/AC/QA/Release-plan). Distinct from paths.requirementsRoot (project-wide _requirements/)."
+    },
+    "sprintTemplates": {
+      "path": "framework/templates/sprint",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintTemplates"
+    },
+    "sprintSchemas": {
+      "path": "schemas/sprint",
+      "kind": "dir",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintSchemas"
+    },
+    "sprintReference": {
+      "path": ".claude/project/reference/sprint-workflow.md",
+      "kind": "md",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintReference"
+    },
+    "sprintRouting": {
+      "path": ".claude/agents/00-alex/.system/policy/sprint-routing.json",
+      "kind": "json",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.4.0",
+      "docsToken": "paths.sprintRouting"
+    },
+    "briefs": {
+      "path": "_docs/briefs",
+      "kind": "dir",
+      "owner": "project",
+      "mutable": true,
+      "introducedIn": "0.5.1",
+      "docsToken": "paths.briefs"
+    },
+    "briefsCurrent": {
+      "path": "_docs/briefs",
+      "kind": "dir",
+      "owner": "runtime",
+      "mutable": true,
+      "introducedIn": "0.5.1",
+      "docsToken": "paths.briefsCurrent"
+    },
+    "skillCatalog": {
+      "path": ".claude/runtime/skill-catalog.json",
+      "kind": "json",
+      "owner": "generated",
+      "mutable": true,
+      "introducedIn": "0.5.1",
+      "docsToken": "paths.skillCatalog",
+      "_note": "Generated compact index of every user-invocable slash command under paths.commands. Built by scripts/generate-skill-catalog.js, auto-regenerated by scripts/hooks/skill-catalog-regen.js on Edit|Write of .claude/commands/**. Consumed by smart-context.js skill ranker (SP-20260513-003)."
+    },
+    "providerSmokeSkill": {
+      "path": "scripts/warpos/provider-smoke.js",
+      "kind": "js",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.5.1",
+      "docsToken": "paths.providerSmokeSkill",
+      "_note": "Provider smoke driver (SP-20260513-002). Run direct or via postflight registerExternalCheck."
+    },
+    "providerFailureModes": {
+      "path": ".claude/agents/00-alex/.system/policy/provider-failure-modes.json",
+      "kind": "json",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.5.1",
+      "docsToken": "paths.providerFailureModes",
+      "_note": "Provider failure-mode catalog (SP-20260513-002). 10 entries, 2 safe_to_autofix. Cross-validated against provider-health.js."
+    },
+    "providerRcaLib": {
+      "path": "scripts/warpos/lib/provider-rca.js",
+      "kind": "js",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.5.1",
+      "docsToken": "paths.providerRcaLib"
+    },
+    "providerAutofixLib": {
+      "path": "scripts/warpos/lib/provider-autofix.js",
+      "kind": "js",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.5.1",
+      "docsToken": "paths.providerAutofixLib"
+    },
+    "reasoningFrameworks": {
+      "path": ".claude/project/reference/reasoning-frameworks.md",
+      "kind": "md",
+      "owner": "framework",
+      "mutable": false,
+      "introducedIn": "0.5.1",
+      "docsToken": "paths.reasoningFrameworks",
+      "_note": "Classification table, framework router, fix-quality levels (0-4), meta-reasoning protocol. Referenced by CLAUDE.md ## Reasoning."
     }
   },
   "lintRules": {
@@ -698,7 +1013,21 @@
       "store",
       "specGraph",
       "manifest",
-      "settings"
+      "settings",
+      "agentDispatchGuide",
+      "dispatchLocks",
+      "dispatchDeathsFile",
+      "dispatchCompletionsFile",
+      "providerTmp",
+      "providerFallbackPolicy",
+      "warposFlagLedger",
+      "warposPromotedArchive",
+      "warposPromoteReports",
+      "sprintCurrent",
+      "sprintProgress",
+      "sprintIssuesLedger",
+      "sprintReference",
+      "sprintRouting"
     ],
     "_warnKeys_doc": "These keys point at single files. Hardcoded literal use should warn (paths.X is preferred). build.js generates regex arrays from the registry path values."
   },
@@ -708,6 +1037,7 @@
     ".claude/project/decisions/",
     ".claude/project/memory/",
     ".claude/project/maps/",
+    ".claude/project/sprint/",
     "requirements/_audits/",
     "docs/",
     ".claude/paths.json",

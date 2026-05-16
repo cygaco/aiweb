@@ -1,0 +1,23 @@
+{
+  "schema": "warpos/release/v1",
+  "version": "0.4.0",
+  "createdAt": "2026-05-11T00:00:00.000Z",
+  "commit": "d460de4bf2f32bcb3c7b5ada27f40c97149d73d8",
+  "minUpgradeableFrom": "0.2.2",
+  "requiresFreshInstallFromBelow": null,
+  "manifestSchema": "warpos/framework-manifest/v2",
+  "pathRegistryVersion": "v4",
+  "hooksRegistrySchema": "warpos/hooks-registry/v1",
+  "sprintWorkflowSchema": "warpos/sprint/*/v1",
+  "migrations": [],
+  "postUpdateChecks": [
+    "node scripts/paths/build.js --check",
+    "node scripts/paths/gate.js",
+    "node scripts/hooks/build.js --check",
+    "node scripts/hooks/test.js",
+    "node scripts/sprint/validate.js",
+    "node scripts/sprint/routing.js validate"
+  ],
+  "checksumsFile": "checksums.json",
+  "notes": "Sprint Workflow v0.1 — four-command product workflow layer above existing modes. Plan Contract, requirements bundle (PRD/STORIES/COPY/INPUTS/TRACE/AC/QA/redteam/release plan), tickets, issues, ESDs, releases, approvals, Ralph loop, crash recovery. 10 new schemas, 19 new path keys, 13 helper scripts, 4 slash commands, 2 new hooks (sprint-tracker-guard, sprint-approval-guard), 1 reference doc, 1 routing policy. Additive — no breaking changes; existing modes/agents/hooks/paths unchanged. Capsule covers BOTH Phase 0 (0.3.0 source — framework reliability prerequisites) AND Sprint v0.1, because 0.3.0 was source-only and was never capsule-released."
+}

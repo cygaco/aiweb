@@ -301,3 +301,39 @@ Items flagged from this product repo for upstream WarpOS propagation. Drained on
 - **Source:** `scripts/hooks/merge-guard.js`, `scripts/requirements/graph-build.js`, `scripts/requirements/config.js`
 - **Description:** During the compatibility-layer merge, the freshness gate fired at merge time requiring `REQ-<feature>-<topic>-<NNN>` IDs in PRD.md and `### GS-XX-NN:` headings in STORIES.md. The PRD/STORIES authored by Alpha during the YC sprint used `## S-1` format inherited from the special-instructions PRD precedent — so the gate caught a real mismatch but at the wrong moment (post-build, blocking merge). Recommendation: add a write-time linter on `_requirements/04-features/*/STORIES.md` that flags non-conforming heading format the moment it's saved, so the issue surfaces during requirements authoring not during merge. Also: the four pre-existing features (special-instructions etc.) all use the same wrong format and would also fail merge. They should be retroactively fixed or grandfathered.
 - **Status:** open
+
+## 2026-05-12
+
+### install — framework/templates/sprint/ not installed by 0.4.4 install.ps1
+
+- Date: 2026-05-12
+- Source: aiweb /sprint:design 2026-05-12
+- Status: open
+- Description: Schemas + scripts ship but template dir is missing. Manual cp from canonical needed to unblock /sprint:design. Repro: fresh install -> node scripts/sprint/design.js -> 'missing template' errors for every requirements/*.md.tmpl. Fix in install.ps1 asset-collection step so framework/templates/ is included (currently 0 references in framework-installed.json asset map).
+
+## 2026-05-14
+
+### skill — /sprint:execute has no built-in builder/reviewer/QA/redteam dispatch — routing.json is decorative
+
+- Date: 2026-05-14
+- Source: .claude/commands/sprint/execute.md, .claude/agents/00-alex/.system/policy/sprint-routing.json, scripts/sprint/execute.js
+- Status: open
+- Description: sprint-routing.json declares qa.diff_review=true, redteam.diff_review=true, execution.escalate_to=strong_reasoning per ticket. scripts/sprint/routing.js can ANSWER 'what model class for phase X' but never DISPATCHES anything. scripts/sprint/execute.js (435 lines) has zero references to dispatch-agent, subagent_type, builder, reviewer, gauntlet, qa-orchestrator, redteam-orchestrator. The skill body says one line: 'Adhoc: Alpha runs the loop. Gamma is invoked when a ticket needs a build/gauntlet cycle (existing Gamma flow)' — no criteria, no enforcement, no integration code. Observed 2026-05-14: three /sprint:execute background runs (SP-001/002/003) all used a single general-purpose Sonnet agent per sprint, none invoked the build-chain gauntlet, none ran QA or redteam diff_review on the per-ticket commits. The routing policy is therefore aspirational not enforced. Proposal: (1) sprint:execute should dispatch per-ticket build via Gamma in adhoc mode when ticket has acceptance criteria + tests; (2) post-commit hook should fire qa-orchestrator + redteam-orchestrator with diff_review on each ticket per routing.qa and routing.redteam; (3) decision-ledger entry when diff_review skipped due to second-vendor unavailability.
+
+## 2026-05-14
+
+### hook — merge-guard's path-coherence gate has drift bugs blocking legitimate sprint merges
+
+- Date: 2026-05-14
+- Source: scripts/paths/gate.js, .claude/commands/warp/flag.md, .claude/project/sprint/requirements/SP-20260514-001/prd.md, scripts/hooks/merge-guard.js
+- Status: open
+- Description: During SP-20260514-001/002/003 integration to main on 2026-05-14, scripts/paths/gate.js refused all merges with 30+ docs-tokens findings. Root causes (all observable in this product repo as of merge time): (1) checkDocsTokens SKIP_SUBSTRINGS missing '.warpos/' and 'framework/releases/' — transient rollback backups and shipped capsule changelogs reference deprecated tokens and shouldn't be linted. (2) checkDocsTokens SKIP_SUBSTRINGS missing '.claude/worktrees/' — when sprint executor agents leave worktrees on disk, every doc inside them gets re-linted. (3) Gate loads validKeys ONLY from framework/paths.registry.json — never merges product-level keys from .claude/paths.json. In this product repo framework/paths.registry.json has 0 sprint keys while .claude/paths.json has 21 — every doc referencing paths.sprintRouting/paths.sprintProgress/paths.sprintIssues/etc. fails. Sprint workflow is product-level, sprint tokens should resolve. (4) Doc drift in .claude/commands/warp/flag.md:22 references paths.warpFlagFile but registry has paths.warposFlagLedger — skill body itself is broken. (5) Doc drift in .claude/project/sprint/requirements/SP-20260514-001/prd.md:54 references nonexistent paths.testsDir (fixed in product as part of this merge — straight 'tests/' literal). Proposal: fix gate.js to (a) skip .warpos/ + framework/releases/ + .claude/worktrees/ in docs-tokens like it already does in path-lint, (b) merge product paths.json keys into validKeys, (c) fix warp:flag.md doc to use paths.warposFlagLedger. Without these fixes any product repo with sprint workflow + agent worktrees + accumulated .warpos transactions cannot run git merge through merge-guard.
+
+## 2026-05-16
+
+### skill — scripts/sprint/plan.js writes per-sprint current.yaml with stale-default sprint id + title; downstream design.js scaffolds against wrong sprint
+
+- Date: 2026-05-16
+- Source: scripts/sprint/plan.js, scripts/sprint/design.js, .claude/project/sprint/sprints/<SP-id>/current.yaml
+- Status: open
+- Description: Observed during /sprint:plan for SP-20260514-004 on 2026-05-14: plan.js wrote .claude/project/sprint/sprints/SP-20260514-004/current.yaml with id=SP-20260514-003 and title='Unnamed sprint' (template defaults), while ONLY populating source_request/interpreted_intent/plan_contract/etc. correctly. The subsequent /sprint:design read SPRINT.current via the active-registry getter (which DID resolve to the SP-004 file), but design.js then read the file's id field (SP-20260514-003) and scaffolded into requirements/SP-20260514-003/ — clobber risk against the prior sprint's existing files, and 0 files written for SP-004. Workaround: manual edit of per-sprint current.yaml id+title before re-running design.js. Proposal: (1) plan.js fills id from active-sprints registry's primary AT WRITE TIME, not from a template default; (2) plan.js fills title from active-sprints[].title (which IS populated correctly by add-sprint.js); (3) design.js either uses the registry id directly instead of trusting the per-sprint current.yaml id, or asserts they match and refuses with a clear error if not.

@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/sprint-progress/v1",
+  "title": "WarpOS Sprint v0.2 — Sprint Progress / Crash Recovery Checkpoint",
+  "description": "Per-sprint live execution checkpoint. v0.2 layout: .claude/project/sprint/sprints/<SP-id>/progress.yaml. Written before each sprint command starts, after plan creation, before each ticket, after each meaningful code/doc/test change, after each check, when issues/approvals/external services change, before final report. Legacy v0.1 layout (paths.sprintProgress at sprint root) still validates and is migrated by scripts/sprint/migrate-v0.2.js. The active set of sprints is enumerated in paths.sprintActiveRegistry.",
+  "type": "object",
+  "required": [
+    "schema",
+    "sprint",
+    "updated_at",
+    "current_phase",
+    "current_command",
+    "status",
+    "next_action",
+    "resume_command",
+    "resume_notes",
+    "safe_to_continue"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "const": "warpos/sprint/sprint-progress/v1" },
+    "sprint": {
+      "type": "string",
+      "description": "Sprint id (matches current-sprint.yaml#id)."
+    },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "current_phase": {
+      "type": "string",
+      "enum": ["idle", "plan", "design", "execute", "release", "retrospective"]
+    },
+    "current_command": {
+      "type": "string",
+      "enum": [
+        "/sprint:plan",
+        "/sprint:design",
+        "/sprint:execute",
+        "/sprint:release",
+        "none"
+      ]
+    },
+    "current_ticket": { "type": ["string", "null"] },
+    "current_task": { "type": ["string", "null"] },
+    "current_loop": { "type": ["integer", "null"], "minimum": 0 },
+    "status": {
+      "type": "string",
+      "enum": [
+        "starting",
+        "running",
+        "paused",
+        "blocked",
+        "waiting_on_human",
+        "waiting_on_external_service",
+        "stopped",
+        "completed",
+        "errored"
+      ]
+    },
+    "last_completed_step": { "type": "string" },
+    "next_action": {
+      "type": "string",
+      "description": "Plain-English description of what an agent should do on resume."
+    },
+    "active_files": { "type": "array", "items": { "type": "string" } },
+    "modified_files": { "type": "array", "items": { "type": "string" } },
+    "checks_last_run": { "type": ["string", "null"], "format": "date-time" },
+    "checks_passing": { "type": "array", "items": { "type": "string" } },
+    "checks_failing": { "type": "array", "items": { "type": "string" } },
+    "blockers": { "type": "array", "items": { "type": "string" } },
+    "approvals_needed": { "type": "array", "items": { "type": "string" } },
+    "external_services_needed": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "issues_opened": { "type": "array", "items": { "type": "string" } },
+    "tickets_updated": { "type": "array", "items": { "type": "string" } },
+    "ralph_checkpoint": {
+      "type": ["string", "null"],
+      "description": "Pointer to ralph/<sprint>/progress.yaml when /sprint:execute is mid-loop."
+    },
+    "resume_command": {
+      "type": "string",
+      "description": "The exact /sprint:* command to re-run on resume."
+    },
+    "resume_notes": { "type": "string" },
+    "safe_to_continue": {
+      "type": "boolean",
+      "description": "Did the previous step exit cleanly? false means investigate before resuming."
+    },
+    "stop_reason": { "type": ["string", "null"] }
+  }
+}

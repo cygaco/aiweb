@@ -231,6 +231,62 @@
     {
       "match": "\\.claude/settings\\.json",
       "key": "settings"
+    },
+    {
+      "match": "\\.claude/project/reference/agent-dispatch-guide\\.md",
+      "key": "agentDispatchGuide"
+    },
+    {
+      "match": "\\.claude/runtime/dispatch-locks",
+      "key": "dispatchLocks"
+    },
+    {
+      "match": "\\.claude/runtime/dispatch-deaths\\.jsonl",
+      "key": "dispatchDeathsFile"
+    },
+    {
+      "match": "\\.claude/runtime/dispatch-completions\\.jsonl",
+      "key": "dispatchCompletionsFile"
+    },
+    {
+      "match": "\\.claude/runtime/\\.provider-tmp",
+      "key": "providerTmp"
+    },
+    {
+      "match": "\\.claude/agents/00-alex/\\.system/policy/provider-fallback\\.json",
+      "key": "providerFallbackPolicy"
+    },
+    {
+      "match": "warpos-to-update\\.md",
+      "key": "warposFlagLedger"
+    },
+    {
+      "match": "warpos-promoted-archive\\.md",
+      "key": "warposPromotedArchive"
+    },
+    {
+      "match": "\\.warpos/promote-reports",
+      "key": "warposPromoteReports"
+    },
+    {
+      "match": "\\.claude/project/sprint/current-sprint\\.yaml",
+      "key": "sprintCurrent"
+    },
+    {
+      "match": "\\.claude/project/sprint/sprint-progress\\.yaml",
+      "key": "sprintProgress"
+    },
+    {
+      "match": "issues\\.md",
+      "key": "sprintIssuesLedger"
+    },
+    {
+      "match": "\\.claude/project/reference/sprint-workflow\\.md",
+      "key": "sprintReference"
+    },
+    {
+      "match": "\\.claude/agents/00-alex/\\.system/policy/sprint-routing\\.json",
+      "key": "sprintRouting"
     }
   ],
   "skipSubstrings": [
@@ -239,6 +295,7 @@
     ".claude/project/decisions/",
     ".claude/project/memory/",
     ".claude/project/maps/",
+    ".claude/project/sprint/",
     "requirements/_audits/",
     "docs/",
     ".claude/paths.json",

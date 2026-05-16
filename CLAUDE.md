@@ -24,6 +24,16 @@ Classify every problem before acting. Score every fix. Log every reasoning decis
 
 See `.claude/project/reference/operational-loop.md` for the 10-step cycle, session rhythms, and self-modification tracking.
 
+## Skill Use
+
+The skill library under `.claude/commands` encodes known-good procedures. **Prefer existing skills when the user's intent matches a skill's purpose** — invoke the skill instead of re-deriving the procedure inline. Skill selection is salience-driven (mechanism = Hybrid, see RT-002):
+
+- When `SUGGESTED SKILLS:` appears in your `additionalContext`, treat each entry as a strong candidate. If one matches the user's intent at score ≥0.7, invoke it. Don't enumerate, don't ask — just call it.
+- When no suggestions appear, scan the full skill catalog mentally. The catalog is in your system-reminder; a one-line match is enough to justify invocation.
+- **Manual invocation always overrides.** If the user types `/skill:name` directly, do that — no second-guessing.
+- **Irreversible skills still respect the autonomy table.** Suggestion is not authorization. Skills that push, delete, or deploy require explicit user approval per `## Autonomy`.
+- Telemetry logs both suggestions and invocations — see `paths.eventsFile` event type `skill-suggested-vs-invoked`. Adherence is observable; drift is detectable.
+
 ## Autonomy
 
 | Action | Permission |

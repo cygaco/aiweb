@@ -1,0 +1,23 @@
+{
+  "schema": "warpos/release/v1",
+  "version": "0.4.1",
+  "createdAt": "2026-05-11T00:00:00.000Z",
+  "commit": "058c30f638a49ef56e93145cd94fc0b87a2e363b",
+  "minUpgradeableFrom": "0.2.2",
+  "requiresFreshInstallFromBelow": null,
+  "manifestSchema": "warpos/framework-manifest/v2",
+  "pathRegistryVersion": "v4",
+  "hooksRegistrySchema": "warpos/hooks-registry/v1",
+  "sprintWorkflowSchema": "warpos/sprint/*/v1",
+  "migrations": [],
+  "postUpdateChecks": [
+    "node scripts/paths/build.js --check",
+    "node scripts/paths/gate.js",
+    "node scripts/hooks/build.js --check",
+    "node scripts/hooks/test.js",
+    "node scripts/sprint/validate.js",
+    "node scripts/sprint/routing.js validate"
+  ],
+  "checksumsFile": "checksums.json",
+  "notes": "Update-path UX fix. update.js auto-discovers canonical WarpOS clones via sibling walk (../WarpOS, ../warpos) + manifest.json#warpos.source + framework-installed.json#source. /warp:update skill no longer pre-bails on missing local capsule. Product repos can now run /warp:update --to <version> --apply without manually passing --source when a sibling canonical exists. Bundles 0.4.0 (Sprint Workflow v0.1 + Phase 0 follow-ons) since update-path UX was the only blocker."
+}

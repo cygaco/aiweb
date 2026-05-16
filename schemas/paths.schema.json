@@ -316,6 +316,196 @@
       "type": "string",
       "const": "scripts/hooks/lib/logger.js",
       "description": "js (framework) — paths.loggerLib"
+    },
+    "agentDispatchGuide": {
+      "type": "string",
+      "const": ".claude/project/reference/agent-dispatch-guide.md",
+      "description": "md (framework) — paths.agentDispatchGuide"
+    },
+    "dispatchLocks": {
+      "type": "string",
+      "const": ".claude/runtime/dispatch-locks",
+      "description": "dir (runtime) — paths.dispatchLocks"
+    },
+    "dispatchDeathsFile": {
+      "type": "string",
+      "const": ".claude/runtime/dispatch-deaths.jsonl",
+      "description": "jsonl (runtime) — paths.dispatchDeathsFile"
+    },
+    "dispatchCompletionsFile": {
+      "type": "string",
+      "const": ".claude/runtime/dispatch-completions.jsonl",
+      "description": "jsonl (runtime) — paths.dispatchCompletionsFile"
+    },
+    "providerTmp": {
+      "type": "string",
+      "const": ".claude/runtime/.provider-tmp",
+      "description": "dir (runtime) — paths.providerTmp"
+    },
+    "providerFallbackPolicy": {
+      "type": "string",
+      "const": ".claude/agents/00-alex/.system/policy/provider-fallback.json",
+      "description": "json (framework) — paths.providerFallbackPolicy"
+    },
+    "warposFlagLedger": {
+      "type": "string",
+      "const": "warpos-to-update.md",
+      "description": "md (project) — paths.warposFlagLedger"
+    },
+    "warposPromotedArchive": {
+      "type": "string",
+      "const": "warpos-promoted-archive.md",
+      "description": "md (project) — paths.warposPromotedArchive"
+    },
+    "warposPromoteReports": {
+      "type": "string",
+      "const": ".warpos/promote-reports",
+      "description": "dir (runtime) — paths.warposPromoteReports"
+    },
+    "sprintRoot": {
+      "type": "string",
+      "const": ".claude/project/sprint",
+      "description": "dir (runtime) — paths.sprintRoot"
+    },
+    "sprintCurrent": {
+      "type": "string",
+      "const": ".claude/project/sprint/current-sprint.yaml",
+      "description": "yaml (runtime) — paths.sprintCurrent"
+    },
+    "sprintProgress": {
+      "type": "string",
+      "const": ".claude/project/sprint/sprint-progress.yaml",
+      "description": "yaml (runtime) — paths.sprintProgress"
+    },
+    "sprintActiveRegistry": {
+      "type": "string",
+      "const": ".claude/project/sprint/active-sprints.yaml",
+      "description": "yaml (runtime) — paths.sprintActiveRegistry"
+    },
+    "sprintSprints": {
+      "type": "string",
+      "const": ".claude/project/sprint/sprints",
+      "description": "dir (runtime) — paths.sprintSprints"
+    },
+    "sprintHistory": {
+      "type": "string",
+      "const": ".claude/project/sprint/history",
+      "description": "dir (runtime) — paths.sprintHistory"
+    },
+    "sprintPlanContracts": {
+      "type": "string",
+      "const": ".claude/project/sprint/plan-contracts",
+      "description": "dir (runtime) — paths.sprintPlanContracts"
+    },
+    "sprintTickets": {
+      "type": "string",
+      "const": ".claude/project/sprint/tickets",
+      "description": "dir (runtime) — paths.sprintTickets"
+    },
+    "sprintIssues": {
+      "type": "string",
+      "const": ".claude/project/sprint/issues",
+      "description": "dir (runtime) — paths.sprintIssues"
+    },
+    "sprintIssuesLedger": {
+      "type": "string",
+      "const": "issues.md",
+      "description": "md (project) — paths.sprintIssuesLedger"
+    },
+    "sprintExternalServices": {
+      "type": "string",
+      "const": ".claude/project/sprint/external-services",
+      "description": "dir (runtime) — paths.sprintExternalServices"
+    },
+    "sprintReleases": {
+      "type": "string",
+      "const": ".claude/project/sprint/releases",
+      "description": "dir (runtime) — paths.sprintReleases"
+    },
+    "sprintApprovals": {
+      "type": "string",
+      "const": ".claude/project/sprint/approvals",
+      "description": "dir (runtime) — paths.sprintApprovals"
+    },
+    "sprintDecisions": {
+      "type": "string",
+      "const": ".claude/project/sprint/decisions",
+      "description": "dir (runtime) — paths.sprintDecisions"
+    },
+    "sprintRalph": {
+      "type": "string",
+      "const": ".claude/project/sprint/ralph",
+      "description": "dir (runtime) — paths.sprintRalph"
+    },
+    "sprintCheckpoints": {
+      "type": "string",
+      "const": ".claude/project/sprint/checkpoints",
+      "description": "dir (runtime) — paths.sprintCheckpoints"
+    },
+    "sprintRequirements": {
+      "type": "string",
+      "const": ".claude/project/sprint/requirements",
+      "description": "dir (runtime) — paths.sprintRequirements"
+    },
+    "sprintTemplates": {
+      "type": "string",
+      "const": "framework/templates/sprint",
+      "description": "dir (framework) — paths.sprintTemplates"
+    },
+    "sprintSchemas": {
+      "type": "string",
+      "const": "schemas/sprint",
+      "description": "dir (framework) — paths.sprintSchemas"
+    },
+    "sprintReference": {
+      "type": "string",
+      "const": ".claude/project/reference/sprint-workflow.md",
+      "description": "md (framework) — paths.sprintReference"
+    },
+    "sprintRouting": {
+      "type": "string",
+      "const": ".claude/agents/00-alex/.system/policy/sprint-routing.json",
+      "description": "json (framework) — paths.sprintRouting"
+    },
+    "briefs": {
+      "type": "string",
+      "const": "_docs/briefs",
+      "description": "dir (project) — paths.briefs"
+    },
+    "briefsCurrent": {
+      "type": "string",
+      "const": "_docs/briefs",
+      "description": "dir (runtime) — paths.briefsCurrent"
+    },
+    "skillCatalog": {
+      "type": "string",
+      "const": ".claude/runtime/skill-catalog.json",
+      "description": "json (generated) — paths.skillCatalog"
+    },
+    "providerSmokeSkill": {
+      "type": "string",
+      "const": "scripts/warpos/provider-smoke.js",
+      "description": "js (framework) — paths.providerSmokeSkill"
+    },
+    "providerFailureModes": {
+      "type": "string",
+      "const": ".claude/agents/00-alex/.system/policy/provider-failure-modes.json",
+      "description": "json (framework) — paths.providerFailureModes"
+    },
+    "providerRcaLib": {
+      "type": "string",
+      "const": "scripts/warpos/lib/provider-rca.js",
+      "description": "js (framework) — paths.providerRcaLib"
+    },
+    "providerAutofixLib": {
+      "type": "string",
+      "const": "scripts/warpos/lib/provider-autofix.js",
+      "description": "js (framework) — paths.providerAutofixLib"
+    },
+    "reasoningFrameworks": {
+      "type": "string",
+      "const": ".claude/project/reference/reasoning-frameworks.md",
+      "description": "md (framework) — paths.reasoningFrameworks"
     }
   }
 }

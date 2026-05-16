@@ -54,7 +54,7 @@ function loadStore() {
 // (qa, learner) where cost matters more than peak reasoning.
 const OPENAI_FLAGSHIP = process.env.OPENAI_FLAGSHIP_MODEL || "gpt-5.5"; // reviewer, compliance
 const OPENAI_MINI = process.env.OPENAI_MINI_MODEL || "gpt-5.4-mini"; // qa, learner (no gpt-5.5-mini exists yet)
-const GEMINI_DEFAULT = process.env.GEMINI_MODEL || "gemini-3.1-pro";
+const GEMINI_DEFAULT = process.env.GEMINI_MODEL || "gemini-3.1-pro-preview";
 
 // Reasoning effort per role. Forces deeper deliberation across all dispatch
 // roles. Per recent learning: "LLM-as-judge is systematically biased and
@@ -148,10 +148,10 @@ const DEFAULT_PROVIDERS = {
     default_model: GEMINI_DEFAULT,
     fallback: "claude",
     // Gemini CLI: pipe context on stdin, instruction via `-p`, plain-text output via `-o text`.
-    // `gemini-3.1-pro` has thinking mode + 1M input context — ideal for attack-chain reasoning.
+    // `gemini-3.1-pro-preview` has thinking mode + 1M input context — ideal for attack-chain reasoning.
     // No explicit reasoning-effort flag; thinking is always-on for the pro-preview tier.
     // `{reasoning}` template var is empty for gemini (kept for syntax uniformity).
-    syntax: `gemini --skip-trust {reasoning} -m {model} -p`,
+    syntax: `gemini {reasoning} -m {model} -p`,
   },
 };
 
@@ -396,12 +396,7 @@ function runProvider(role, prompt, opts = {}) {
       output: "",
       fallback: false,
       strictFailure: true,
-      error:
-        `Model ${model} is not available on your ${providerName} account or CLI registry. ` +
-        (providerName === "gemini"
-          ? `Cause is usually a stale gemini-cli (model registry ships with the binary). Try \`npm i -g @google/gemini-cli@latest\` and re-probe with \`echo ok | gemini -m ${model} -p "Reply OK"\`. If still 404 after upgrade, it's an account entitlement issue, not a code/manifest bug. See issues.md ISS-003. `
-          : ``) +
-        `Or edit manifest.providers.${providerName}.default_model to a model you have access to. Refusing to silently downgrade.`,
+      error: `Model ${model} is not available on your ${providerName} account. Upgrade your tier, or edit manifest.providers.${providerName}.default_model to a model you have access to. Refusing to silently downgrade.`,
     };
   }
 
@@ -432,22 +427,54 @@ function runProvider(role, prompt, opts = {}) {
       // model actually served the request (preview models can silently fall
       // back under load). We extract response as `output` and record the
       // served model as `actualModel`.
-      cmd = `${cfg.cli} --skip-trust -m ${model} -p "Process the instructions on stdin and produce the requested output." -o json`;
+      //
+      // Phase 0 workstream E: optional --skip-trust. The gemini CLI refuses
+      // to run outside a trusted directory on some platforms. The flag is
+      // gated by env (WARPOS_GEMINI_TRUST_BYPASS=1) so projects can opt in
+      // without changing source. Default OFF — trust enforcement may be
+      // intentional in regulated repos.
+      const trustFlag =
+        process.env.WARPOS_GEMINI_TRUST_BYPASS === "1" ? " --skip-trust" : "";
+      cmd = `${cfg.cli}${trustFlag} -m ${model} -p "Process the instructions on stdin and produce the requested output." -o json`;
     } else {
       // Generic pattern from cfg.syntax (used when manifest overrides defaults)
       cmd = `${cfg.syntax.replace("{model}", model).replace("{reasoning}", reasoningFlag)}`;
     }
 
-    const rawOutput = execSync(cmd, {
+    // Phase 0 workstream C: capture stderr so silent zero-byte deaths leave
+    // evidence. execSync only returns stdout; stderr is reachable only via the
+    // thrown error's `.stderr` field in the catch branch. To preserve stderr
+    // for both success AND failure paths we use spawnSync inline.
+    //
+    // 0.4.4 fix: with `encoding: "buffer"` Node requires `input` to be a
+    // Buffer (not a string). Phase 0 shipped this combination with a string
+    // input and threw "Unknown encoding: buffer" before the CLI ran —
+    // silently breaking every diff-model review in adhoc + sprint flows.
+    // Wrap promptContent in Buffer.from() so the stdin path matches the
+    // stdout/stderr buffer treatment.
+    const { spawnSync } = require("child_process");
+    const spawned = spawnSync(cmd, {
       cwd: PROJECT,
       timeout: timeoutMs,
-      stdio: ["pipe", "pipe", "pipe"],
-      input: promptContent,
+      input: Buffer.from(promptContent, "utf8"),
       maxBuffer: 32 * 1024 * 1024, // 32MB for long review outputs
       shell: true,
-    })
-      .toString()
-      .trim();
+      encoding: "buffer",
+    });
+    if (spawned.error) throw spawned.error;
+    const stdoutBuf = spawned.stdout || Buffer.alloc(0);
+    const stderrBuf = spawned.stderr || Buffer.alloc(0);
+    const rawOutput = stdoutBuf.toString("utf8").trim();
+    const stderrText = stderrBuf.toString("utf8");
+    const stderrBytes = stderrBuf.length;
+    if (spawned.status !== 0) {
+      const errMessage = stderrText.trim() || `exit ${spawned.status}`;
+      const e = new Error(errMessage);
+      e.stderr = stderrText;
+      e.status = spawned.status;
+      e.stderrBytes = stderrBytes;
+      throw e;
+    }
 
     // Gemini JSON envelope unwrap + actual-model audit
     let output = rawOutput;
@@ -486,6 +513,7 @@ function runProvider(role, prompt, opts = {}) {
       model,
       actualModel,
       output,
+      stderrBytes,
       cmd: cmd.slice(0, 200),
     };
   } catch (err) {
@@ -496,6 +524,7 @@ function runProvider(role, prompt, opts = {}) {
       output: "",
       fallback: true,
       error: String(err.message || err).slice(0, 500),
+      stderrBytes: typeof err.stderrBytes === "number" ? err.stderrBytes : 0,
     };
   } finally {
     // Cleanup temp file unless debugging

@@ -185,3 +185,19 @@ _(none yet)_
 - **Current recommendation:** ...
 - **Final resolution:** _(filled in when Fixed/Deferred/Abandoned)_
 ```
+
+### I-20260514-001 — A2A surface runner needs redesign for stateful conversation protocol
+
+- **Status:** open
+- **Severity:** medium
+- **Discovered:** 2026-05-14T21:09:09.403Z during SP-20260514-001:execute
+- **Sprint:** SP-20260514-001
+- **Ticket:** T-20260514-072
+
+**Expected:** A2A surface runs pizza-only scenario by driving message/send turns
+**Actual:** A2A executor is a stateful agent, not individual tool dispatcher; message/send requires messageId + correct message shape for agent conversation
+
+
+
+YAML: `.claude/project/sprint/issues/I-20260514-001.yaml`
+

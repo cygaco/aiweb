@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/approval/v1",
+  "title": "WarpOS Sprint v0.1 — Approval Record",
+  "description": "Durable record of an approval decision. Lives under paths.sprintApprovals.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "sprint",
+    "level",
+    "required_for",
+    "state",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "const": "warpos/sprint/approval/v1" },
+    "id": { "type": "string", "pattern": "^AP-[0-9]{8}-[0-9]{3}$" },
+    "sprint": { "type": "string" },
+    "level": {
+      "type": "string",
+      "enum": [
+        "no_approval_needed",
+        "plan_approval_required",
+        "design_approval_required",
+        "execution_approval_required",
+        "release_approval_required",
+        "human_required"
+      ]
+    },
+    "required_for": {
+      "type": "string",
+      "description": "Free-text reason. Examples: production_deploy, paid_api_usage, new_paid_service, billing_setup, oauth_approval, domain_dns_change, new_credentials, destructive_migration, deleting_major_feature, etc."
+    },
+    "linked_ticket": { "type": ["string", "null"] },
+    "linked_external_service": { "type": ["string", "null"] },
+    "linked_release": { "type": ["string", "null"] },
+    "linked_decision": { "type": ["string", "null"] },
+    "state": {
+      "type": "string",
+      "enum": ["pending", "approved", "rejected", "waived", "withdrawn"]
+    },
+    "requested_by": { "type": "string" },
+    "decided_by": { "type": ["string", "null"] },
+    "decided_at": { "type": ["string", "null"], "format": "date-time" },
+    "reason": { "type": "string" },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,72 @@
+<!-- requirement-format-legacy -->
+# PRD — {{sprint_title}}
+
+**Sprint:** `{{sprint_id}}`
+**Plan Contract:** `{{plan_contract_id}}`
+**Status:** draft
+**Documentation scale:** `{{documentation_scale}}`
+
+## Outcome
+
+{{user_or_business_outcome}}
+
+## Context
+
+### Original Request
+
+> {{source_request_verbatim}}
+
+### Interpreted Intent
+
+{{interpreted_intent}}
+
+### Current Behavior
+
+{{current_behavior_notes}}
+
+### Desired Behavior
+
+{{desired_behavior}}
+
+## Requirements
+
+> Use existing requirement ID conventions enforced by
+> `scripts/hooks/requirement-format-guard.js`. PRDs in `_requirements/`
+> use `R-N` ids — sprint-scope PRDs that link to a feature in
+> `_requirements/04-features/<feature>/PRD.md` should reuse those ids,
+> not invent new ones.
+
+- `R-1` — {{requirement_1}}
+- `R-2` — {{requirement_2}}
+- `R-3` — {{requirement_3}}
+
+## Non-Goals
+
+- {{non_goal_1}}
+
+## Affected Surfaces
+
+| Surface | Evidence Level |
+|---|---|
+| {{surface_1}} | {{surface_1_evidence}} |
+
+## External Service Dependencies
+
+See `.claude/project/sprint/external-services/` for ESD records.
+
+## Approval Boundaries
+
+See Plan Contract `approval_boundaries`.
+
+## Linked Artifacts
+
+- Plan Contract: `{{plan_contract_path}}`
+- High-level stories: `{{high_level_stories_path}}`
+- Granular stories: `{{granular_stories_path}}`
+- COPY: `{{copy_path}}`
+- INPUTS: `{{inputs_path}}`
+- TRACE: `{{trace_path}}`
+- Acceptance criteria: `{{acceptance_criteria_path}}`
+- QA plan: `{{qa_plan_path}}`
+- Redteam plan: `{{redteam_plan_path}}`
+- Release plan: `{{release_plan_path}}`

@@ -1,99 +1,95 @@
-# /warp:flag — Flag a change/fix/update for upstream WarpOS
+---
+description: "Append a framework-level update flag to the repo-local warpos-to-update.md ledger. Safe to run in product repos and the canonical WarpOS clone."
+user-invocable: true
+---
 
-Append an item to `warpos-to-update.md` at project root. Lightweight tracker for changes made in this product repo that should propagate to canonical WarpOS in the next /warp:promote or /warp:release.
+# /warp:flag — Record a framework-update flag
+
+Use `/warp:flag` whenever you notice something during product or framework
+work that ought to be propagated upstream into WarpOS. The skill appends a
+structured entry to the repo-local `warpos-to-update.md` ledger.
+`/warp:promote-flags` later drains the ledger (mark `promoted`, archive
+entries, record canonical SHAs).
+
+This skill is the source-of-truth path for surfacing framework gaps. It
+does NOT propagate code — that's `/warp:promote` (source→canonical
+framework files) and `/warp:promote-flags` (ledger drain) respectively.
 
 ## When to use
 
-- A hook, skill, agent spec, script, or learning was modified locally and the change is framework-shared (not product-specific)
-- A bug class was discovered that warrants a hook/lint/guard upstream
-- A new file was created that belongs in the canonical WarpOS clone
-- A model id, provider config, or dispatch path needs upstream alignment
+- Provider catalog drift (e.g. a model listed in catalog.js no longer
+  exists upstream).
+- A hook missed a real failure mode you had to work around.
+- A skill's documentation doesn't match its current behaviour.
+- An agent spec references a path or convention that has since moved.
+- Install/setup gap you noticed in a fresh project.
+- A primitive limitation we can't fix in-repo but should track.
 
-## When NOT to use
+## How to invoke
 
-- Product-only files (`src/**`, feature PRDs, demo scripts, runtime data)
-- Trivial typos or doc-only fixes that don't change behavior
-- Things already covered by an open WarpOS PR
-
-## Procedure
-
-### Step 1: Resolve target path
-
-`paths.warpFlagFile` if defined, else `warpos-to-update.md` at project root. Create the file with a header if it doesn't exist:
-
-```markdown
-# WarpOS — flagged updates
-
-Items flagged from this product repo for upstream WarpOS propagation. Drained on /warp:promote or /warp:release.
-
-| Date | Category | Title | Source |
-|---|---|---|---|
+```bash
+node scripts/warpos/flag.js --category dispatch \
+                            --title "Dispatch-route guard against raw provider CLI" \
+                            --source "WarpOS Phase 0" \
+                            --description "Forbid raw codex/gemini/claude -p prompt invocations from Bash"
 ```
 
-### Step 2: Parse argument
+Categories: `provider`, `dispatch`, `agent`, `hook`, `skill`, `install`,
+`template`, `requirements`, `issue`, `release`, `docs`, `other`.
 
-Treat the entire argument string as the flag content. Try to extract:
+Statuses: `open` (default), `in_progress`, `promoted`, `blocked`,
+`deferred`, `needs_decision`, `duplicate`, `abandoned`.
 
-- **title** — short imperative or noun phrase (first sentence or `--title <X>`)
-- **category** — one of: `hook`, `skill`, `agent`, `script`, `manifest`, `learning`, `dispatch`, `provider`, `other`. Infer from arg keywords; default `other`.
-- **description** — full free-text reason
-- **source** — file paths, commit SHAs, or issue IDs mentioned in the arg
+Pass `--json` for a machine-readable result. Pass `--ledger <path>` only
+when targeting a non-default ledger file.
 
-If user passes `--category <X>` or `--title "..."` flags, honor them.
+## Ledger location
 
-### Step 3: Append entry
+Resolved via `paths.warposFlagLedger` if present in `.claude/paths.json`;
+otherwise `warpos-to-update.md` at repo root.
 
-Append a structured block to `warpos-to-update.md`:
+Product repos are NOT required to commit the ledger. The decision to
+track it in git belongs to the product team. The canonical WarpOS repo
+SHOULD track its own ledger so propagation history is visible.
 
-```markdown
-### YYYY-MM-DD — <title>
+## Output
 
-- **Category:** <category>
-- **Source:** <file paths / commits / issue ids>
-- **Description:** <full free-text>
-- **Status:** open
-
-```
-
-Also append a one-line index row to the table at the top of the file:
+A single human-readable line on success:
 
 ```
-| YYYY-MM-DD | <category> | <title> | <source-shorthand> |
+[warp:flag] appended dispatch/open "Dispatch-route guard against raw provider CLI" to warpos-to-update.md
 ```
 
-### Step 4: Confirm
+Or, with `--json`:
 
-Print:
-
-```
-flagged: <title>
-category: <category>
-source: <source>
-target: warpos-to-update.md
+```json
+{"ok":true,"ledger":"…/warpos-to-update.md","date":"2026-05-11","category":"dispatch","title":"…","status":"open","source":"WarpOS Phase 0"}
 ```
 
-## Implementation notes
+## Drain workflow
 
-Keep the skill body simple. Use `Read` to check file existence + Edit/Write to update. No subprocess, no node helper, no canonical logger — just markdown append.
+See `/warp:promote-flags`. It:
 
-If the target file is large (>100 KB) suggest manual triage; this skill is for active drift, not historical archaeology.
+1. Reads all entries with `Status: open` (and other non-terminal statuses).
+2. Groups them by category + source.
+3. Surfaces the canonical files most likely affected (best-effort —
+   driven by category).
+4. Marks chosen entries as `promoted` once the upstream change lands and
+   records the canonical commit SHA in `- Canonical-SHA: <sha>`.
+5. Optionally archives promoted entries to `warpos-promoted-archive.md`.
+6. Writes a promotion report under `.warpos/promote-reports/`.
 
-## Examples
+## Failure modes
 
-```
-/warp:flag gemini-cli model registry stale on 0.35.3 — bumped manifest to gemini-3.1-pro per docs but CLI 404s. Need a CLI version probe in providers.js. ISS-003. --category provider
-```
+- `--title` missing → exit 2, message on stderr.
+- Invalid `--category` or `--status` → exit 2.
+- Ledger directory not writable → file system error (rare).
+- No network calls; no external tools.
 
-```
-/warp:flag agent-dispatch-guide.md not auto-loaded. Added MANDATORY READ to gamma.md + delta.md and SessionStart inject. Propagate to WarpOS canonical. --category agent
-```
+## See also
 
-```
-/warp:flag merge-guard hook now requires REQ-* IDs in PRDs and GS-XX-NN heading format in STORIES.md — convention should be a write-time linter not a merge-time gate. ISS-004. --category hook
-```
-
-## Companion commands
-
-- `/warp:promote` — actually copy flagged framework changes from product repo into the canonical WarpOS clone (drains the flag file)
-- `/warp:release` — full WarpOS release flow including promote
-- `/warp:update` — pull latest WarpOS into this product repo
+- `/warp:promote-flags` — drain the ledger.
+- `/warp:promote` — source → canonical framework-file propagation (not
+  the same as the flag drain).
+- `paths.warposFlagLedger`, `paths.warposPromotedArchive`,
+  `paths.warposPromoteReports`.

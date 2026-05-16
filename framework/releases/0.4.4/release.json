@@ -1,0 +1,25 @@
+{
+  "schema": "warpos/release/v1",
+  "version": "0.4.4",
+  "createdAt": "2026-05-12T00:00:00.000Z",
+  "commit": "7a99f8b",
+  "minUpgradeableFrom": "0.2.2",
+  "requiresFreshInstallFromBelow": null,
+  "manifestSchema": "warpos/framework-manifest/v2",
+  "pathRegistryVersion": "v4",
+  "hooksRegistrySchema": "warpos/hooks-registry/v1",
+  "sprintWorkflowSchema": "warpos/sprint/*/v1",
+  "migrations": [],
+  "postUpdateChecks": [
+    "node scripts/paths/build.js --check",
+    "node scripts/paths/gate.js",
+    "node scripts/hooks/build.js --check",
+    "node scripts/hooks/test.js",
+    "node scripts/sprint/validate.js",
+    "node scripts/sprint/routing.js validate",
+    "node scripts/generate-framework-manifest.js --check",
+    "node scripts/test-providers-stdin-fix.js"
+  ],
+  "checksumsFile": "checksums.json",
+  "notes": "Critical dispatch-stdin fix. Phase 0 (b3a5ab06) shipped runProvider with spawnSync({encoding:'buffer', input: <string>}) — Node requires Buffer-typed input when encoding is 'buffer'; the call threw ERR_UNKNOWN_ENCODING synchronously before any CLI ran. Every diff-model review (gauntlet, sprint planning, redteam, qa, compliance) silently failed. 0.4.4 wraps the input in Buffer.from(promptContent,'utf8'). Re-bootstrap to fix."
+}

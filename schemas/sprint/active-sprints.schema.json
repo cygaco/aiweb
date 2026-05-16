@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/active-sprints/v1",
+  "title": "WarpOS Sprint v0.2 — Active Sprints Registry",
+  "description": "paths.sprintActiveRegistry. Top-level registry of every live sprint in this downstream repo. Replaces the v0.1 single-current-sprint singleton. Exactly one `primary` entry — the sprint that helpers target when --sprint is omitted.",
+  "type": "object",
+  "required": ["schema", "primary", "sprints", "created_at", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "const": "warpos/sprint/active-sprints/v1" },
+    "primary": {
+      "type": "string",
+      "pattern": "^SP-[0-9]{8}-[0-9]{3}$",
+      "description": "The default sprint helpers target when --sprint is omitted. Must exist in `sprints`."
+    },
+    "sprints": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/registryEntry" },
+      "description": "Every live sprint. Closed/archived sprints move to paths.sprintHistory and are removed from this list."
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "definitions": {
+    "registryEntry": {
+      "type": "object",
+      "required": ["id", "title", "status", "lane", "layout", "pointer"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^SP-[0-9]{8}-[0-9]{3}$" },
+        "title": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_started",
+            "planning",
+            "designing",
+            "ready_for_execution",
+            "executing",
+            "waiting_on_human",
+            "waiting_on_external_service",
+            "in_review",
+            "blocked",
+            "releasing",
+            "closed",
+            "abandoned",
+            "retrospected"
+          ]
+        },
+        "lane": {
+          "type": "object",
+          "required": ["type", "value", "isolation_notes"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["default", "worktree", "branch"]
+            },
+            "value": { "type": ["string", "null"] },
+            "isolation_notes": { "type": "string" }
+          }
+        },
+        "layout": {
+          "type": "string",
+          "enum": ["legacy_root", "per_sprint_subdir"],
+          "description": "`legacy_root` = current/progress live at paths.sprintRoot (pre-T-20260512-002). `per_sprint_subdir` = current/progress live at sprints/<SP-id>/ (T-20260512-002 and after)."
+        },
+        "pointer": {
+          "type": "string",
+          "description": "Directory containing the sprint's current.yaml + progress.yaml. Relative to repo root. For `legacy_root` this is paths.sprintRoot; for `per_sprint_subdir` this is `<sprintRoot>/sprints/<SP-id>/`."
+        },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

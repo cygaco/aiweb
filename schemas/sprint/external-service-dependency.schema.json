@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/sprint/external-service-dependency/v1",
+  "title": "WarpOS Sprint v0.1 — External Service Dependency",
+  "description": "Tracks third-party service readiness for a sprint. Identifies what requires human signup, credentials, billing, OAuth, DNS, or compliance approval before terminal-based work can proceed.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "sprint",
+    "service_name",
+    "service_category",
+    "purpose",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "warpos/sprint/external-service-dependency/v1"
+    },
+    "id": { "type": "string", "pattern": "^ESD-[0-9]{8}-[0-9]{3}$" },
+    "sprint": { "type": "string" },
+    "related_ticket": { "type": ["string", "null"] },
+    "service_name": {
+      "type": "string",
+      "description": "Vendor-neutral display name (e.g. 'payment provider', 'transactional email')."
+    },
+    "service_category": {
+      "type": "string",
+      "enum": [
+        "payment",
+        "auth",
+        "email",
+        "sms",
+        "analytics",
+        "database",
+        "cloud_storage",
+        "llm_provider",
+        "voice_calling",
+        "oauth_app",
+        "domain_dns",
+        "deployment_host",
+        "monitoring_logging",
+        "search_indexing",
+        "customer_support",
+        "marketplace",
+        "other"
+      ]
+    },
+    "purpose": { "type": "string" },
+    "required_for": { "type": "array", "items": { "type": "string" } },
+    "required_phase": {
+      "type": "string",
+      "enum": ["plan", "design", "execute", "release", "any"]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "identified",
+        "needs_human_signup",
+        "needs_credentials",
+        "needs_billing",
+        "needs_configuration",
+        "ready_for_terminal_work",
+        "mocked",
+        "integrated",
+        "blocked",
+        "deferred",
+        "abandoned"
+      ]
+    },
+    "signup_required": { "type": "boolean" },
+    "billing_required": { "type": "boolean" },
+    "credentials_required": { "type": "boolean" },
+    "oauth_required": { "type": "boolean" },
+    "domain_dns_required": { "type": "boolean" },
+    "compliance_review_required": { "type": "boolean" },
+    "human_owner": { "type": ["string", "null"] },
+    "terminal_implementable_after_setup": { "type": "boolean" },
+    "can_mock": { "type": "boolean" },
+    "mock_strategy": { "type": "string" },
+    "sandbox_available": { "type": "boolean" },
+    "production_required": { "type": "boolean" },
+    "approval_required": { "type": "boolean" },
+    "approval_state": {
+      "type": "string",
+      "enum": ["not_required", "pending", "approved", "rejected", "waived"]
+    },
+    "approval_ref": {
+      "type": ["string", "null"],
+      "description": "Pointer to approvals/<id>.yaml"
+    },
+    "required_env_vars": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "secret"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Env var name only. Never store the value here."
+          },
+          "description": { "type": "string" },
+          "required_for": { "type": "string" },
+          "secret": {
+            "type": "boolean",
+            "description": "If true, the value is sensitive and MUST NOT appear in this file."
+          }
+        }
+      }
+    },
+    "human_setup_steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "step": { "type": "string" },
+          "owner": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["not_started", "in_progress", "blocked", "done"]
+          },
+          "evidence_required": { "type": "string" }
+        }
+      }
+    },
+    "terminal_setup_steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "step": { "type": "string" },
+          "command_or_file": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["not_started", "in_progress", "blocked", "done"]
+          }
+        }
+      }
+    },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "blockers": { "type": "array", "items": { "type": "string" } },
+    "notes": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

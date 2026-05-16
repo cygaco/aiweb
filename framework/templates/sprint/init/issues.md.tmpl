@@ -1,0 +1,42 @@
+# Issues — {{project_name}}
+
+Human-readable issue ledger. The machine-readable companion is the
+per-issue YAML files under `.claude/project/sprint/issues/`. Both are
+kept in sync by `scripts/sprint/issue.js`.
+
+This file is intentionally lightweight. It exists so a human can scan
+recent issues without reading YAML. Use `/sprint:plan`, `/sprint:design`,
+or `/sprint:execute` to surface and promote issues to tickets.
+
+> Scope: PRODUCT issues — bugs, regressions, edge cases, deferred work,
+> rejected fixes — discovered while running sprints for **this** project.
+>
+> SYSTEM-level recurring issues (WarpOS framework, hooks, agent system)
+> still go to `paths.recurringIssuesFile` via `/issues:log`.
+
+## Open
+
+_(none yet — `/sprint:execute` will append entries here as it discovers issues)_
+
+## In progress
+
+_(none)_
+
+## Fixed / Verified
+
+_(none)_
+
+## Deferred / Abandoned
+
+_(none)_
+
+## Notes
+
+- Reopen rule: any issue can be reopened. The reopen is recorded in the
+  corresponding `issues/<id>.yaml#fix_attempts` + a new line in the
+  appropriate section here.
+- Bugfix rule: if a fix fails after 3 serious attempts, the issue must
+  be marked `deferred` or `abandoned` unless it blocks core flow.
+  Escalate via `/fix:deep`.
+- Cross-link rule: promoted-to-ticket issues carry a `→ T-…` reference
+  to the ticket file.

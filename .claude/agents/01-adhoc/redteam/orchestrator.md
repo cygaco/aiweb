@@ -4,8 +4,8 @@ description: Self-orchestrating Red Team scanner with 11 security personas acros
 tools: Read, Grep, Glob, Bash, Agent
 disallowedTools: Edit, Write
 model: sonnet
-provider: openai
-provider_model: gpt-5.4-mini
+provider: gemini
+provider_model: gemini-3.1-pro-preview
 provider_fallback: claude
 maxTurns: 60
 color: red

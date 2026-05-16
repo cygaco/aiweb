@@ -157,6 +157,26 @@ function ensureDir() {
   }
 }
 
+// ── Sprint context (v0.2) ───────────────────────────────
+//
+// Sprint Workflow v0.2 tags every event with `sprint_id` when one is
+// known. Resolution order:
+//   1. opts.sprint_id (explicit)
+//   2. process.env.WARPOS_SPRINT_ID
+//   3. null (event is sprint-agnostic — e.g. a Bash hook firing
+//      outside any sprint helper)
+//
+// AC-14.3: pre-existing rows without `sprint_id` keep parsing; readers
+// treat missing as null. No retro-fill.
+function resolveSprintId(opts) {
+  if (opts && typeof opts.sprint_id === "string" && opts.sprint_id.length > 0) {
+    return opts.sprint_id;
+  }
+  if (opts && opts.sprint_id === null) return null;
+  if (process.env.WARPOS_SPRINT_ID) return process.env.WARPOS_SPRINT_ID;
+  return null;
+}
+
 // ── Core: log() ─────────────────────────────────────────
 
 /**
@@ -164,7 +184,7 @@ function ensureDir() {
  *
  * @param {string} cat - Category: "prompt"|"audit"|"spec"|"modification"|"inbox"|"tool"|"decision"|"block"|"lifecycle"
  * @param {object} data - Category-specific payload
- * @param {object} [opts] - Overrides: { actor?, session?, id? }
+ * @param {object} [opts] - Overrides: { actor?, session?, id?, sprint_id? }
  */
 function log(cat, data, opts) {
   try {
@@ -177,6 +197,8 @@ function log(cat, data, opts) {
       session: (opts && opts.session) || getSessionId(),
       data: data || {},
     };
+    const sid = resolveSprintId(opts);
+    if (sid) event.sprint_id = sid;
     fs.appendFileSync(LOG_FILE, JSON.stringify(event) + "\n", "utf8");
 
     // Fan-out: write to category-specific file if mapped
@@ -219,7 +241,13 @@ function logEvent(type, actor, action, target, detail, meta) {
   if (meta && typeof meta === "object" && Object.keys(meta).length > 0) {
     data.meta = meta;
   }
-  log("audit", data, { actor: actor || "unknown" });
+  // Sprint context auto-picks from process.env.WARPOS_SPRINT_ID; callers
+  // inside a sprint helper can also pass meta.sprint_id to override.
+  const opts = { actor: actor || "unknown" };
+  if (meta && typeof meta.sprint_id === "string") {
+    opts.sprint_id = meta.sprint_id;
+  }
+  log("audit", data, opts);
 }
 
 // ── logLearning() — canonical write path for learnings.jsonl ────

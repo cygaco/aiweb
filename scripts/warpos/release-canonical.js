@@ -357,6 +357,47 @@ function stageRegenManifest(opts, canonical) {
 }
 
 // ── stage 5: capsule skeleton ─────────────────────────────
+// L-2026-05-14-env-flag-existing-install-migration:
+// Auto-detect migrations in migrations/<prior>-to-<version>/ so the release.json#migrations[]
+// list isn't silently empty when migration files exist on disk. Previously this field defaulted
+// to [] regardless of disk content — meaning a migration committed without manual release.json
+// edit silently never ran. /check:warpos-migration-presence guards the inverse (listed but
+// missing), but had no guard for the present-but-unlisted case.
+function detectMigrationsForRelease(canonical, version) {
+  const v = readJson(path.join(canonical, "version.json"));
+  const migrationsDir = path.join(canonical, "migrations");
+  if (!fs.existsSync(migrationsDir)) return [];
+  const toVersion = version;
+  // Collect every migrations/<fromPat>-to-<toVersion>/ dir (exact or wildcard fromPat).
+  // release-build.js validates paths with path.resolve(capsuleDir, m.file) and
+  // requires them to land inside <repo>/migrations/. capsuleDir is
+  // <canonical>/framework/releases/<version>/, so m.file must be relative
+  // FROM the capsule dir back to migrations/ — i.e. prefixed with `../../../`.
+  // Writing repo-relative paths (`migrations/...`) would resolve to
+  // <capsule>/migrations/... and trip the boundary check.
+  const capsuleDir = path.join(canonical, "framework", "releases", toVersion);
+  const out = [];
+  for (const entry of fs.readdirSync(migrationsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const m = entry.name.match(/^([\d.x]+)-to-(\d+\.\d+\.\d+)$/i);
+    if (!m) continue;
+    if (m[2] !== toVersion) continue;
+    const subdir = path.join(migrationsDir, entry.name);
+    for (const f of fs.readdirSync(subdir)) {
+      if (!f.endsWith(".js")) continue;
+      const absFile = path.join(subdir, f);
+      const relFromCapsule = path
+        .relative(capsuleDir, absFile)
+        .replace(/\\/g, "/");
+      out.push({
+        id: `${entry.name}/${f.replace(/\.js$/, "")}`,
+        file: relFromCapsule,
+      });
+    }
+  }
+  return out;
+}
+
 function buildSkeletonReleaseJson(canonical, version) {
   const v = readJson(path.join(canonical, "version.json"));
   return {
@@ -369,12 +410,20 @@ function buildSkeletonReleaseJson(canonical, version) {
     manifestSchema: v.frameworkManifestSchema || "warpos/framework-manifest/v2",
     pathRegistryVersion: (v.pathRegistrySchema || "").split("/").pop() || "v4",
     hooksRegistrySchema: v.hooksRegistrySchema || "warpos/hooks-registry/v1",
-    migrations: [],
+    migrations: detectMigrationsForRelease(canonical, version),
+    // SP-20260513-002 (T-20260513-020): provider-smoke is the terminal
+    // post-update check. Static literal — RT-4 disallows shell interpolation.
+    // SP-005 owns the orchestration in scripts/warpos/update.js; we declare
+    // the entry here as a standalone CLI invocation. When SP-005 exposes
+    // registerExternalCheck (scripts/warpos/postflight.js), provider-smoke
+    // can be migrated to register through that primitive; until then it
+    // continues to ride the postUpdateChecks array.
     postUpdateChecks: [
       "node scripts/paths/build.js --check",
       "node scripts/paths/gate.js",
       "node scripts/hooks/build.js --check",
       "node scripts/hooks/test.js",
+      "node scripts/warpos/provider-smoke.js --providers claude,openai,gemini",
     ],
     checksumsFile: "checksums.json",
   };

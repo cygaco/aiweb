@@ -1,0 +1,24 @@
+schema: warpos/sprint/ralph-progress/v1
+sprint: "{{sprint_id}}"
+ticket: "{{ticket_id}}"
+current_loop: 0
+phase: plan
+started_at: "{{started_at}}"
+updated_at: "{{updated_at}}"
+status: running
+completed_tasks: []
+remaining_tasks: []
+blockers: []
+failed_attempts: []
+last_checks:
+  ran_at: null
+  passing: []
+  failing: []
+next_action: "{{next_action}}"
+external_dependency_status: []
+stop_reason: null
+resume_instructions: |
+  Read this file. The current loop's `phase` indicates which Ralph step to
+  resume — plan, act, test, review, record, or checkpoint. If `status` is
+  `stopped_*`, do not auto-resume — investigate the `stop_reason` first.
+checkpoint_pointers: []

@@ -1,7 +1,7 @@
 {
   "$schema": "warpos/hook-manifest/v1",
   "generatedFrom": "framework/hooks.registry.json",
-  "updatedAt": "2026-05-04T18:33:45.502Z",
+  "updatedAt": "2026-05-14T00:28:07.868Z",
   "hooks": {
     "session-start.js": {
       "script": "scripts/hooks/session-start.js",
@@ -801,6 +801,140 @@
       "blocks": [],
       "testFixtures": [
         "fixtures/hooks/default/stop.json"
+      ],
+      "owner": "framework",
+      "fixturesRequired": true,
+      "enabled": true
+    },
+    "dispatch-route-guard.js": {
+      "script": "scripts/hooks/dispatch-route-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Bash"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [
+        "raw codex|gemini|claude prompt invocations from Bash"
+      ],
+      "testFixtures": [
+        "fixtures/hooks/default/bash-safe.json"
+      ],
+      "owner": "framework",
+      "fixturesRequired": true,
+      "enabled": true
+    },
+    "sprint-tracker-guard.js": {
+      "script": "scripts/hooks/sprint-tracker-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [
+        "malformed sprint yaml writes",
+        "edits to existing sprint-history files"
+      ],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ],
+      "owner": "framework",
+      "fixturesRequired": true,
+      "enabled": true
+    },
+    "sprint-approval-guard.js": {
+      "script": "scripts/hooks/sprint-approval-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Bash"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [
+        "release deploy without approval_ref",
+        "release deploy with pending approval",
+        "ESD --status integrated with pending approval"
+      ],
+      "testFixtures": [
+        "fixtures/hooks/default/bash-safe.json"
+      ],
+      "owner": "framework",
+      "fixturesRequired": true,
+      "enabled": true
+    },
+    "requirement-format-guard.js": {
+      "script": "scripts/hooks/requirement-format-guard.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-closed",
+      "blocks": [
+        "requirement markdown with malformed format"
+      ],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
+      ],
+      "owner": "framework",
+      "fixturesRequired": true,
+      "enabled": true
+    },
+    "authorization-gate.js": {
+      "script": "scripts/hooks/authorization-gate.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Bash"
+        },
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/bash-safe.json"
+      ],
+      "owner": "framework",
+      "fixturesRequired": true,
+      "enabled": true
+    },
+    "skill-invocation-tracker.js": {
+      "script": "scripts/hooks/skill-invocation-tracker.js",
+      "events": [
+        {
+          "hookEvent": "PreToolUse",
+          "matcher": "SlashCommand|Skill"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/bash-safe.json"
+      ],
+      "owner": "framework",
+      "fixturesRequired": true,
+      "enabled": true
+    },
+    "skill-catalog-regen.js": {
+      "script": "scripts/hooks/skill-catalog-regen.js",
+      "events": [
+        {
+          "hookEvent": "PostToolUse",
+          "matcher": "Edit|Write"
+        }
+      ],
+      "failMode": "fail-open",
+      "blocks": [],
+      "testFixtures": [
+        "fixtures/hooks/default/post-edit.json"
       ],
       "owner": "framework",
       "fixturesRequired": true,

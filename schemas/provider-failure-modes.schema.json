@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "warpos/provider-failure-modes/v1",
+  "title": "WarpOS Provider Failure-Mode Catalog v1",
+  "description": "Catalog mapping provider-health statuses to root_cause + safe_to_autofix + fix_recipe + remediation + fallback_allowed. Consumed by scripts/warpos/provider-smoke.js and scripts/warpos/lib/provider-rca.js. Authored as part of SP-20260513-002 (T-20260513-021).",
+  "type": "object",
+  "required": ["$schema", "version", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "warpos/provider-failure-modes/v1"
+    },
+    "version": { "type": "integer", "minimum": 1 },
+    "comment": { "type": "string" },
+    "known_providers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Providers this catalog applies to. provider-smoke.js loads known_providers from here to replace its hard-coded list."
+    },
+    "severity_buckets": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Maps severity labels to lists of status strings. yellow is the standard non-blocking bucket; everything not in 'ok' or yellow is red."
+    },
+    "entries": {
+      "type": "object",
+      "description": "Map from provider-health status string to a CatalogEntry.",
+      "additionalProperties": { "$ref": "#/definitions/CatalogEntry" }
+    }
+  },
+  "definitions": {
+    "CatalogEntry": {
+      "type": "object",
+      "required": [
+        "status",
+        "root_cause",
+        "safe_to_autofix",
+        "fix_recipe",
+        "remediation",
+        "fallback_allowed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string" },
+        "root_cause": { "type": "string" },
+        "safe_to_autofix": { "type": "boolean" },
+        "fix_recipe": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["kind"],
+              "properties": {
+                "kind": { "type": "string" },
+                "env": { "type": "object" },
+                "scope": { "type": "string", "enum": ["process", "shell"] },
+                "max_retries": { "type": "integer", "minimum": 0 },
+                "note": { "type": "string" }
+              }
+            }
+          ]
+        },
+        "remediation": { "type": "string" },
+        "fallback_allowed": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -21,10 +21,10 @@ You dispatch builders by phase, run parallel gauntlets (reviewer + compliance + 
 ## On startup
 
 Read these documents FIRST, in order:
-1. `AGENTS.md` — agent system overview
-2. `PROJECT.md` — project-specific context
-3. `.claude/agents/02-oneshot/.system/protocol.md` — your operating protocol
-4. **MANDATORY:** `.claude/agents/.system/guides/agent-dispatch-guide.md` — canonical dispatch reference. Skipping this leads to known failure modes: `claude -p` Windows-stdin bug (LRN-2026-04-17-n), wrong output-dir convention, missed `delta-aggregate-reviews.js`. Read once at startup; the rules apply for every dispatch in the run.
+1. **`paths.agentDispatchGuide` (`.claude/project/reference/agent-dispatch-guide.md`)** — mandatory before any build-chain dispatch. Enumerates forbidden raw-provider patterns blocked by the dispatch-route-guard PreToolUse hook (LRN-2026-04-17 Windows-stdin, LRN-2026-04-30 binding-gap).
+2. `AGENTS.md` — agent system overview
+3. `PROJECT.md` — project-specific context
+4. `.claude/agents/02-oneshot/.system/protocol.md` — your operating protocol
 5. Per-role dispatch prompts live in each agent's `.md` body and are constructed inline by `scripts/delta-build-*.js`; there is no aggregate prompt file to read.
 6. All sibling files in `.claude/agents/02-oneshot/.system/`:
    - `store.json` — current build state
@@ -126,7 +126,7 @@ rm -f "$PROMPT_FILE"
 | `compliance` | openai | gpt-5.5 (`OPENAI_FLAGSHIP_MODEL`) | xhigh |
 | `learner` | openai | gpt-5.5 (`OPENAI_FLAGSHIP_MODEL`) | xhigh |
 | `qa` | openai | gpt-5.4-mini (`OPENAI_MINI_MODEL`; cost-balanced) | medium |
-| `redteam` | gemini | gemini-3.1-pro | implicit (always-on thinking on pro tier) |
+| `redteam` | gemini | gemini-3.1-pro-preview | implicit (always-on thinking on pro tier) |
 
 Why: same-model review is blind to shared failure modes. GPT reviews Claude's output with a different lens; Gemini's adversarial corpus makes it stronger on security.
 

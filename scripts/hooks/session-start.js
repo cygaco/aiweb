@@ -324,6 +324,20 @@ process.stdin.on("end", () => {
         /* systems nudge is optional */
       }
 
+      // Phase 0 workstream C: eager prune of dispatch concurrency locks
+      // whose owning PID is no longer alive. Lazy prune in concurrency-lock.js
+      // only runs at acquire time; a long idle gap can leave dead locks until
+      // the next dispatch attempt. Best-effort, fail-open.
+      try {
+        const { pruneDeadLocks } = require("./lib/concurrency-lock");
+        const sum = pruneDeadLocks();
+        if (sum.dead > 0) {
+          checks.push(`Dispatch locks: pruned ${sum.dead} dead PID lock(s)`);
+        }
+      } catch {
+        /* prune is non-blocking */
+      }
+
       // Prune old session/instance log directories (keep last 5)
       // Dirs are named "s-{sid}_{iid}" (new) or "s-{sid}" (legacy)
       try {
@@ -349,33 +363,72 @@ process.stdin.on("end", () => {
       }
     }
 
+    // ── Adhoc team-marker freshness (Phase 0 workstream I) ────────────
+    // .claude/runtime/.team-marker is touched by /mode:adhoc step 6.
+    // When it is older than 24h, alert the operator so they can decide
+    // whether to refresh the team.
+    let teamMarkerWarning = "";
+    if (source === "startup" || source === "clear") {
+      try {
+        const marker = path.join(runtimeDir, ".team-marker");
+        if (fs.existsSync(marker)) {
+          const st = fs.statSync(marker);
+          const ageHrs = (Date.now() - st.mtimeMs) / 3_600_000;
+          if (ageHrs > 24) {
+            teamMarkerWarning =
+              "ADHOC TEAM STATE — Team marker is " +
+              Math.round(ageHrs) +
+              "h old. If the adhoc team is still around, classify it " +
+              "before dispatch (see /mode:adhoc step 1.75). Reuse only " +
+              "when fresh; refresh on stale; force-recreate on defunct.";
+          }
+        }
+      } catch {
+        /* marker check is non-blocking */
+      }
+    }
+
+    // ── Mandatory agent-dispatch-guide reference (Phase 0 workstream D) ──
+    // Always injected on cold start, regardless of handoff state. Compact —
+    // just the path + the one-line forbidden-pattern reminder. The full guide
+    // lives at paths.agentDispatchGuide and Gamma/Delta read it themselves.
+    let dispatchReference = "";
+    if (source === "startup" || source === "clear") {
+      dispatchReference =
+        "MANDATORY REFERENCE — Build-chain dispatch must use " +
+        "`node scripts/dispatch-agent.js <role> <prompt-file>` (or the " +
+        "documented `claude -p --agent <role>` Claude fallback). Raw " +
+        "`codex exec` / `gemini -p` / `cat … | codex|gemini|claude` " +
+        "calls from Bash are blocked by the dispatch-route-guard hook " +
+        "(LRN-2026-04-17 Windows-stdin, LRN-2026-04-30 binding-gap). Full " +
+        "rules: .claude/project/reference/agent-dispatch-guide.md " +
+        "(paths.agentDispatchGuide).";
+    }
+
     // ── Inject context into model ──────────────────────────
-    // Always-included references (load every session, before handoff/sleep)
-    let ctx = "";
-    const dispatchGuidePath = path.join(
-      claudeDir,
-      "agents",
-      ".system",
-      "guides",
-      "agent-dispatch-guide.md",
-    );
-    if (fs.existsSync(dispatchGuidePath)) {
-      ctx += `MANDATORY REFERENCE — agent-dispatch-guide.md\n\n`;
-      ctx += `Path: ${dispatchGuidePath}\n`;
-      ctx += `Status: load BEFORE any build-chain dispatch (builder/fixer/reviewer/compliance/qa/redteam/learner). `;
-      ctx += `Skipping it leads to known failure modes: \`claude -p\` Windows-stdin bug (LRN-2026-04-17-n), wrong output-dir convention, missed delta-aggregate-reviews.js. `;
-      ctx += `Read it at session start if you anticipate dispatching agents this session.\n\n`;
-    }
-    if (handoffContext) {
-      ctx += `PREVIOUS SESSION HANDOFF (auto-loaded):\n\n${handoffContext}\n\n`;
-    }
-    if (sleepContext) {
-      ctx += `OVERNIGHT SLEEP CYCLE RESULTS:\n\n${sleepContext}\nThe system ran a sleep cycle since your last session. Review the findings above. Dream solutions are speculative — verify before acting on them.\n\n`;
-    }
-    if (systemsNudge) {
-      ctx += `\n${systemsNudge}\n`;
-    }
-    if (ctx) {
+    if (
+      handoffContext ||
+      sleepContext ||
+      systemsNudge ||
+      dispatchReference ||
+      teamMarkerWarning
+    ) {
+      let ctx = "";
+      if (handoffContext) {
+        ctx += `PREVIOUS SESSION HANDOFF (auto-loaded):\n\n${handoffContext}\n\n`;
+      }
+      if (sleepContext) {
+        ctx += `OVERNIGHT SLEEP CYCLE RESULTS:\n\n${sleepContext}\nThe system ran a sleep cycle since your last session. Review the findings above. Dream solutions are speculative — verify before acting on them.\n\n`;
+      }
+      if (systemsNudge) {
+        ctx += `\n${systemsNudge}\n`;
+      }
+      if (dispatchReference) {
+        ctx += `\n${dispatchReference}\n`;
+      }
+      if (teamMarkerWarning) {
+        ctx += `\n${teamMarkerWarning}\n`;
+      }
       ctx +=
         "Use this context to continue seamlessly. Do not ask the user to recap — you already have the state.";
       process.stdout.write(

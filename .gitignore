@@ -39,3 +39,14 @@ a2a-test-messages.txt
 
 # WarpOS update transaction records (local rollback bundles)
 .warpos/
+
+# WarpOS update scratch (dry-run reports, tmp writes)
+wu.json
+wu.json.tmp
+
+# Per-session debug scratchpads under scripts/
+scripts/_tmp-*.js
+
+# Git worktrees created by isolation:worktree agent dispatches
+.worktrees/
+.claude/worktrees/

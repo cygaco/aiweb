@@ -10,9 +10,12 @@
 
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
 const { execSync } = require("child_process");
 const { printHumanReport } = require("./report-format");
+// SP-20260514-001 R-1 / T-20260514-069 — capsule artifact checksums use
+// rawHash (binary-safe). Capsule contents (manifest, migrations) are
+// byte-equality content-addressed; LF normalization would be incorrect here.
+const cHash = require("./lib/content-hash");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const RELEASES_DIR = path.join(REPO_ROOT, "framework", "releases");
@@ -23,8 +26,7 @@ const FRAMEWORK_MANIFEST = path.join(
 );
 
 function sha256File(filePath) {
-  const buf = fs.readFileSync(filePath);
-  return crypto.createHash("sha256").update(buf).digest("hex");
+  return cHash.rawHash(filePath);
 }
 
 function gitHead() {
@@ -166,7 +168,8 @@ function buildCapsule(version, opts) {
       whatWasRejected: "Checksum drift would have been rejected.",
       whatWasTested: `${Object.keys(checksums).length} capsule and migration checksum entries`,
       needsHumanDecision: "None.",
-      recommendedNextAction: "Run node scripts/warpos/release-gates.js before tagging.",
+      recommendedNextAction:
+        "Run node scripts/warpos/release-gates.js before tagging.",
     });
     return { ok: true, version, files: Object.keys(checksums).length };
   }
@@ -187,7 +190,8 @@ function buildCapsule(version, opts) {
     whatChanged: `Updated manifest snapshot and checksums for ${version}.`,
     why: "Release capsules give /warp:update a deterministic source manifest, migrations, and integrity checks.",
     risksRemaining: "Release gates still need to pass before publishing.",
-    whatWasRejected: "Migration paths outside migrations/ were rejected before checksums.",
+    whatWasRejected:
+      "Migration paths outside migrations/ were rejected before checksums.",
     whatWasTested: `${Object.keys(checksums).length} capsule and migration checksum entries`,
     needsHumanDecision: "Review changelog and upgrade notes before tagging.",
     recommendedNextAction: "Run node scripts/warpos/release-gates.js.",
