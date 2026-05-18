@@ -16,15 +16,88 @@ process.stdin.on("end", () => {
 
     // Skip .env files — they're supposed to have secrets
     if (/\.env(\.|$)/i.test(filePath)) process.exit(0);
+    // Skip .env example files — they hold placeholder values by convention
+    if (/\.env\.(example|local\.example|sample)$/i.test(filePath))
+      process.exit(0);
+    // Skip framework checksum / hash artifact files — 64-hex strings here
+    // are SHA-256 digests of canonical content, not secrets. SP-20260518
+    // secret-leak post-mortem: must allow hash files OR the generic
+    // 64-hex detector below blocks the whole framework release flow.
+    if (/framework[\\/]releases[\\/].*checksums\.json$/i.test(filePath))
+      process.exit(0);
+    if (/requirements\.graph\.json$/i.test(filePath)) process.exit(0);
+    if (/\.shasum$|integrity\.json$/i.test(filePath)) process.exit(0);
+    // Skip *.template / *.sample / *.example files — these hold placeholders
+    // (REPLACE_WITH_YOUR_KEY, YOUR_KEY_HERE, etc.) by convention. The .cmd
+    // wrapper has both forms — the .template tracked in git, the populated
+    // .cmd gitignored.
+    if (/\.(template|sample|example)$/i.test(filePath)) process.exit(0);
+
+    // Placeholder-value short-circuit. A token like REPLACE_WITH_YOUR_KEY
+    // or YOUR_KEY_HERE is not a secret even when assigned to a *_KEY var.
+    // Applies before the secretPatterns scan; if the content has NO real
+    // hex/b64 looking values, exit clean.
+    const PLACEHOLDER =
+      /(REPLACE_WITH|YOUR_[A-Z_]*KEY|YOUR_[A-Z_]*SECRET|YOUR_[A-Z_]*TOKEN|your_[a-z_]*key_here|generate-with-|<[A-Z_]+>|\$\{[A-Z_]+\}|%[A-Z_]+%)/;
 
     // Patterns that indicate leaked secrets
     const secretPatterns = [
+      // ── Project-specific named secrets ────────────────────────────
+      // SP-20260518 leak: WARP_MCP_KEY=<64hex> was committed in
+      // scripts/one-off/aiweb-pizza-mcp.cmd; no prior pattern matched
+      // because none of the rules below referenced WARP_MCP_KEY by name
+      // and the generic "password|secret" rule required those literal
+      // words in the variable name.
+      {
+        pattern: /WARP_MCP_KEY\s*[:=]\s*['"]?[A-Za-z0-9+/=_-]{16,}/,
+        name: "WARP_MCP_KEY assignment (aiweb bearer)",
+      },
+      {
+        pattern: /PROFILE_ENCRYPTION_SECRET\s*[:=]\s*['"]?[A-Fa-f0-9]{32,}/,
+        name: "PROFILE_ENCRYPTION_SECRET (32+ hex)",
+      },
+      {
+        pattern: /BLAND_API_KEY\s*[:=]\s*['"]?(?!your_)[A-Za-z0-9_-]{16,}/,
+        name: "BLAND_API_KEY assignment",
+      },
+      {
+        pattern: /GOOGLE_PLACES_API_KEY\s*[:=]\s*['"]?AIzaSy[A-Za-z0-9_-]{20,}/,
+        name: "GOOGLE_PLACES_API_KEY (AIzaSy prefix)",
+      },
+      // ── Windows .cmd / .bat set syntax ───────────────────────────
+      // Catches `set "FOO_KEY=<32+hex>"` patterns (cmd.exe convention).
+      {
+        pattern: /set\s+"?[A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN)=[A-Fa-f0-9]{32,}/,
+        name: "Windows .cmd set KEY=<32+hex>",
+      },
+      // ── Generic high-entropy detector for assignment context ────
+      // Catches any *_KEY / *_SECRET / *_TOKEN env-var or quoted
+      // assignment whose RHS is a 32+-char hex blob. Skip-files above
+      // exempt legitimate hash artifacts.
+      {
+        pattern:
+          /[A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN)\s*[:=]\s*['"]?[A-Fa-f0-9]{32,}/,
+        name: "Generic *_KEY / *_SECRET / *_TOKEN with 32+ hex value",
+      },
+      // ── Standalone prefix-based detectors (no var-name context) ─
+      // Catch keys that are pasted as literals into source/docs/tests,
+      // not just as `FOO=value` assignments. These vendor prefixes are
+      // distinctive enough that false-positive risk is near zero.
+      {
+        pattern: /AIzaSy[A-Za-z0-9_-]{33}/,
+        name: "Google API key (AIzaSy prefix, standalone)",
+      },
+      {
+        pattern: /sk-ant-api03-[A-Za-z0-9_-]{40,}/,
+        name: "Anthropic API key (sk-ant-api03- standalone)",
+      },
+      // ── Existing patterns (preserved) ────────────────────────────
       {
         pattern: /(?:sk|pk)-[a-zA-Z0-9_-]{20,}/,
         name: "API key (sk-/pk- prefix)",
       },
       {
-        pattern: /ANTHROPIC_API_KEY\s*=\s*['"]?sk-/,
+        pattern: /ANTHROPIC_API_KEY\s*=\s*['"]?sk-(?!ant-\.\.\.)/,
         name: "Anthropic API key assignment",
       },
       {
