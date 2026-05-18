@@ -1,195 +1,227 @@
-# Jobzooka — Project Context
+# The AI Web — Wave 00 — Project Context
 
-> Product-specific context for the Jobzooka project. For framework instructions, see [CLAUDE.md](CLAUDE.md).
+> Product-specific context. For framework instructions, see [CLAUDE.md](CLAUDE.md). For the agent system, see [AGENTS.md](AGENTS.md).
 
 ## Product
 
-**Jobzooka** — Job search assistant: resume to targeted resumes, LinkedIn content, form answers, auto-apply. Guided onboarding plus dashboard, Next.js 16 + React 19 + TypeScript, Chrome extension for LinkedIn Easy Apply.
+**The AI Web (Wave 00)** — An agent says "order me a pizza," a real pizza gets ordered. We are not building yet another delivery app; we are building the surface where any MCP-aware agent (Claude Desktop, Claude API, etc.) can place a real order at a real restaurant by having an AI voice agent (Bland.ai) call them on the user's behalf. Cash on delivery, no credit cards, no bot-detection problems, no restaurant onboarding required.
 
-### UX Flow (shipped router)
+**Pre-launch alpha. Pre-revenue.** See `README.md` "Known launch-readiness gaps" for the unflinching list.
 
-- **Step 0**: Intro or returning-user hub
-- **Steps 1-3**: `OnboardingPage.tsx` — resume upload, preferences, profile verify
-- **Steps 4-5**: `AimPage.tsx` — search queries, Bright Data scrape, two-phase market analysis, category lock
-- **Step 6**: `ReadyPage.tsx` — current shipped Deep-Dive Q&A host; target state moves this to the dashboard
-- **Step 7**: `Step8Skills.tsx` — skills curation
-- **Step 8+**: `Dashboard.tsx` — Command Console, Resumes, LinkedIn, Auto-Apply
+### The pitch in three sentences
 
-Target-state specs move Deep-Dive Q&A to the dashboard and shorten required onboarding. Until that skeleton rebuild lands, use `src/app/page.tsx` and `src/lib/constants.ts` as the shipped routing authority.
+1. An LLM calls our MCP tools (`start_pizza_order`, `prepare_order`, `place_order`, `update_order`, `check_order_status`).
+2. We discover restaurants via Domino's API + Google Places, voice the order through Bland.ai, and parse the call transcript for confirmation.
+3. The user pays the driver in cash.
 
-## Architecture & Key Files
+### Surfaces
 
-### Architecture
+| Surface | Entry | Auth | Use |
+|---|---|---|---|
+| **MCP stdio** | `src/stdio.ts` (`node dist/stdio.js`) | Single-user-per-process | Claude Desktop via direct config or `mcp-remote` bridge |
+| **HTTP /mcp** | `src/http.ts` → `src/server.ts` | Bearer `WARP_MCP_KEY` | Remote MCP callers (mcp-remote, web clients) |
+| **A2A JSON-RPC** | `src/a2a/server.ts` → `src/a2a/executor.ts` | Bearer | Agent-to-agent protocol surface |
+| **Webapp** | `webapp/app/` (Next.js, port 3001) | Bearer cookie | Browser chat UI; calls `/api/chat` which proxies to MCP |
 
-- **Framework**: Next.js 16.2.3 (Turbopack), React 19, TypeScript
-- **Hosting**: Vercel (Hobby plan — 60s function timeout)
-- **AI**: Claude API via `/api/claude` route (server-side, key never exposed)
-- **Job Data**: Bright Data LinkedIn Jobs Scraper API via `/api/jobs` route
-- **Auth**: Canonical primitives in `packages/shared/auth.ts`; v3 specs move auth routes to the dedicated backend
-- **Payments**: Stripe config/status route in this app; checkout/webhook move to backend per v3 specs
-- **Rate Limiting**: Upstash Redis (`@upstash/ratelimit`)
-- **Storage**: Encrypted localStorage (AES-GCM via Web Crypto API) + Redis server sessions
-- **Styling**: CSS custom properties (dark corporate theme), Tailwind for base reset only
+The MCP, A2A, and webapp surfaces share the same lib code (cart-flow, compatibility, menu-discovery, presets) and the same Bland connector. **Lockstep rule:** narration phrases in `start_pizza_order` tool descriptions are mirrored in `webapp/app/api/chat/route.ts` and `src/a2a/executor.ts` — see `tests/narration-parity.test.ts`.
 
-### Core Logic (`src/lib/`)
+## Architecture
 
-- `prompts.ts` — All Claude prompt templates (server-only)
-- `api.ts` — Client-side API helpers (`callClaude`, `fetchJobs`)
-- `types.ts` — All TypeScript interfaces
-- `constants.ts` — Phase/step definitions, PHASE_DISPLAY, `getScreen()`
-- `storage.ts` — Encrypted session persistence (AES-GCM)
-- `utils.ts` — Data processing (`preprocessMarketData`, `buildMarketSummary`, `extractHourlyRates`, `buildMarketPrepPayload`)
-- `pipeline.ts` — Pipeline tracer (`[PIPELINE]` log prefix)
-- `validators.ts` — Input sanitization and validation
-- `competitiveness.ts` — 0-100 competitiveness scoring algorithm
-- `rockets.ts` — Rocket credit economy (costs, packs, atomic debit via Lua script)
-- `api-rate-limit.ts` — Shared API route rate-limit helper
-- `rate-limit-fallback.ts` — Dev-only in-memory rate-limit fallback
-- `csrf.ts` — Legacy CSRF origin validation surface
-- `download-helpers.ts` — File download utilities (blob triggers, ZIP bundling)
-- `upload.ts` — Resume file upload handling
-- `dummy-data.ts` — `buildDummySession(step)` for testing
-- `test-harness.ts` — QA test suite runner
-- `deus-mechanicus.ts` — Product-agnostic manifest interfaces
-- `deus-mechanicus-jobzooka.ts` — Jobzooka manifest factory + test suites
-- `warp-profiles.ts` — Cross-product profile schema, CRUD, converters
+### Stack
 
-### Shared Packages (`packages/shared/`)
+- **Runtime:** Node.js 20+, TypeScript 5.4 (strict), built with `tsc` → `dist/`
+- **Servers:** `@modelcontextprotocol/sdk` (MCP), `@a2a-js/sdk` (A2A), Express 5 (HTTP transport)
+- **Validation:** Zod 3
+- **AI:** Anthropic SDK (`@anthropic-ai/sdk`) for menu extraction (Claude Haiku 4.5)
+- **Voice:** Bland.ai REST API
+- **Discovery:** Google Places API (New) v1
+- **Live menu source:** Domino's locator + store-menu APIs
+- **Storage:** `better-sqlite3` for stdio-mode single-user profile state; Fly volume mount in prod
+- **Hosting:** Fly.io (`aiweb-mcp` app, `sjc` region, 512MB shared-cpu, 8080 internal)
+- **Webapp:** Next.js 15 + React 19 (in `webapp/`, separate package)
 
-- `auth.ts` — JWT creation/verification, password hashing, session/user/OAuth-state helpers
-- `apply-template.ts` — Chrome prompt builder (code-assembled)
-- `docx-generator.ts` — Resume DOCX file generation
-- `pdf-generator.ts` — Resume PDF file generation
+### Tools (MCP surface)
 
-### Components
+| Tool | Purpose | When the agent calls it |
+|---|---|---|
+| `start_pizza_order` | Find restaurants near an address; assess delivery / coverage / item compatibility; rank candidates; optionally enrich top-1 caution menu | First — when the user expresses pizza intent |
+| `update_order` | Apply cart diffs (add/remove/swap to deal); reflect modifiers and surcharges | Mid-cart adjustments before checkout |
+| `prepare_order` | Issue a server-signed `confirmation_token` binding restaurant+cart+customer fields (10 min TTL) | Right before `place_order`; gates fabricated cart shapes |
+| `place_order` | Build Bland prompt, dispatch the call | After user confirms; rejects calls without a valid token when `REQUIRE_CONFIRMATION_TOKEN` is set |
+| `check_order_status` | Poll Bland call status, parse the transcript for confirmation/total/ETA | After `place_order`; loop until the call concludes |
 
-- `src/components/DeusMechanicus.tsx` — Dev tools hub shell
-- `src/components/pages/` — Composite pages (OnboardingPage, AimPage, ReadyPage)
-- `src/components/steps/` — Step components (Step1Resume through Step13Apply)
-- `src/components/ui/` — Atomic UI components (Btn, Card, Inp, Sel, etc.)
-- `src/app/page.tsx` — Main wizard orchestrator
+Plus two read-only utilities surfaced via HTTP only:
+- `GET /healthz` — Fly health check
+- `GET /` — landing index linking `/tos` + `/privacy`
 
-### API Routes (`src/app/api/`)
-
-- `claude/` — Claude LLM endpoint (rate-limited, rocket billing)
-- `jobs/` — Bright Data job scraper (trigger, poll, results)
-- `rockets/grant/` — Legacy rocket grant endpoint during backend cutover work
-- `stripe/config/` — Safe Stripe configuration status (`{configured}`)
-- `test/` — Health & diagnostic checks (env-gated)
-
-### Extension
-
-Chrome extension in `extension/`. Manifest V3, LinkedIn Easy Apply automation. Files: `manifest.json`, `background.js`, `content.js`, `popup.html/css/js`.
-
-### Deus Mechanicus (Dev Tools Hub)
-
-Accessible via `/?dummyplug` or `/?deusmechanicus`. Protected by `NEXT_PUBLIC_DUMMY_PLUG_CODE` env var.
-
-**CRITICAL**: `<DeusMechanicus>` wraps the entire app tree as a React context provider. Do NOT refactor it into a sibling — it must be the outermost wrapper so any child can call `useDM()`.
-
-Modules: **DUMMY PLUG** (Warp Profiles), **QA SUITE** (test runner). Step definitions derived from `PHASE_DISPLAY` in `constants.ts` — single source of truth.
-
-### Bright Data Integration
-
-- **Dataset**: `gd_lpfll7v5hcqtkxl6l` (LinkedIn Jobs Scraper, discovery mode)
-- **Flow**: POST trigger, poll progress, GET snapshot
-- **Valid `job_type`**: `"Full-time"`, `"Part-time"`, `"Contract"`, `"Temporary"`, `"Internship"`, `"Volunteer"`, `"Other"` (case-sensitive)
-- **Valid `remote`**: `"Remote"` (capital R)
-- Full BD docs in `docs/brightdata/`
-
-**Known Issues (2026-03-18):** BD returns annual salaries for contract roles, thin data yield for non-FT types, hourly rates extracted via regex (`extractHourlyRates()`).
-
-**Two-Phase Market Pipeline:** MARKET_PREP (raw to intelligence report), MARKET (report to analysis). Fallback: skip MARKET_PREP if it fails.
-
-### Pipeline Tracing
-
-Stages: `USER_INPUT`, `QUERY_GEN`, `BD_TRIGGER`, `BD_POLL`, `BD_RESULTS`, `MARKET_PREP_INPUT`, `MARKET_PREP_OUTPUT`, `MARKET_INPUT`, `MARKET_OUTPUT`, `RESUME_INPUT`, `RESUME_OUTPUT`
-
-## Specs, Agents, & Docs
-
-### Product Spec Pipeline
-
-Specs top-down: PRDs, HL Stories, Granular Stories, COPY. All 13 features at each layer.
+### Library layout
 
 ```
-_requirements/04-features/{feature-slug}/
-  PRD.md, HL-STORIES.md, STORIES.md, COPY.md  — all 13 features complete
+src/
+├── server.ts            # MCP tool definitions (registers all 5 tools)
+├── stdio.ts             # MCP stdio entrypoint (single-user-per-process)
+├── http.ts              # HTTP entrypoint (Express + /mcp transport + bearer auth)
+├── a2a/
+│   ├── server.ts        # A2A JSON-RPC server
+│   ├── executor.ts      # A2A intent executor (mirrors MCP tool semantics)
+│   └── agent-card.ts    # A2A capability advertisement
+├── connectors/
+│   ├── bland.ts         # Bland.ai prompt builder + call dispatch + status parsing
+│   ├── places.ts        # Google Places (New) v1 discovery (progressive 5→15→30 mi)
+│   └── dominos.ts       # Domino's locator + store-menu
+├── data/
+│   └── restaurants.ts   # Restaurant model + PIZZA_CUISINE_DEFAULTS + test fixtures
+└── lib/
+    ├── compatibility.ts # Per-restaurant verdict (go|caution|no_go) — three checks
+    ├── menu-discovery.ts# Website crawl + Haiku extraction + Maps URI hop + cache
+    ├── menu-taxonomy.ts # FoodMenu enums (cuisine, allergen, dietary)
+    ├── cart.ts          # Cart + Drink + Deal + ModifierGroup types
+    ├── cart-flow.ts     # Cart diffs, narration-total-unknown, on-menu predicates
+    ├── presets.ts       # COLD_PRESETS, orderFromIntent, pizzasNeeded (3/8 rule)
+    ├── confirmation-token.ts # Signed token issue + verify
+    ├── profile-store.ts # stdio-mode SQLite profile store
+    ├── address-speech.ts# Address phonetic normalization for Bland's TTS
+    ├── brand-portfolios.ts # "Coke" → Coca-Cola brand resolution
+    ├── geo.ts           # Geocoding (Places) + haversine
+    └── event-log.ts     # Append-only product-event log (runtime/events.jsonl)
 ```
 
-**PRD Section Order:** 1-3: Title, Screen, Context. 4: JTBD. 5: Emotional Framing. 6: Goals. 7: Assumptions. 8: Feature Description. 9-16: Deps, Rockets, Comp, UI, Impl Map, Test, OOS, Decisions
+Plus a Next.js webapp in `webapp/` that proxies user chat to the MCP server.
 
-**Platform Neutrality:** JTBD, Emotional Framing, Goals, and HL Stories are platform-neutral. Exception: features whose scope IS a platform (extension, auto-apply) may use platform language in JTBD/Goals.
+### Two event streams (do not conflate)
 
-**Agentic Story Metadata:** Every granular story has `Depends on:`, `Data:`, `Entry state:`, `Verifiable by:`, `Inherits:`, and optional `<!-- parallel-safe -->`.
+- `runtime/events.jsonl` — product-app events (compatibility outcomes, enrichment ran/source/duration, branch decisions in `start_pizza_order`). Written by `src/lib/event-log.ts`. Mined for product behavior analysis.
+- `.claude/project/events/events.jsonl` (`paths.eventsFile`) — framework/Alpha meta-events (tool calls, hook fires, agent dispatches). Mined for `/learn:deep`, `/issues:scan`, etc.
 
-**Regen Gap Docs** (`_requirements/03-architecture/`): PROMPT_TEMPLATES, DESIGN_TOKENS, VALIDATION_RULES, AUTH_SCHEMAS, EXTENSION_SPEC, ERROR_RECOVERY, FLOW_SPEC, AGENT_GUIDE.
+See `LRN-2026-05-18-paths-json-drift` — these are independent by design.
 
-### Agent System
+## Honesty walls — what we never fabricate
 
-See [AGENTS.md](AGENTS.md) for the full agent system router. Key references:
-- `.claude/agents/alex/` (alpha.md, beta.md, gamma.md)
-- `.claude/agents/.system/agent-system.md` (operational spec)
-- `.claude/agents/general/` (builder, evaluator, fix-agent, auditor, qa, security, compliance)
+The product has a hard rule: **the agent never voices items, prices, sizes, or commitments it cannot back with evidence.** The compatibility layer + menu-honesty hotfixes enforce this server-side:
 
-**After every agent run:** Create `retro/{NN}/` with RETRO.md, BUGS.md, LEARNINGS.md, HYGIENE.md.
+- `places_*` restaurants without successful enrichment expose `menu_known: false` + empty `menuSummary` and an explicit `menu_unavailable_note` (`server.ts:830`).
+- `cartNarrationTotalUnknown` flags carts whose base price is 0 / unknown so the narration suppresses dollar amounts.
+- The compatibility 4-conjunct guard (`compatibility.ts:921`) escalates "caution-all-unknown after enrichment attempt" to `no_go + verdict_tier=enrichment_failed`.
+- `isPrimaryGeneric → fallback_discovery` (`server.ts:958`) refuses to build a `suggested_order` from generic-template menus for vague-intent openers.
 
-**Bug fix triage:** Typo = BUGS only. Pattern bug = BUGS + HYGIENE. Process bug = BUGS + HYGIENE + RETRO. Only log verified fixes.
+The most recent reference document on what the underlying menu-data ecosystem actually permits: `.claude/project/reference/google-menu-apis-survey-2026-05.md` (no public Google API returns structured menus to third-party callers; website scraping is the only primary path).
 
-### Decision Log
+## Specs, sprints, retros
 
-PostToolUse hook (`edit-watcher.js`) auto-logs spec edits to `paths.eventsFile` (category: `spec`). Run `node scripts/materialize-decisions.js` to generate a human-readable view.
+### Where specs live
+
+- `_requirements/_index/` — index files
+- `_requirements/00-canonical/` — canonical specs + STEPS.json
+- `_requirements/03-architecture/` — architecture-level specs
+- `_requirements/04-features/{slug}/` — per-feature PRD, stories, COPY
+
+### Sprint workflow
+
+- `/sprint:plan` → Plan Contract under `.claude/runtime/sprints/<SP-ID>/` (durable, crash-recoverable)
+- `/sprint:design` → PRD + stories + COPY + INPUTS + TRACE + acceptance criteria → tickets
+- `/sprint:execute` → Ralph-style plan/act/test/review/record/checkpoint loops per ticket
+- `/sprint:release` → final checks + deploy gate + release notes + rollback prep
+- `/sprint:retrospective` → post-sprint synthesis (idempotent, fail-open)
+
+Active and recent sprints (`_docs/sprints/` and tracker artifacts):
+
+| ID | Scope | Status |
+|---|---|---|
+| SP-20260512-001 | Menu honesty — block agent from voicing fabricated menu items | shipped |
+| SP-20260512-002 | Compatibility layer — per-restaurant verdict + sort + item_map | shipped |
+| SP-20260514-001 | Profile-security — remove network-reachable profile surface | shipped |
+| SP-20260514-002 | Golden-path harness — `npm run test:golden`, 3 scenarios, 2 surfaces | shipped |
+| SP-20260514-003 | MVP must-haves — `EMERGENCY_DISABLE_BLAND`, `/tos` + `/privacy`, MCP GET index | shipped |
+| SP-20260514-004 | A2A harness redesign | shipped |
+| SP-20260517-005 | Menu discovery R-2 (multi-page) / R-5 (Maps URI hop) / R-8 (FoodMenu enums) | shipped + post-deploy hotfix |
+
+### Open follow-ups
+
+- **`ai-web-debug-01`** (2026-05-18) — menu discovery returns 20 restaurants but verifies 0 menus on real-world SF queries. Capability ceiling + framing-error analysis logged at `RT-006` in `.claude/project/memory/traces.jsonl`.
+- **`I-20260514-001`** — A2A surface harness depth (executor is stateful, not per-tool dispatcher).
+- **`MVP-P0-INVENTORY.md`** — full P0/P1/P2 inventory at `_docs/launch/MVP-P0-INVENTORY.md`.
+- **Secret-leak incident (2026-05-18)** — `WARP_MCP_KEY` was committed in `scripts/one-off/aiweb-pizza-mcp.cmd` from May 2 → May 18 on a public GitHub repo. Mitigation: Fly secret rotated, .cmd untracked, history rewritten (`git filter-repo --replace-text`), force-pushed. Hook hardened with 8 new patterns. RT-008 logged.
 
 ## Environment & Dev
 
-### Dev Commands
+### Commands
 
 ```bash
-npm run dev          # Dev server (Turbopack, port 3000)
-npm run build        # Production build
-npm run test         # Playwright tests
-npm run lint:docs    # All doc linters
+npm install                 # install
+npm run build               # tsc → dist/
+npm run dev                 # tsx src/stdio.ts (stdio mode)
+npm run dev:http            # tsx src/http.ts (HTTP mode on :8080)
+npm test                    # all tests
+npm run test:golden         # golden-path harness, all surfaces, all scenarios
+npm run audit               # npm audit --audit-level=high
 ```
 
-### Environment Variables
+Webapp (separate package under `webapp/`):
 
-**Required:** ANTHROPIC_API_KEY (Claude API, fallback: JOBZOOKA_CLAUDE_KEY), BRIGHTDATA_API_KEY (scraper), UPSTASH_REDIS_REST_URL + TOKEN (rate limiting, rockets, sessions), ALLOWED_ORIGINS (CSRF, comma-separated), JWT secret for auth signing.
+```bash
+cd webapp && npm run dev    # Next.js on :3001
+```
 
-**Auth (optional):** GOOGLE_CLIENT_ID/SECRET, LINKEDIN_CLIENT_ID/SECRET, NEXT_PUBLIC_OAUTH_GOOGLE/LINKEDIN (show OAuth buttons).
+### Environment variables
 
-**Stripe (optional):** STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_SCOUT/STRIKE/ARSENAL (rocket pack price IDs).
+**Required for production:**
+- `ANTHROPIC_API_KEY` — Haiku 4.5 for menu extraction
+- `BLAND_API_KEY` — voice agent
+- `GOOGLE_PLACES_API_KEY` — restaurant discovery + geocoding
+- `WARP_MCP_KEY` — single operator-issued bearer for HTTP/MCP/A2A surfaces
+- `PROFILE_ENCRYPTION_SECRET` — token signing
 
-**Optional with defaults:** BRIGHTDATA_DATASET_ID (default: gd_lpfll7v5hcqtkxl6l), CLAUDE_MODEL (default: claude-sonnet-4-20250514), DAILY_JOB_REQUEST_LIMIT (100), DAILY_REQUEST_LIMIT (500), DAILY_TOKEN_LIMIT (2M), NEXT_PUBLIC_DUMMY_PLUG_CODE, NEXT_PUBLIC_APP_URL, ENABLE_TEST_API, ADMIN_SECRET.
+**Optional / behavior gates:**
+- `BLAND_FROM_NUMBER` — outbound caller ID (Bland provides one if unset)
+- `ENRICH_COUNT` — number of caution restaurants to attempt menu enrichment on (default 1)
+- `INCLUDE_TEST_RESTAURANTS` — expose `test_*` fixtures (default true locally; `false` in prod via fly.toml)
+- `REQUIRE_CONFIRMATION_TOKEN` — gate `place_order` on a valid `prepare_order` token
+- `EMERGENCY_DISABLE_BLAND` — panic-stop new dispatches
+- `BLAND_HARNESS_MODE` — golden-path source short-circuit
+- `SIM_FAST_FORWARD_MS` — sim_* status transition speed for tests
+- `MENU_CACHE_DIR` — override `runtime/menu-cache/` (tests use this)
+- `DATABASE_PATH` — stdio profile SQLite path
+- `PORT`, `HOST`, `ALLOWED_HOSTS` — HTTP transport binding
+
+### Claude Desktop setup
+
+The repo includes `scripts/one-off/aiweb-pizza-mcp.cmd.template`. Copy it to `aiweb-pizza-mcp.cmd` in the same directory, replace `REPLACE_WITH_YOUR_KEY` with the live `WARP_MCP_KEY`, and point Claude Desktop's `claude_desktop_config.json` at the populated file. The populated `.cmd` is gitignored — never commit it.
+
+### Deployment
+
+`fly.toml` deploys to `aiweb-mcp.fly.dev`, region `sjc`, `aiweb_data` volume at `/data` (profiles DB). Auto-stop/auto-start machines; `min_machines_running = 0` for cost. Concurrency soft 20 / hard 25 requests.
+
+Operators pre-warm the menu cache for a metro with:
+
+```bash
+npx tsx scripts/cache-warm.ts seeds/menu-cache.json
+```
+
+Seed file at `seeds/menu-cache.json` covers Medford OR + a starter SF list.
 
 ### Testing
 
-- **Dummy Plug**: `/?dummyplug` or `/?dummyplug&step=10` — fast-forward with test data
-- **Test API**: `/api/test?check=all` — health, build, env, API connectivity
-- **After code changes**: `npm run build` must pass clean
+- **Unit / integration:** `tests/*.test.ts` and `tests/**/*.test.ts`, run via `node --test` (tsx loader).
+- **Golden-path harness:** `npm run test:golden` runs 3 scripted scenarios (pizza-only, pizza-plus-side, pizza-plus-drink) across both MCP stdio and A2A surfaces. Bland is mocked at 3 independent guard layers — no real calls dispatch.
+- **Regression suites:** `tests/regression/<SP-ID>/` captures bug-class fixtures so a future change can't re-introduce a closed vulnerability.
 
-## Cross-repo parity with WarpOS
+## Git & WarpOS
 
-This repo (`cygaco/jobhunter-app`, branch `skeleton-test7`) is the **dev repo** for the Alex / WarpOS framework. The sibling repo `cygaco/WarpOS` is the **shipped product** that end-users install.
+### Git rules
 
-**Rule:** every commit that touches framework-shared paths must sync to WarpOS in the same or adjacent commit. Framework-shared paths include:
-- `scripts/hooks/**`, `scripts/*.js` (installer + libs)
-- `.claude/agents/**`, `.claude/commands/**`, `.claude/paths.json`, `.claude/manifest.json`
-- `CLAUDE.md` (WarpOS ships its own copy to every install)
+- **Main branch:** `main` (the WarpOS manifest still reads `master` — known drift, harmless).
+- **Never destroy the backup branch.** Treat unknown `backup-*` branches as protected.
+- **Push to remote** requires explicit user approval per the autonomy table in CLAUDE.md.
+- **Public repo.** `https://github.com/cygaco/aiweb.git`. Treat every file you commit as world-readable, indefinitely (GitHub keeps unreachable commits accessible by SHA for ~90 days even after force-push).
 
-Product-specific files (`src/**`, `PROJECT.md`, `docs/**`, `requirements/**`) stay jobhunter-only.
+### WarpOS in this repo
 
-**Workflow:** before `git commit`, ask which category the change falls in. If framework: `cp` the file to the WarpOS checkout, commit + push both. Cross-repo drift compounds silently — catch it per-commit, not per-session.
+This repo is **a product instance** of WarpOS, not the canonical clone. Rules:
 
-## Git & Compliance
+- Installer-owned files (`.claude/framework-manifest.json`, `.claude/framework-installed.json`) are never hand-edited in product repos — `install.ps1` owns them.
+- Framework changes (skills, hooks, agent specs, paths) flow upstream via `/warp:promote` from a sibling canonical WarpOS clone, then ride `/warp:release` from there.
+- Do not push framework changes from this repo to the canonical WarpOS remote — that's a `/warp:release` operation from the canonical clone only.
 
-### Git Rules
+### Demo strategy
 
-- **Never kill or overwrite the backup branch** (`backup-2026-03-18`)
-- Branch: `master`
-
-### Compliance
-
-- Extension auto-applies based on user-defined heuristics (apply-if/skip-if signals)
-- Prompt injection defense — external data in `<untrusted_job_data>` tags with nonce
-- Rate limiting — per-IP (20/min Claude, 10/min BD) + global (60/min) + daily budget
-- API keys server-side only — never exposed to client bundle
-- Auth: JWT cookie-based, OAuth optional (Google/LinkedIn)
+Demo runs target `test_vlad` ("Vlad's Pizza Kitchen") — a labeled test fixture with rich pizzas/sides/drinks/deals and a real phone that answers as restaurant staff. **`orderConfirmed:true` is the milestone, not a delivered pizza.** Real-restaurant demos are gated behind `INCLUDE_TEST_RESTAURANTS=true` in non-prod environments.
