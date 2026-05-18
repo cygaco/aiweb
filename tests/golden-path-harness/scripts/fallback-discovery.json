@@ -1,0 +1,48 @@
+{
+  "id": "fallback-discovery",
+  "title": "Unknown-menu fixture → mode=fallback_discovery (SP-20260517-005 / S-11)",
+  "description": "Drives the new verdict gate: INCLUDE_TEST_RESTAURANTS=false suppresses test_vlad, TEST_RESTAURANTS_FIXTURE_FILE injects a places-style restaurant with no real menu, intent_items asks for a veggie pizza. The unenriched places-source must yield verdict_tier=enrichment_failed and start_pizza_order returns mode='fallback_discovery'.",
+  "customer_address": "1 Market St, San Francisco, CA 94105",
+  "customer_name": "Vlad Test",
+  "customer_phone": "+15555550100",
+  "items": ["Veggie Pizza"],
+  "setup": {
+    "envOverrides": {
+      "INCLUDE_TEST_RESTAURANTS": "false",
+      "TEST_RESTAURANTS_FIXTURE_FILE": "tests/golden-path-harness/fixtures/no-real-menus.json"
+    }
+  },
+  "steps": [
+    {
+      "tool": "start_pizza_order",
+      "args": {
+        "delivery_address": "1 Market St, San Francisco, CA 94105",
+        "customer_name": "Vlad Test",
+        "customer_phone": "+15555550100",
+        "intent_items": { "pizza": { "style": "veggie" } }
+      },
+      "assertions": [
+        { "name": "no_error", "kind": "status_not_error" },
+        {
+          "name": "mode_is_fallback_discovery",
+          "kind": "json_path_equals",
+          "value": "$.mode",
+          "expected": "fallback_discovery"
+        },
+        {
+          "name": "no_suggested_order",
+          "kind": "json_path_undefined",
+          "value": "$.suggested_order"
+        }
+      ]
+    }
+  ],
+  "events_assertions": [
+    {
+      "name": "verdict_tier_enrichment_failed_fired",
+      "cat": "compatibility",
+      "min_count": 1
+    },
+    { "name": "no_error_events", "cat": "error", "max_count": 0 }
+  ]
+}

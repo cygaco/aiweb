@@ -1,0 +1,35 @@
+{
+  "_note": "SP-20260517-005 / T-098. A places-style restaurant near 1 Market St SF with the generic 3-item menu template + no menuSource. Mirrors what Google Places returns pre-enrichment for a small pizzeria. Used by the fallback-discovery scenario to trigger the new verdict gate (all-unknown → no_go) when paired with INCLUDE_TEST_RESTAURANTS=false.",
+  "restaurants": [
+    {
+      "id": "places_t098_unenriched_sf",
+      "name": "Generic SF Pizza Co",
+      "phone": "+14155550101",
+      "address": "100 Demo St, San Francisco, CA 94105",
+      "lat": 37.7944,
+      "lng": -122.3973,
+      "deliveryRadius": 5,
+      "estimatedDeliveryMinutes": 25,
+      "acceptsCash": true,
+      "serviceType": "delivery",
+      "menu": {
+        "pizzas": [
+          {
+            "name": "Pepperoni",
+            "sizes": [{ "name": "Large", "price": 16.99 }]
+          },
+          {
+            "name": "Cheese",
+            "sizes": [{ "name": "Large", "price": 15.99 }]
+          },
+          {
+            "name": "Specialty",
+            "sizes": [{ "name": "Large", "price": 18.99 }]
+          }
+        ],
+        "sides": []
+      },
+      "hours": "11-21"
+    }
+  ]
+}

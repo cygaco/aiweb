@@ -60,8 +60,13 @@ export interface CompatibilityCheckResult<S extends string> {
  * structured shape. All top-level keys optional; an empty object behaves
  * like `undefined` (no intent).
  */
+export interface PizzaSlot {
+  style: string;
+  size?: string;
+}
+
 export interface IntentItems {
-  pizza?: { style: string; size?: string };
+  pizza?: PizzaSlot | PizzaSlot[];
   sides?: { name: string }[];
   drinks?: { name: string; brand?: string; size?: string }[];
 }
@@ -85,6 +90,12 @@ export interface CompatibilityAssessment {
   qualityScore: number;
   /** Count of cart-eligible items with high-confidence pricing. Tiebreaker. */
   priceKnownCount: number;
+  /** R-3 / S-6: set when no_go fires due to all-unknown enrichment_failed. */
+  verdict_tier?: "enrichment_failed";
+}
+
+export interface AssessOptions {
+  enrichmentAttempted?: boolean;
 }
 
 const NO_GO_DELIVERY = new Set<DeliveryAvailabilityState>([
@@ -565,7 +576,11 @@ const ITEM_STATE_PRIORITY: Record<ItemAvailabilityState, number> = {
 function rollupItemMap(
   itemMap: Record<SlotKey, CompatibilityCheckResult<ItemAvailabilityState>>,
 ): CompatibilityCheckResult<ItemAvailabilityState> {
-  const entries = Object.values(itemMap);
+  // Exclude the legacy "pizza" alias key — it mirrors the first
+  // pizza:<style> slot and would double-count if included in the rollup.
+  const entries = Object.entries(itemMap)
+    .filter(([k]) => k !== "pizza")
+    .map(([, v]) => v);
   if (entries.length === 0) {
     return {
       state: "unknown",
@@ -645,8 +660,24 @@ function computeItemMap(
     CompatibilityCheckResult<ItemAvailabilityState>
   > = {};
 
-  if (intent.pizza?.style && intent.pizza.style.trim()) {
-    item_map["pizza"] = buildPizzaCheck(restaurant, intent.pizza.style);
+  // R-4 / S-8: pizza accepts singular or array. Each entry becomes
+  // its own slot keyed by style. Legacy item_map["pizza"] mirrors the
+  // first entry's result for back-compat with the dashboard query.
+  const pizzaList = intent.pizza
+    ? Array.isArray(intent.pizza)
+      ? intent.pizza
+      : [intent.pizza]
+    : [];
+  for (let i = 0; i < pizzaList.length; i++) {
+    const slot = pizzaList[i];
+    if (!slot?.style?.trim()) continue;
+    const result = buildPizzaCheck(restaurant, slot.style);
+    const key = "pizza:" + slot.style.toLowerCase().trim().replace(/_+/g, " ");
+    item_map[key] = result;
+    // Back-compat: also expose the first pizza under the legacy "pizza"
+    // key. rollupItemMap and computeQualityScore filter this out so it
+    // doesn't double-count in the average / worst-evidence picks.
+    if (i === 0) item_map["pizza"] = result;
   }
   for (const side of intent.sides ?? []) {
     if (!side.name?.trim()) continue;
@@ -692,7 +723,10 @@ function computeQualityScore(
   item_map: Record<SlotKey, CompatibilityCheckResult<ItemAvailabilityState>>,
   itemFallback: CompatibilityCheckResult<ItemAvailabilityState>,
 ): number {
-  const slotResults = Object.values(item_map);
+  // Exclude the legacy "pizza" alias key — see rollupItemMap.
+  const slotResults = Object.entries(item_map)
+    .filter(([k]) => k !== "pizza")
+    .map(([, v]) => v);
   // When item_map is empty (legacy string path or no intent), fall back to
   // the rollup `item` so the score stays comparable across paths.
   const effective = slotResults.length > 0 ? slotResults : [itemFallback];
@@ -752,8 +786,14 @@ function computePriceKnownCount(
 ): number {
   if (!intent || isPlacesGeneric(restaurant)) return 0;
   let count = 0;
-  if (intent.pizza?.style?.trim()) {
-    if (priceForPizzaMatch(restaurant, intent.pizza.style) > 0) count++;
+  const pizzas = intent.pizza
+    ? Array.isArray(intent.pizza)
+      ? intent.pizza
+      : [intent.pizza]
+    : [];
+  for (const p of pizzas) {
+    if (!p?.style?.trim()) continue;
+    if (priceForPizzaMatch(restaurant, p.style) > 0) count++;
   }
   for (const side of intent.sides ?? []) {
     if (!side.name?.trim()) continue;
@@ -792,7 +832,14 @@ function normalizeIntent(
     return { pizza: { style: trimmed } };
   }
   // Empty object — no pizza, no sides, no drinks → treat as undefined.
-  const hasPizza = !!intent.pizza?.style?.trim();
+  // intent.pizza may be PizzaSlot | PizzaSlot[]; both forms have a
+  // non-empty style on at least one entry.
+  const pizzaArr = intent.pizza
+    ? Array.isArray(intent.pizza)
+      ? intent.pizza
+      : [intent.pizza]
+    : [];
+  const hasPizza = pizzaArr.some((p) => !!p?.style?.trim());
   const hasSides = (intent.sides ?? []).some((s) => s.name?.trim());
   const hasDrinks = (intent.drinks ?? []).some((d) => d.name?.trim());
   if (!hasPizza && !hasSides && !hasDrinks) return undefined;
@@ -804,6 +851,7 @@ export function assessCompatibility(
   userLat: number | undefined,
   userLng: number | undefined,
   intent: string | IntentItems | undefined,
+  options?: AssessOptions,
 ): CompatibilityAssessment {
   const delivery = checkDeliveryAvailability(restaurant);
   const coverage = checkDeliveryCoverage(restaurant, userLat, userLng);
@@ -864,6 +912,26 @@ export function assessCompatibility(
   const qualityScore = computeQualityScore(delivery, coverage, item_map, item);
   const priceKnownCount = computePriceKnownCount(restaurant, normalizedIntent);
 
+  // R-3 / S-6: 4-conjunct guard. Escalate "caution-all-unknown" to
+  // "no_go + verdict_tier=enrichment_failed" ONLY when all of:
+  //   1. source = places_generic_menu
+  //   2. enrichment was attempted (caller passed options.enrichmentAttempted)
+  //   3. item_map is non-empty (user expressed intent)
+  //   4. every slot is `unknown`
+  let verdict_tier: CompatibilityAssessment["verdict_tier"];
+  if (
+    overall === "caution" &&
+    options?.enrichmentAttempted === true &&
+    item.source === "places_generic_menu" &&
+    Object.keys(item_map).length > 0 &&
+    Object.values(item_map).every((slot) => slot.state === "unknown")
+  ) {
+    overall = "no_go";
+    verdict_tier = "enrichment_failed";
+    nextStep =
+      "Real menu not found for this restaurant — pick another, broaden the search, or web-search their menu before I call.";
+  }
+
   const assessment: CompatibilityAssessment = {
     delivery,
     coverage,
@@ -873,21 +941,30 @@ export function assessCompatibility(
     item_map,
     qualityScore,
     priceKnownCount,
+    ...(verdict_tier ? { verdict_tier } : {}),
   };
 
   // Logging — fail-open inside event-log.ts; never break order flow.
   // Legacy field `intent_style` retained for back-compat with prior
   // consumers (test `assert.strictEqual(last.data.overall, "go")` and the
   // dashboard query). New fields are additive.
+  const firstPizza = normalizedIntent?.pizza
+    ? Array.isArray(normalizedIntent.pizza)
+      ? normalizedIntent.pizza[0]
+      : normalizedIntent.pizza
+    : undefined;
+  const pizzaCount = normalizedIntent?.pizza
+    ? Array.isArray(normalizedIntent.pizza)
+      ? normalizedIntent.pizza.length
+      : 1
+    : 0;
   const intentStyleLegacy =
-    typeof intent === "string"
-      ? intent
-      : (normalizedIntent?.pizza?.style ?? null);
+    typeof intent === "string" ? intent : (firstPizza?.style ?? null);
   logCompatibilityEvent({
     restaurant_id: restaurant.id,
     intent_style: intentStyleLegacy,
     intent_items_count: {
-      pizza: normalizedIntent?.pizza ? 1 : 0,
+      pizza: pizzaCount,
       sides: normalizedIntent?.sides?.length ?? 0,
       drinks: normalizedIntent?.drinks?.length ?? 0,
     },
@@ -907,7 +984,18 @@ export function assessCompatibility(
       source: item.source,
     },
     item_map_summary: {
-      pizza: item_map["pizza"]?.state ?? null,
+      // R-4 / S-8: pizza keys are now `pizza:<style>`. Aggregate by
+      // state across all pizza slots; preserve the legacy `pizza`
+      // singleton field for back-compat with downstream consumers
+      // by reporting the first pizza slot's state (most consumers
+      // only read this for the single-pizza case).
+      pizza: (() => {
+        const firstKey = Object.keys(item_map).find((k) =>
+          k.startsWith("pizza:"),
+        );
+        return firstKey ? item_map[firstKey].state : null;
+      })(),
+      pizza_count_by_state: countByState(item_map, "pizza:"),
       side_count_by_state: countByState(item_map, "side:"),
       drink_count_by_state: countByState(item_map, "drink:"),
     },

@@ -14,10 +14,26 @@ import type {
   DrinkOption,
   SideOption,
 } from "../lib/cart.js";
+import type { Cuisine, FoodMenuAttributes } from "../lib/menu-taxonomy.js";
 
-export interface MenuItem {
+/**
+ * Menu item base shape. Optional fields after `description` are
+ * additive R-8 (SP-20260517-005) — Google FoodMenu-aligned per
+ * `.claude/project/reference/google-menu-apis-survey-2026-05.md`.
+ * All R-8 fields are optional; existing fixtures and cache entries
+ * pass through unchanged.
+ */
+export interface MenuItem extends FoodMenuAttributes {
   name: string;
-  sizes: { name: string; price: number }[];
+  /**
+   * Size price entries. `priceKnown` (R-2 / S-5) is an optional flag —
+   * absent means true (back-compat). When `false`, the size came from a
+   * menu page that listed the item by name but no per-item price (e.g.
+   * Toast-fed sites where prices live on the partner integration). The
+   * cart narration MUST NOT voice the dollar amount of such items;
+   * `cartNarrationTotalUnknown` treats them the same as basePrice<=0.
+   */
+  sizes: { name: string; price: number; priceKnown?: boolean }[];
   description?: string;
 }
 
@@ -111,9 +127,23 @@ export interface Restaurant {
     drinks?: Drink[];
     /** Active deals/promotions — optional; populated by enriched adapters. */
     deals?: Deal[];
+    /**
+     * R-8 (SP-20260517-005). Top-level cuisine tags aligned with
+     * Google FoodMenu's `Cuisine` enum. Optional; absence means
+     * "cuisine unknown" — consumers must not claim a cuisine in
+     * narration without this signal.
+     */
+    cuisines?: Cuisine[];
   };
   hours: string;
   website?: string;
+  /**
+   * R-5 / S-9 (SP-20260517-005). Google Maps "place card" URL —
+   * populated by `places.ts` from the FIELD_MASK addition. Used by
+   * menu-discovery as a fallback link source when `website` is missing
+   * or path-1 enrichment returned unchanged.
+   */
+  googleMapsUri?: string;
   /** Set to 'restaurant_website' after menu-discovery enrichment. Absence means generic/connector source. */
   menuSource?: "restaurant_website";
   isTest?: boolean; // always included in results, labeled for the agent
@@ -472,7 +502,9 @@ export function getRestaurantById(id: string): Restaurant | null {
     const found = entry.results.find((r) => r.id === id);
     if (found) return found;
   }
-  return null;
+  // R-7 / S-11: fixture-injection lookup. lazy-loads if first call.
+  const fixture = loadFixtureRestaurants().find((r) => r.id === id);
+  return fixture ?? null;
 }
 
 /**
@@ -485,6 +517,47 @@ export function getRestaurantById(id: string): Restaurant | null {
  *   Lookups via getRestaurantById / getRestaurantPhone are unaffected — the
  *   gate is on discovery surface, not on existence.
  */
+/**
+ * R-7 / S-11 / SP-20260517-005. Optional fixture-injection for the
+ * golden-path harness. Set TEST_RESTAURANTS_FIXTURE_FILE=<path> to
+ * append additional Restaurant entries to discovery results without
+ * editing the canonical TEST_RESTAURANTS array. The file must be JSON
+ * with shape `{ restaurants: Restaurant[] }`. Failure (missing file,
+ * malformed JSON, schema mismatch) is silent — no fixtures appended.
+ *
+ * Read lazily on first findNearbyRestaurants call so the env var can be
+ * set in scenario setup blocks at harness time.
+ */
+let _fixtureRestaurants: Restaurant[] | null = null;
+function loadFixtureRestaurants(): Restaurant[] {
+  if (_fixtureRestaurants !== null) return _fixtureRestaurants;
+  const path = process.env.TEST_RESTAURANTS_FIXTURE_FILE;
+  if (!path) {
+    _fixtureRestaurants = [];
+    return _fixtureRestaurants;
+  }
+  try {
+    // Lazy require to avoid pulling fs into the module top scope.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require("node:fs") as typeof import("node:fs");
+    const raw = fs.readFileSync(path, "utf8");
+    const parsed = JSON.parse(raw) as { restaurants?: unknown };
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray(parsed.restaurants)
+    ) {
+      _fixtureRestaurants = [];
+      return _fixtureRestaurants;
+    }
+    _fixtureRestaurants = parsed.restaurants as Restaurant[];
+    return _fixtureRestaurants;
+  } catch {
+    _fixtureRestaurants = [];
+    return _fixtureRestaurants;
+  }
+}
+
 export async function findNearbyRestaurants(
   address: string,
 ): Promise<Restaurant[]> {
@@ -505,5 +578,17 @@ export async function findNearbyRestaurants(
   }
 
   const includeTest = process.env.INCLUDE_TEST_RESTAURANTS !== "false";
-  return includeTest ? [...live, ...TEST_RESTAURANTS] : live;
+  const fixtures = loadFixtureRestaurants();
+  // Fixture restaurants always append (independent of INCLUDE_TEST_RESTAURANTS
+  // which gates the canonical TEST_RESTAURANTS list). This lets the
+  // golden-path harness inject test data even when test_vlad is
+  // explicitly suppressed.
+  return includeTest
+    ? [...live, ...TEST_RESTAURANTS, ...fixtures]
+    : [...live, ...fixtures];
+}
+
+// Exported for tests — clear the fixture cache between scenario runs.
+export function _resetFixtureCache(): void {
+  _fixtureRestaurants = null;
 }

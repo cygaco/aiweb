@@ -1,0 +1,47 @@
+{
+  "$schema_note": "SP-20260517-005 / IN-2. Per-metro seed list for scripts/cache-warm. metros[].restaurants[] is searched via Places API near the metro's first restaurant address; per-restaurant `name` is fuzzy-matched against the search result; the chosen restaurant runs through enrichEvidence and its result is written to runtime/menu-cache/places_<id>.json. Edit by hand; no schema validation outside the cache-warm script.",
+  "metros": [
+    {
+      "name": "Medford, OR",
+      "restaurants": [
+        {
+          "name": "Kaleidoscope Pizzeria & Pub",
+          "address": "3084 Crater Lake Hwy, Medford, OR 97504"
+        },
+        {
+          "name": "Larks Home Kitchen Cuisine",
+          "address": "212 E Main St, Medford, OR 97501"
+        },
+        {
+          "name": "Sammy's Cowboy Bistro",
+          "address": "415 N Riverside Ave, Medford, OR 97501"
+        },
+        {
+          "name": "Capers Cafe Le Bistro",
+          "address": "2185 W Main St, Medford, OR 97501"
+        }
+      ]
+    },
+    {
+      "name": "San Francisco, CA",
+      "restaurants": [
+        {
+          "name": "Tony's Pizza Napoletana",
+          "address": "1570 Stockton St, San Francisco, CA 94133"
+        },
+        {
+          "name": "Pizzeria Delfina",
+          "address": "3611 18th St, San Francisco, CA 94110"
+        },
+        {
+          "name": "Una Pizza Napoletana",
+          "address": "210 11th St, San Francisco, CA 94103"
+        },
+        {
+          "name": "Golden Boy Pizza",
+          "address": "542 Green St, San Francisco, CA 94133"
+        }
+      ]
+    }
+  ]
+}

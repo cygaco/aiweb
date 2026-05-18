@@ -19,6 +19,12 @@ const FIELD_MASK = [
   "places.businessStatus",
   "places.types",
   "places.websiteUri",
+  // R-5 / S-9 (SP-20260517-005). googleMapsUri is the URL of the
+  // place's rich card on Google Maps. Used by menu-discovery as a
+  // fallback when restaurant.website is missing or path-1
+  // enrichment returns unchanged — the Maps page sometimes exposes a
+  // "Menu" link that resolves to a parseable source.
+  "places.googleMapsUri",
 ].join(",");
 
 // Generic menu — Bland confirms actual offerings on the call.
@@ -68,6 +74,7 @@ type RawPlace = {
   regularOpeningHours?: { openNow?: boolean; weekdayDescriptions?: string[] };
   businessStatus?: string;
   websiteUri?: string;
+  googleMapsUri?: string;
 };
 
 // Haversine distance in miles
@@ -129,6 +136,7 @@ function mapToRestaurant(
     menu: GENERIC_PIZZA_MENU,
     hours,
     ...(place.websiteUri ? { website: place.websiteUri } : {}),
+    ...(place.googleMapsUri ? { googleMapsUri: place.googleMapsUri } : {}),
   };
 }
 

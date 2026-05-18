@@ -201,3 +201,19 @@ _(none yet)_
 
 YAML: `.claude/project/sprint/issues/I-20260514-001.yaml`
 
+
+### I-20260518-002 — format.js hook wipes large files when prettier SIGTERMs at 10s
+
+- **Status:** open
+- **Severity:** medium
+- **Discovered:** 2026-05-18T18:53:39.254Z during SP-20260517-005:execute
+- **Sprint:** SP-20260517-005
+- **Ticket:** T-20260518-093
+
+**Expected:** post-edit file matches original size +/- formatting delta
+**Actual:** file is 0 bytes after Edit on large TypeScript files (~27KB+); manual prettier completes in ~1s but cold-start npx + parser load exceeds 10s timeout, prettier-truncate-then-SIGTERM leaves the file empty; format.js silently fail-opens
+
+
+
+YAML: `.claude/project/sprint/issues/I-20260518-002.yaml`
+

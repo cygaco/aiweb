@@ -500,12 +500,31 @@ Always pass delivery_address explicitly — there is no saved-profile fallback o
         ),
       intent_items: z
         .object({
+          // R-4 / S-8 (SP-20260517-005). Accepts singular OR array form
+          // for one release cycle (back-compat with webapp + A2A
+          // callers pinned to singular). The singular form is
+          // normalized to a 1-element array internally; downstream
+          // (computeItemMap) emits per-pizza slot keys (`pizza:<style>`)
+          // regardless of input form.
           pizza: z
-            .object({
-              style: z.string().min(1).max(80),
-              size: z.string().max(40).optional(),
-            })
-            .strict()
+            .union([
+              z
+                .object({
+                  style: z.string().min(1).max(80),
+                  size: z.string().max(40).optional(),
+                })
+                .strict(),
+              z
+                .array(
+                  z
+                    .object({
+                      style: z.string().min(1).max(80),
+                      size: z.string().max(40).optional(),
+                    })
+                    .strict(),
+                )
+                .max(8),
+            ])
             .optional(),
           sides: z
             .array(
@@ -529,11 +548,14 @@ Always pass delivery_address explicitly — there is no saved-profile fallback o
         .strict()
         .optional()
         .describe(
-          "Structured intent from the user (pizza style + optional sides + optional drinks). " +
+          "Structured intent from the user. " +
+            "intent_items.pizza accepts either a single { style, size? } OR an array of those (max 8). " +
+            "Use the array form when the user asks for multiple distinct pizzas in one breath " +
+            "(e.g. 'one veggie XL and one meat lovers medium'). Each pizza becomes its own slot " +
+            "in the compatibility check; the verdict respects worst-evidence across all slots. " +
             "When present with content, drives the intent_ranked branch — restaurants ranked by compatibility. " +
-            "intent_items.pizza.style takes precedence over intent_style when both are supplied. " +
-            "Absent or all-empty (no pizza, sides:[], drinks:[]) → presets fallback branch (no compatibility annotation). " +
-            "Fallback_discovery branch fires when all restaurants are no_go for the stated intent.",
+            "Absent or all-empty (no pizza, sides:[], drinks:[]) → presets fallback branch. " +
+            "Fallback_discovery branch fires when all restaurants are no_go.",
         ),
     },
 
@@ -590,7 +612,16 @@ Always pass delivery_address explicitly — there is no saved-profile fallback o
 
       // Effective intent style: intent_items.pizza.style takes precedence over
       // legacy intent_style (back-compat). Used for orderFromIntent + enrichment.
-      const effectiveIntentStyle = intent_items?.pizza?.style ?? intent_style;
+      // R-4 / S-8: pizza is now singular | array — pick the first entry's
+      // style as the "effective" one for prompt construction. Multi-pizza
+      // orders rely on the per-slot item_map; the prompt level still uses
+      // a single string for back-compat.
+      const firstPizzaIntent = intent_items?.pizza
+        ? Array.isArray(intent_items.pizza)
+          ? intent_items.pizza[0]
+          : intent_items.pizza
+        : undefined;
+      const effectiveIntentStyle = firstPizzaIntent?.style ?? intent_style;
 
       // Build the effective IntentItems for assessCompatibility — pass the full
       // intent_items when hasIntent, fall back to a legacy string when only
@@ -701,14 +732,23 @@ Always pass delivery_address explicitly — there is no saved-profile fallback o
               durationMs,
               intent_style: effectiveIntentStyle ?? null,
             });
+            // R-3 / S-6: enrichment was attempted for this restaurant —
+            // re-run compat with that flag so the 4-conjunct guard can
+            // escalate all-unknown caution to no_go + verdict_tier:
+            // enrichment_failed. We rerun regardless of whether the
+            // restaurant object changed: a no-change result means the
+            // enrichment attempt produced no real menu (e.g. JS-
+            // rendered site, parsing failed) — that's exactly when we
+            // want the gate to fire.
+            const reAssessed = assessCompatibility(
+              enriched,
+              userLat,
+              userLng,
+              effectiveIntent,
+              { enrichmentAttempted: true },
+            );
+            compatibilityById.set(restaurant.id, reAssessed);
             if (enriched !== restaurant) {
-              const reAssessed = assessCompatibility(
-                enriched,
-                userLat,
-                userLng,
-                effectiveIntent,
-              );
-              compatibilityById.set(restaurant.id, reAssessed);
               const idx = restaurants.indexOf(restaurant);
               if (idx !== -1) restaurants[idx] = enriched;
             }
@@ -782,17 +822,37 @@ Always pass delivery_address explicitly — there is no saved-profile fallback o
             ...(enrichmentById.has(r.id) && {
               enrichment: enrichmentById.get(r.id),
             }),
-            menuSummary: {
-              pizzas: r.menu.pizzas.map((p) => ({
-                name: p.name,
-                description: p.description,
-                sizes: p.sizes,
-              })),
-              sides: r.menu.sides.map((s) => ({
-                name: s.name,
-                price: s.sizes[0].price,
-              })),
-            },
+            // SP-20260517-005 post-deploy hotfix (2026-05-18): the
+            // GENERIC_PIZZA_MENU template (Pepperoni/Cheese/Specialty)
+            // was leaking through menuSummary for places_* restaurants
+            // that had not been enriched. The agent then voiced those
+            // items as if they were real. Fix: when isPlacesGeneric
+            // (places_* AND no menuSource), expose an EMPTY menuSummary
+            // + an explicit menu_known=false flag so the agent has zero
+            // material to fabricate from. Domino's and enriched
+            // restaurants are unaffected — their menu is real.
+            ...(r.id.startsWith("places_") &&
+            r.menuSource !== "restaurant_website"
+              ? {
+                  menu_known: false,
+                  menuSummary: { pizzas: [], sides: [] },
+                  menu_unavailable_note:
+                    "No real menu has been verified for this restaurant. Do NOT name pizzas, sides, drinks, sizes, or prices — there is nothing to name. Tell the user the menu isn't confirmed and ask them to pick a different restaurant, broaden the search, or paste the menu URL if they have one. Do not surface this restaurant as orderable.",
+                }
+              : {
+                  menu_known: true,
+                  menuSummary: {
+                    pizzas: r.menu.pizzas.map((p) => ({
+                      name: p.name,
+                      description: p.description,
+                      sizes: p.sizes,
+                    })),
+                    sides: r.menu.sides.map((s) => ({
+                      name: s.name,
+                      price: s.sizes[0].price,
+                    })),
+                  },
+                }),
           };
         }),
       };
@@ -882,6 +942,42 @@ Always pass delivery_address explicitly — there is no saved-profile fallback o
         };
       }
 
+      // SP-20260517-005 post-deploy hotfix (2026-05-18). The 4-conjunct
+      // verdict guard correctly fires when intent_items is non-empty,
+      // but vague openers like "order me a pizza" (no intent_items)
+      // landed on the delegate / occasion / presets path AND received
+      // a `suggested_order` built from the GENERIC_PIZZA_MENU template.
+      // The agent then voiced those fake items verbatim. Structural
+      // fix: when the chosen restaurant is places-generic (places_*
+      // AND no menuSource from enrichment), refuse to build any
+      // suggested_order or preset preview — return a
+      // fallback_discovery-style response so the agent has nothing to
+      // hallucinate from. Domino's and enriched restaurants are
+      // unaffected. This is the user-facing fix to the
+      // "we say generic menu but still show items" bug.
+      const isPrimaryGeneric =
+        primaryRestaurant.id.startsWith("places_") &&
+        primaryRestaurant.menuSource !== "restaurant_website";
+      if (isPrimaryGeneric) {
+        result.mode = "fallback_discovery";
+        result.note =
+          "I couldn't confirm a real menu at any of the places nearby. Here's what I found — want to substitute items, try a different address, or have me search the web for one of these restaurants' menus?";
+        logStartPizzaOrderBranchEvent({
+          branch: "fallback_discovery",
+          restaurant_id: primaryRestaurant.id,
+          intent_items_count: {
+            pizza: intent_items?.pizza ? 1 : 0,
+            sides: intent_items?.sides?.length ?? 0,
+            drinks: intent_items?.drinks?.length ?? 0,
+          },
+        });
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      }
+
       // Delegate mode: agent picks large pepperoni as default
       if (delegate) {
         const items = orderFromIntent(primaryRestaurant, {
@@ -934,7 +1030,7 @@ Always pass delivery_address explicitly — there is no saved-profile fallback o
         const pizzaIntended = !!(effectiveIntentStyle || intent_items?.pizza);
         if (pizzaIntended) {
           const styleToUse = effectiveIntentStyle ?? "pepperoni";
-          const sizeToUse = intent_items?.pizza?.size ?? intent_size;
+          const sizeToUse = firstPizzaIntent?.size ?? intent_size;
           const items = orderFromIntent(primaryRestaurant, {
             style: styleToUse,
             size: sizeToUse,
@@ -1556,11 +1652,18 @@ Then call check_order_status with the returned call_id to get the result.`,
       }
 
       const userGeoForAssess = await geocodeAddress(resolvedAddress_);
+      // R-3 / S-7 (SP-20260517-005): the caller has already been through
+      // start_pizza_order (where enrichment is attempted) and is now
+      // back to place the order. Treat that as enrichmentAttempted=true
+      // so the 4-conjunct guard mirrors the start_pizza_order verdict —
+      // if the menu evidence is still all-unknown at place-time, refuse
+      // dispatch unless override_compatibility is set.
       const assessment = assessCompatibility(
         restaurantForAssess,
         userGeoForAssess?.lat,
         userGeoForAssess?.lng,
         intent_style,
+        { enrichmentAttempted: true },
       );
       // Both `unknown` and `likely_available` are caution-state item checks
       // whose nextStep is "confirm on call" — Bland MUST verify the item
@@ -1570,6 +1673,11 @@ Then call check_order_status with the returned call_id to get the result.`,
         assessment.item.state === "likely_available";
 
       if (assessment.overall === "no_go" && !override_compatibility) {
+        // R-3 / S-7: distinguish the enrichment_failed tier so the
+        // agent knows the right next step (web-search menu, pick
+        // another, broaden) vs the generic delivery/coverage failure.
+        const isEnrichmentFailed =
+          assessment.verdict_tier === "enrichment_failed";
         // The failing check's `reason` (state-specific evidence) is distinct
         // from `next_step` (resolution recommendation). Compliance C-005.
         const failing =
@@ -1591,14 +1699,20 @@ Then call check_order_status with the returned call_id to get the result.`,
                 {
                   status: "error",
                   error_code: "compatibility_blocked",
-                  reason: failing?.reason ?? "Compatibility check failed.",
+                  ...(isEnrichmentFailed
+                    ? { verdict_tier: "enrichment_failed" as const }
+                    : {}),
+                  reason: isEnrichmentFailed
+                    ? "Real menu not found for this restaurant — every requested item is unknown on the generic Places template, and enrichment did not yield real menu evidence."
+                    : (failing?.reason ?? "Compatibility check failed."),
                   next_step: assessment.nextStep,
                   delivery: assessment.delivery,
                   coverage: assessment.coverage,
                   item: assessment.item,
                   override_field: "override_compatibility",
-                  message:
-                    "Order blocked by compatibility check. Pick an alternative restaurant, ask the user to confirm pickup, or pass override_compatibility=true if the user has explicitly approved.",
+                  message: isEnrichmentFailed
+                    ? "Refusing to dispatch — I couldn't verify what this restaurant actually carries. Pass override_compatibility=true if the user has explicitly approved calling anyway."
+                    : "Order blocked by compatibility check. Pick an alternative restaurant, ask the user to confirm pickup, or pass override_compatibility=true if the user has explicitly approved.",
                 },
                 null,
                 2,
@@ -1610,17 +1724,25 @@ Then call check_order_status with the returned call_id to get the result.`,
 
       if (assessment.overall === "no_go" && override_compatibility) {
         // Loud-log the override so we can audit demo-time choices.
-        logCompatibilityOverride({
-          restaurant_id,
-          block_reason:
-            assessment.delivery.state !== "available" &&
-            assessment.delivery.state !== "unknown"
+        // R-3 / S-7: when verdict_tier=enrichment_failed, block_reason
+        // reflects that tier explicitly rather than the delivery/
+        // coverage/item rollup — auditors need to know the gate was
+        // overridden BECAUSE menu evidence was missing, not because
+        // delivery was wrong.
+        const block_reason =
+          assessment.verdict_tier === "enrichment_failed"
+            ? "enrichment_failed"
+            : assessment.delivery.state !== "available" &&
+                assessment.delivery.state !== "unknown"
               ? assessment.delivery.state
               : assessment.coverage.state !== "in_range" &&
                   assessment.coverage.state !== "unknown" &&
                   assessment.coverage.state !== "requires_address"
                 ? assessment.coverage.state
-                : assessment.item.state,
+                : assessment.item.state;
+        logCompatibilityOverride({
+          restaurant_id,
+          block_reason,
           user_intent: intent_style ?? null,
           assessment,
         });

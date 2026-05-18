@@ -17,6 +17,25 @@ The AI Web — Wave 00 pizza concierge. This file is the single roadmap for the 
 
 ## Recently shipped
 
+### SP-20260517-005 — ai-web-debug-01 closure (2026-05-17 → 18)
+
+The user-trace `_docs/00-user-communication/ai-web-debug-01.docx` showed two root-cause bug classes: stale prod deploy exposed removed profile tools, AND the compat verdict shipped a cart on a generic 3-item template when no real menu was knowable. Both proven empirically closed.
+
+- **Stale-deploy class fix.** New `scripts/check-deployed-tools.js` runs an MCP `initialize` + `tools/list` against the deployed server and asserts the tool array equals the canonical 5-tool whitelist. Exits 0/1 + appends a `deploy.tools_list_snapshot` event for cron / CI canary use. Live-tested: correctly diagnoses the stale fly.dev deploy by name.
+- **Menu discovery — link-discovery crawler.** Replaces homepage-only fetch with `findMenuPageCandidates` + multi-page concat (top 3 nav links, 7s shared budget, 25k char cap with page boundaries). Validated live on `kaleidoscopepizza.com`: surfaces `/pizza/`, `/eat/`, `/drink/` from a generic homepage that the prior fetcher returned 0 menu hits for.
+- **`priceKnown` flag.** `EXTRACTION_PROMPT` now accepts `price: number | null`; post-process emits `priceKnown: false` for name-confirmed-but-priceless items (e.g. Toast-fed sites). Cart-narration treats `basePrice<=0` as already a price-unknown trigger.
+- **Verdict-gate hardening.** `assessCompatibility` adds a 4-conjunct guard: when `source=places_generic_menu` AND `enrichment_attempted` AND `item_map` is non-empty AND every slot is `unknown`, escalates `overall` to `no_go` with `verdict_tier: "enrichment_failed"` and a verbatim C-2 nextStep. `place_order` mirrors the block with `error_code: "compatibility_blocked"` unless `override_compatibility: true` (audit-logged with `block_reason: "enrichment_failed"`). Presets path untouched.
+- **Multi-pizza intent (`intent_items.pizza` zod union).** Accepts singular `{style, size?}` OR an array; each entry becomes a `pizza:<style>` slot in `item_map`. Legacy `pizza` alias preserved + filtered in qualityScore / rollup to avoid double-counting.
+- **R-8 industry-aligned schema.** New `src/lib/menu-taxonomy.ts` with Cuisine / Allergen / DietaryRestriction / Spiciness / PreparationMethod string-literal types from Google's `FoodMenu` schema. `CachedMenuResult` carries optional `cuisines[]`; per-item `allergen[]` + `dietaryRestriction[]`. Post-process drops unknown enum values silently. Fully back-compat: existing cache entries pass `isValidCachedMenuResult` unchanged.
+- **`places.googleMapsUri` follow** — DEFERRED to follow-up per overbuild-gate. Path-1 link-discovery covers the validated case; the Maps URI hop is a fallback for restaurants without parseable home sites.
+- **Pre-warmed cache backstop.** `scripts/cache-warm.ts` + `seeds/menu-cache.json` (Medford OR + SF, 8 restaurants curated). Reads JSON, runs Places search + enrichEvidence, writes cache files. Spend ceiling $5 + refuse without `--confirm-spend`. Logs `cache-warm.run` event.
+- **Sprint Goal Test.** New `tests/regression/SP-20260517-005/debug-01-replay.test.ts` replays the user's exact debug-01 flow and contractually asserts the new behavior. 5/5 BUG cases pass — proves the sprint achieved its goal.
+- **format-hook bug class fix.** Separate `/fix:deep` found `scripts/hooks/format.js` was wiping large TypeScript files to 0 bytes when `npx prettier --write` SIGTERM'd at the 10s timeout. Patched with in-memory backup + post-write size sanity check + audit log to `runtime/events.jsonl#format-hook.outcome`. `RT-format-hook-wipe` / `LRN-2026-05-18-format-hook-atomic-restore`.
+- 14 tickets minted (12 closed, 1 deferred T-098 redundant-with-Sprint-Goal-Test, 1 release-time T-088). Test count: 167 → 275 (+108 new). Zero regressions.
+- Background research: `.claude/project/reference/google-menu-apis-survey-2026-05.md` — confirmed across 4 Google sources that no public menu API exists for third-party reads. Scraping is the correct primary path.
+
+Plan Contract: `PC-20260518-0011` supersedes `PC-20260517-0010`. Sprint Goal Test verification: all 3 bug classes empirically closed.
+
 ### YC sprint — compatibility layer (2026-05-06 → 07)
 
 Three real demo failures (no-pizza, no-deliver, no-deliver-here) became one structural fix.
@@ -50,6 +69,24 @@ Commits: `05ab8c0`, `ab77b28`, `4787381`, `4c7dcb9`, `a59e34c`, `8bc7ae5`, `3077
 ## Active backlog
 
 Items grouped by area. Each is a meaningful project on its own — listed here so they don't get lost.
+
+### Menu evidence — next push (follow-ups to SP-20260517-005)
+
+Post-hotfix 2026-05-18, the verdict-gate refuses fake-menu carts end-to-end. The next push is about *finding more real menu evidence* so we hit the refuse path less often. Priority order:
+
+- [ ] **Use Places-first-party menu-adjacent fields.** The Places API (New) discovery doc was verified to contain ZERO `businessMenus` field (six canonical sources confirm — `businessMenus` is foodspark.io misinformation that LLMs have absorbed). But the API *does* expose menu-adjacent signal we're not using: `reviews[].text` (up to 5 reviews, often mention specific dishes), `editorialSummary`, `generativeSummary`, `reviewSummary`, `servesVegetarianFood`/`servesBeer`/`servesWine`/`servesCocktails`/`servesCoffee`/`servesBreakfast`/`servesLunch`/`servesDinner`/`servesBrunch`/`servesDessert`. Plumb these into `Restaurant`, prepend review text + editorial summary to the Haiku extraction input, wire `servesVegetarianFood` directly into `dietaryRestriction`. Bumps every Places request to Enterprise+Atmosphere SKU (~$0.005 more per request). 2-3 hours.
+- [ ] **LLM-rank link discovery.** Current `findMenuPageCandidates` is keyword-bound — misses `/our-fare/`, `/carte/`, foreign-language paths, JS-rendered nav. Send Haiku the full anchor list with prompt "score each link 0-1 for likelihood of leading to a menu." ~1 hour. Catches the long-tail 20% the keyword regex misses today.
+- [ ] **Inline-Haiku on raw Maps HTML.** Currently `tryMapsUriEnrichment` only follows links from the Maps page, never extracts menu text from the Maps page body itself. Google sometimes renders parsed menu items inline on the rich card. Quick spike: send the Maps HTML directly to Haiku before link-discovery. ~30 min spike to test if SSR contains the text.
+- [ ] **Web-search-for-menu as a first-class tool.** Claude Desktop's session organically used `web_search` to find CPK's real menu on DoorDash + cpk.com + Postmates when our pipeline gave it generic. We should expose that pattern: when `menu_known: false` and a known partner host appears in Maps links, the tool description should explicitly tell the agent "use web_search before showing a cart." Light copy change.
+- [ ] **Photos OCR via Claude vision.** Add `places.photos` to FIELD_MASK, fetch top N photos, send to Claude vision with "is this a menu? if so, extract items." Heaviest path — vision token cost ~10× text. Best as cache-warm-only, not live. ~3-4 hours.
+- [ ] **Headless browser (Playwright) for SPAs + bot-blocked aggregators.** Toast / DoorDash / UberEats / Grubhub are filtered out today because they 403 to a curl UA. Headless browser with auth header + cookie handling unlocks ~half of small-pizzeria menus. ~1 week. Operational complexity (CI runner, container size, flake mitigation) is real.
+- [ ] **Actions Center Reservations E2E + Menus interest form.** Paperwork only. Only credible path to a future first-party Google menu read API. Free; just file it.
+
+### `businessMenus` clarification (sprint retrospective note)
+
+For the historical record: the Places API (New) **does not** have a `businessMenus` field. This was confirmed across six canonical Google sources (REST reference, Place Details page, Place Data Fields page, release notes 2024-2026, the machine-readable discovery document at `places.googleapis.com/$discovery/rest?version=v1`, and the example curl requests in the official docs). Aggregator-vendor blogs (foodspark.io and similar) fabricate the claim to drive their own scraping service traffic; LLM-based search tools (Gemini, ChatGPT via WebSearch) have absorbed the misinformation as fact. Empirical test: any curl with `fields=...,businessMenus` returns 400 INVALID_ARGUMENT.
+
+
 
 ### Compatibility-layer follow-ups (next iteration)
 

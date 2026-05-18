@@ -21,6 +21,8 @@
  * without schema edits.
  */
 
+import type { FoodMenuAttributes } from "./menu-taxonomy.js";
+
 // -----------------------------------------------------------------------------
 // Modifiers
 // -----------------------------------------------------------------------------
@@ -129,15 +131,19 @@ export interface PizzaMenuItem {
 }
 
 /**
- * A drink. Each restaurant carries its own list (Coke vs. Pepsi portfolio).
- * Sizes are typically 20oz / 2L for delivery (cans absent across all 3
- * chains researched).
+ * Drink type. Extends FoodMenuAttributes (R-8 / SP-20260517-005) with
+ * optional allergen / dietaryRestriction / spiciness / preparation /
+ * ingredients fields aligned with Google FoodMenu.
  */
-export interface Drink {
+export interface Drink extends FoodMenuAttributes {
   id: string;
   name: string;
   brand?: string;
-  sizes: { id: string; name: string; price: number }[];
+  /**
+   * Size price entries. `priceKnown` (R-2 / S-5) — see MenuItem.sizes
+   * for semantics. Absent ≡ true (back-compat).
+   */
+  sizes: { id: string; name: string; price: number; priceKnown?: boolean }[];
 }
 
 /**

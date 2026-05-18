@@ -47,6 +47,10 @@ const VALID_SCENARIOS = [
   "pizza-only",
   "pizza-plus-side",
   "pizza-plus-drink",
+  // SP-20260517-005 / S-11 / T-098. New verdict-gate regression case.
+  // Drives a fixture-injected places-style restaurant + INCLUDE_TEST_RESTAURANTS=false
+  // so test_vlad is suppressed and the all-unknown gate fires.
+  "fallback-discovery",
   "all",
 ];
 
@@ -98,7 +102,7 @@ function printUsage() {
 
 Options:
   --surface <surface>    mcp-stdio | a2a-jsonrpc | all  (default: all)
-  --scenario <scenario>  pizza-only | pizza-plus-side | pizza-plus-drink | all  (default: all)
+  --scenario <scenario>  pizza-only | pizza-plus-side | pizza-plus-drink | fallback-discovery | all  (default: all)
   --first-run-only       Write report to sprint requirements dir (committed)
   --report-dir <path>    Override report directory
   --no-build             Skip build pre-flight (dist/ used as-is)
@@ -176,7 +180,14 @@ function walkExt(dir, ext) {
 function loadScenarios(scenarioArg) {
   const names =
     scenarioArg === "all"
-      ? ["pizza-only", "pizza-plus-side", "pizza-plus-drink"]
+      ? [
+          "pizza-only",
+          "pizza-plus-side",
+          "pizza-plus-drink",
+          // SP-20260517-005 / S-11 / T-098 — regression-protect the
+          // new verdict gate alongside the existing golden paths.
+          "fallback-discovery",
+        ]
       : [scenarioArg];
 
   const loaded = [];
@@ -193,10 +204,13 @@ function loadScenarios(scenarioArg) {
       console.error(`Scenario ${name} failed to parse JSON: ${e.message}`);
       process.exit(1);
     }
-    // Validate step count
-    if (!parsed.steps || parsed.steps.length < 3 || parsed.steps.length > 12) {
+    // Validate step count. SP-20260517-005 / T-098 — lowered the floor
+    // from 3 to 1 so the fallback-discovery scenario can stop at
+    // start_pizza_order (the gate's whole point is that the flow
+    // REFUSES to proceed to cart-show / prepare_order / place_order).
+    if (!parsed.steps || parsed.steps.length < 1 || parsed.steps.length > 12) {
       console.error(
-        `Scenario ${name}: step count must be 3..12 (got ${parsed.steps?.length})`,
+        `Scenario ${name}: step count must be 1..12 (got ${parsed.steps?.length})`,
       );
       process.exit(1);
     }
@@ -301,6 +315,24 @@ function runAssertions(assertions, responseObj, traceStep) {
           val.toLowerCase().includes(assertion.contains.toLowerCase());
         if (!ok)
           detail = `${assertion.value || assertion.path} does not contain "${assertion.contains}"`;
+        break;
+      }
+      case "json_path_equals": {
+        // SP-20260517-005 / S-11 / T-098. Strict equality.
+        const val = resolveCapture(assertion.value, responseObj);
+        ok = val === assertion.expected;
+        if (!ok)
+          detail = `${assertion.value} !== ${JSON.stringify(assertion.expected)} (got: ${JSON.stringify(val)})`;
+        break;
+      }
+      case "json_path_undefined": {
+        // SP-20260517-005 / S-11 / T-098. Asserts a field is absent
+        // (undefined OR null). Used for "no_suggested_order" on the
+        // fallback_discovery scenario.
+        const val = resolveCapture(assertion.value, responseObj);
+        ok = val === undefined || val === null;
+        if (!ok)
+          detail = `${assertion.value} expected undefined/null (got: ${JSON.stringify(val)})`;
         break;
       }
       default:
@@ -990,9 +1022,21 @@ async function main() {
       console.log(
         `\ngolden-path harness — surface=${surface} scenario=${scenario.id}`,
       );
-      console.log(
-        `  BLAND_HARNESS_MODE=1 BLAND_API_KEY="" SIM_FAST_FORWARD_MS=0 INCLUDE_TEST_RESTAURANTS=true`,
-      );
+
+      // SP-20260517-005 / T-098. Per-scenario env overrides (e.g. the
+      // fallback-discovery scenario sets INCLUDE_TEST_RESTAURANTS=false
+      // + TEST_RESTAURANTS_FIXTURE_FILE=<fixture>). Merge scenario-
+      // declared envOverrides on top of the harness baseline before
+      // spawning the child server.
+      const scenarioEnv = {
+        ...harnessEnv,
+        ...(scenario.setup?.envOverrides ?? {}),
+      };
+      const envPrintable = Object.entries(scenarioEnv)
+        .filter(([k]) => k !== "PROFILE_ENCRYPTION_SECRET")
+        .map(([k, v]) => `${k}="${v}"`)
+        .join(" ");
+      console.log(`  ${envPrintable}`);
 
       const eventsSnapshot = snapshotEventsSize();
       const t0 = Date.now();
@@ -1002,14 +1046,14 @@ async function main() {
         if (surface === "mcp-stdio") {
           failures = await runMcpStdioScenario(
             scenario,
-            harnessEnv,
+            scenarioEnv,
             opts,
             traceFile,
           );
         } else if (surface === "a2a-jsonrpc") {
           failures = await runA2AScenario(
             scenario,
-            harnessEnv,
+            scenarioEnv,
             opts,
             traceFile,
           );
