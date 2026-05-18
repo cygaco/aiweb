@@ -2,13 +2,23 @@
  * Event log — append-only JSONL writer.
  *
  * Lives in `runtime/events.jsonl` (mkdir-p the runtime dir if missing).
+ * Override path with env `COMPATIBILITY_EVENTS_FILE`.
+ *
+ * NOTE: This is the PRODUCT event stream — distinct from the framework /
+ * Alpha event stream at `paths.eventsFile` (.claude/project/events/events.jsonl,
+ * written via scripts/hooks/lib/logger.js). The two streams are intentionally
+ * separate: this file logs runtime app behavior (compatibility checks,
+ * enrichment outcomes, customization surface); the framework stream logs
+ * meta events (tool calls, hooks, agent dispatches). /learn:deep Phase B
+ * should scan whichever stream matches its scope.
+ *
  * Fail-open silently: if the write fails, swallow the error so order flow
  * is never broken by a logging issue.
  *
  * Shape:
  *   { id, ts, cat, actor: "alex", data }
  *
- * Categories: "compatibility", "compatibility-override", "enrichment".
+ * Categories: "compatibility", "compatibility-override", "enrichment", etc.
  * Event id prefix matches the cat-segment so `EVT-enrichment-...` and
  * `EVT-compat-...` are visually distinguishable in the trace.
  */
