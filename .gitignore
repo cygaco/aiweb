@@ -47,6 +47,11 @@ wu.json.tmp
 # Per-session debug scratchpads under scripts/
 scripts/_tmp-*.js
 
+# Operator-local Claude Desktop wrapper — contains live WARP_MCP_KEY.
+# Use scripts/one-off/aiweb-pizza-mcp.cmd.template as the starting point;
+# never commit the populated .cmd. See _docs/operations/claude-desktop-setup.md.
+scripts/one-off/aiweb-pizza-mcp.cmd
+
 # Git worktrees created by isolation:worktree agent dispatches
 .worktrees/
 .claude/worktrees/

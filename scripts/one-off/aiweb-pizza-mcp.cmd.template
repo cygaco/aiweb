@@ -1,0 +1,18 @@
+@echo off
+REM Operator-local Claude Desktop wrapper for the aiweb MCP bridge.
+REM
+REM SETUP:
+REM   1. Copy this file to scripts/one-off/aiweb-pizza-mcp.cmd in the same dir.
+REM   2. Replace REPLACE_WITH_YOUR_KEY below with the live WARP_MCP_KEY from
+REM      Fly secrets (or your local .env). Do NOT commit the populated file —
+REM      .gitignore excludes scripts/one-off/aiweb-pizza-mcp.cmd by design.
+REM   3. Point Claude Desktop's claude_desktop_config.json at the .cmd path.
+REM
+REM Why a wrapper at all: Claude Desktop's args block does NOT interpolate
+REM ${VAR} / %VAR% style placeholders before invoking the child process, so
+REM passing the bearer through the `args` array sends a literal "${KEY}" to
+REM mcp-remote and the server 401s. cmd.exe parses this script as one command
+REM line — the value is substituted before npx ever sees it.
+
+set "WARP_MCP_KEY=REPLACE_WITH_YOUR_KEY"
+npx -y mcp-remote https://aiweb-mcp.fly.dev/mcp --header "Authorization: Bearer %WARP_MCP_KEY%"
