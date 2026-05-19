@@ -337,3 +337,46 @@ Items flagged from this product repo for upstream WarpOS propagation. Drained on
 - Source: scripts/sprint/plan.js, scripts/sprint/design.js, .claude/project/sprint/sprints/<SP-id>/current.yaml
 - Status: open
 - Description: Observed during /sprint:plan for SP-20260514-004 on 2026-05-14: plan.js wrote .claude/project/sprint/sprints/SP-20260514-004/current.yaml with id=SP-20260514-003 and title='Unnamed sprint' (template defaults), while ONLY populating source_request/interpreted_intent/plan_contract/etc. correctly. The subsequent /sprint:design read SPRINT.current via the active-registry getter (which DID resolve to the SP-004 file), but design.js then read the file's id field (SP-20260514-003) and scaffolded into requirements/SP-20260514-003/ — clobber risk against the prior sprint's existing files, and 0 files written for SP-004. Workaround: manual edit of per-sprint current.yaml id+title before re-running design.js. Proposal: (1) plan.js fills id from active-sprints registry's primary AT WRITE TIME, not from a template default; (2) plan.js fills title from active-sprints[].title (which IS populated correctly by add-sprint.js); (3) design.js either uses the registry id directly instead of trusting the per-sprint current.yaml id, or asserts they match and refuses with a clear error if not.
+
+## 2026-05-19
+
+### hook — Strengthen secret-guard.js: generic patterns + file/extension skip-rules
+
+- Date: 2026-05-19
+- Source: aiweb 2026-05-18 secret-leak incident (RT-008)
+- Status: open
+- Description: Aiweb's WARP_MCP_KEY=<64hex> was committed in scripts/one-off/aiweb-pizza-mcp.cmd on 2026-05-02 and exposed on public GitHub for 16 days. Root-cause #2 was a coverage gap in scripts/hooks/secret-guard.js — its 15 patterns required either a vendor prefix (sk-/pk-/ghp_/whsec_/eyJ) OR the literal words password|passwd|secret in the variable name. WARP_MCP_KEY=<hex> matched neither, so the Write that created the .cmd passed silently.
+
+Aiweb's patched hook adds 8 patterns + 4 skip-rules. Canonical WarpOS should pick up the GENERIC subset (project-named patterns stay aiweb-local):
+
+GENERIC (promote to canonical):
+  - Windows .cmd / .bat 'set "FOO_KEY=<32+hex>"' syntax detector
+  - Generic [A-Z][A-Z0-9_]*(KEY|SECRET|TOKEN)\s*[:=]\s*['"]?[A-Fa-f0-9]{32,} (catches any *_KEY/*_SECRET/*_TOKEN with 32+ hex value, project-agnostic)
+  - Standalone vendor-prefix detectors: AIzaSy[A-Za-z0-9_-]{33} and sk-ant-api03-[A-Za-z0-9_-]{40,} (catches literal pastes outside assignment context — e.g. in src/, docs, tests)
+  - File-path skip-rules: framework/releases/**/checksums.json, requirements.graph.json, *.shasum, integrity.json (legitimate hash artifacts, otherwise generic detector creates churn)
+  - Extension skip-rules: *.template, *.sample, *.example (placeholder convention — REPLACE_WITH_YOUR_KEY etc.)
+  - Anthropic key pattern: tighten ANTHROPIC_API_KEY=sk- regex with negative lookahead for 'ant-...' placeholder so docs and .env.example don't false-positive
+  - PLACEHOLDER constant for inline-text check (REPLACE_WITH, YOUR_*_KEY, generate-with-, etc.) — currently declared but not wired in scan loop; canonical version should wire it as a post-match filter so e.g. 'const example = "REPLACE_WITH_YOUR_KEY"' in a doc file doesn't trip the generic detector
+
+PROJECT-LOCAL (do NOT promote — aiweb-specific names):
+  - WARP_MCP_KEY, PROFILE_ENCRYPTION_SECRET, BLAND_API_KEY, GOOGLE_PLACES_API_KEY named patterns. Canonical WarpOS doesn't know about aiweb's env-var names; pattern catalog at canonical layer should be the project-agnostic set above.
+
+Also worth considering at canonical layer (separate flag candidate — not yet decided):
+  - A git pre-commit hook (separate from the Claude PreToolUse hook) so terminal-driven commits via 'git commit' get the same protection. Currently secret-guard.js is Claude PreToolUse only — terminal commits bypass it entirely. Aiweb hit this exact gap: the leak commit dede2e4 was created via Claude's Write tool (PreToolUse fired but patterns didn't match), but a future terminal commit would bypass the hook entirely even with strengthened patterns.
+
+References: aiweb commit b97d958 (the secret-guard.js patch with self-tests), RT-008 reasoning trace, LRN-2026-05-18-secret-guard-name-coverage-gap.
+
+### hook — Per-pattern allowedPaths support in secret-guard.js (SP-20260519-006 R-5)
+
+- Date: 2026-05-19
+- Source: aiweb commit fa08e4d (SP-20260519-006 card-over-phone payment, alpha-stage)
+- Status: open
+- Description: Sprint 006 added three card-number patterns to scripts/hooks/secret-guard.js (13-19 contiguous digits, 4-4-4-4 grouped, CVV-adjacent). To support legitimate regression-test fixtures that intentionally contain synthetic card numbers, the loop was extended to accept a per-pattern `allowedPaths: RegExp` field that skips the pattern when filePath matches.
+
+GENERIC (promote to canonical):
+  - Loop structure: each pattern entry can carry an optional `allowedPaths` regex; when set and filePath matches, skip just that pattern (other patterns still fire). This is upstream of any specific pattern — useful for any class of "legitimate-in-some-paths" content (test fixtures, synthetic credentials, hash artifacts that happen to look like secrets).
+
+PROJECT-LOCAL (do NOT promote — aiweb-specific):
+  - The three card-number patterns themselves with their `tests/regression/SP-20260519-006/` allowlist. Canonical WarpOS doesn't ship a card-payment feature.
+
+References: aiweb commit fa08e4d, _docs/operations/card-over-phone-safety.md, tests/regression/SP-20260519-006/secret-guard-block.test.ts (proves per-pattern allowlist works end-to-end).
