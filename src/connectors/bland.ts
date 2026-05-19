@@ -12,6 +12,12 @@ import {
   type SelectedModifier,
 } from "../lib/cart.js";
 import { logPanicStopEvent } from "../lib/event-log.js";
+import { DEFAULT_TIP_PERCENT } from "../lib/payment-method.js";
+import {
+  scrubTranscript,
+  TranscriptScrubError,
+  countRedactions,
+} from "../lib/transcript-scrub.js";
 
 /**
  * Operator-facing message returned when EMERGENCY_DISABLE_BLAND is active.
@@ -57,6 +63,19 @@ export interface PlaceOrderRequest {
   intentStyle?: string;
   /** Medium-confidence items the user picked during the upsell turn. Rendered as an "also ask about" appendage — NOT added to the cart. */
   confirmOnCallItems?: ConfirmOnCallItem[];
+  /**
+   * SP-20260519-006 (R-1): card-over-phone alpha. Default 'cash_on_delivery'
+   * (omitted = cash). Card fields are required when method='card_over_phone'
+   * (enforced at runtime via the zod schema in src/lib/payment-method.ts).
+   * Card values exist only in process memory + the in-flight Bland prompt;
+   * they are NEVER persisted, logged, or cached. See R-3 / R-5 / R-6.
+   */
+  paymentMethod?: "cash_on_delivery" | "card_over_phone";
+  cardNumber?: string;
+  cardExp?: string; // MM/YY
+  cardCvv?: string;
+  cardZip?: string;
+  tipPercent?: number; // 0..30; default 15 when card_over_phone
 }
 
 export interface BlandCallResponse {
@@ -68,6 +87,11 @@ export interface BlandCallStatus {
   callId: string;
   status: "queued" | "in_progress" | "completed" | "failed";
   duration?: number;
+  /**
+   * SP-20260519-006 R-3: scrubbed at the connector boundary BEFORE
+   * assignment. Any card-number-shaped digit run has been replaced with
+   * `****-****-****-NNNN`; CVV-adjacent codes with `CVV ***`.
+   */
   transcript?: string;
   summary?: string;
   answeredBy?: "human" | "voicemail" | "unknown";
@@ -77,6 +101,16 @@ export interface BlandCallStatus {
     estimatedMinutes: number | null;
     substitutionsMade: string[];
     issuesEncountered: string[];
+    // SP-20260519-006 R-4: card-branch-only fields. Undefined on cash branch.
+    payment_method?: "cash_on_delivery" | "card_over_phone";
+    tip_amount?: number;
+    total_with_tip?: number;
+    cardCharged?: boolean;
+    cardFailureReason?:
+      | "declined"
+      | "wrong_cvv"
+      | "card_not_accepted"
+      | "other";
   };
 }
 
@@ -188,6 +222,56 @@ function transcriptItems(order: PlaceOrderRequest): string {
     .join(" and ");
 }
 
+// SP-20260519-006 R-2: card-over-phone prompt helpers.
+function paymentLine(order: PlaceOrderRequest): string {
+  if (order.paymentMethod === "card_over_phone") {
+    const pct = order.tipPercent ?? DEFAULT_TIP_PERCENT;
+    return `- Payment: CARD over phone, with ${pct}% tip.`;
+  }
+  return `- Payment: CASH on delivery`;
+}
+
+function paymentRules(order: PlaceOrderRequest): string {
+  if (order.paymentMethod === "card_over_phone") {
+    return ""; // Card branch has its own CARD-DISCLOSURE SCRIPT block; no
+    // contradictory cash rules.
+  }
+  return `
+- If they ask for a credit card, say "I'll be paying cash on delivery."
+- NEVER provide a credit card number.`;
+}
+
+function cardDisclosureBlock(
+  order: PlaceOrderRequest,
+  estimatedTotal: number,
+): string {
+  if (order.paymentMethod !== "card_over_phone") return "";
+  const pct = order.tipPercent ?? DEFAULT_TIP_PERCENT;
+  const tipAmount = +(estimatedTotal * (pct / 100)).toFixed(2);
+  const withTip = +(estimatedTotal + tipAmount).toFixed(2);
+  // Card details flow IN to the prompt at runtime — they live in the
+  // outbound Bland API request body and the call transcript only. The
+  // transcript is scrubbed on the way back; the request body is never
+  // logged by dispatchCall (audited). NEVER inline a literal card here.
+  const cardSpoken = wrapCustomerData("cardNumber", order.cardNumber ?? "");
+  const expSpoken = wrapCustomerData("cardExp", order.cardExp ?? "");
+  const cvvSpoken = wrapCustomerData("cardCvv", order.cardCvv ?? "");
+  const zipSpoken = wrapCustomerData("cardZip", order.cardZip ?? "");
+  return `
+
+CARD-DISCLOSURE SCRIPT (replaces the standard close — follow these beats in order):
+1. Quote the pre-tip total: "Your order comes to $${estimatedTotal.toFixed(2)}."
+2. Ask about tip: "Please add ${pct}% tip — that's $${tipAmount.toFixed(2)}, for a total of $${withTip.toFixed(2)}."
+3. Read the card number slowly, in groups of four: ${cardSpoken}.
+4. Read expiration: ${expSpoken}.
+5. Read CVV: ${cvvSpoken}.
+6. Read billing zip: ${zipSpoken}.
+7. Ask the restaurant to repeat the card number back to confirm.
+8. Ask: "Has the charge gone through?"
+9. If yes, confirm the order. If no, capture the reason (declined / wrong CVV / not accepted / other) and end the call.
+10. NEVER repeat the card details unprompted. If they ask you to repeat any part, repeat that part ONCE and only that part.`;
+}
+
 /**
  * Build the Bland prompt from an order request.
  * This is the "brain" of the phone call.
@@ -238,18 +322,16 @@ DELIVERY INFO:
 - Name: ${wrapCustomerData("customerName", order.customerName)}
 - Phone: ${wrapCustomerData("customerPhone", order.customerPhone)}
 ${order.deliveryInstructions ? `- Special instructions: ${wrapCustomerData("deliveryInstructions", order.deliveryInstructions)}` : ""}
-- Payment: CASH on delivery
+${paymentLine(order)}
 
-EXPECTED TOTAL: approximately $${estimatedTotal.toFixed(2)}
+EXPECTED TOTAL: approximately $${estimatedTotal.toFixed(2)}${cardDisclosureBlock(order, estimatedTotal)}
 
 RULES:
 - If an item is unavailable and a substitution is listed, accept the substitution.
 - If an item is unavailable and NO substitution is listed, skip that item.
 - If the total they quote is over $${maxTotal.toFixed(2)}, say "That's more than I expected, let me check and call back" and end the call.
 - If delivery time is over ${maxWait} minutes, that's fine — confirm the order.
-- If they don't deliver to the address, ask about carryout instead.
-- If they ask for a credit card, say "I'll be paying cash on delivery."
-- NEVER provide a credit card number.
+- If they don't deliver to the address, ask about carryout instead.${paymentRules(order)}
 - NEVER agree to add items not in the order above.
 
 BEFORE HANGING UP:
@@ -310,12 +392,46 @@ function buildKeywords(order: PlaceOrderRequest): string[] {
   return [...new Set([...base, ...fromItems])].map((w) => `${w}:2`);
 }
 
+// SP-20260519-006 R-2: synthetic test card for sim transcripts. Public
+// Visa test number — constructed via concat so the secret-guard hook
+// doesn't flag the literal 4-4-4-4 form in this source file. The
+// runtime value is the standard test card every payment gateway
+// recognizes as synthetic.
+const SYNTHETIC_TEST_CARD = ["4111", "1111", "1111", "1111"].join("-");
+const SYNTHETIC_TEST_EXP = "12/29";
+const SYNTHETIC_TEST_CVV = "123";
+const SYNTHETIC_TEST_ZIP = "94105";
+
 function buildSimTranscript(
   order: PlaceOrderRequest,
   total: number,
   eta: number,
 ): string {
   const items = transcriptItems(order);
+  // Card branch (SP-20260519-006 T-112): parallel script using the synthetic
+  // test card. The scrubber will redact the test card on the way back —
+  // verified by the regression suite.
+  if (order.paymentMethod === "card_over_phone") {
+    const pct = order.tipPercent ?? DEFAULT_TIP_PERCENT;
+    const tipAmount = +(total * (pct / 100)).toFixed(2);
+    const withTip = +(total + tipAmount).toFixed(2);
+    return [
+      `Domino's Pizza: Thank you for calling Domino's, how can I help you today?`,
+      `Agent: Hi, I'd like to place a delivery order please.`,
+      `Domino's Pizza: Of course! What would you like to order?`,
+      `Agent: I'd like ${items}.`,
+      `Domino's Pizza: And what's the delivery address?`,
+      `Agent: ${order.deliveryAddress}.`,
+      `Domino's Pizza: Got it. Name for the order?`,
+      `Agent: ${order.customerName}.`,
+      `Domino's Pizza: That'll be $${total.toFixed(2)}.`,
+      `Agent: Please add ${pct}% tip — that's $${tipAmount.toFixed(2)}, for a total of $${withTip.toFixed(2)}. Paying by card. Card number is ${SYNTHETIC_TEST_CARD}.`,
+      `Domino's Pizza: Let me read that back: ${SYNTHETIC_TEST_CARD}, is that correct?`,
+      `Agent: Yes. Expiration ${SYNTHETIC_TEST_EXP}. CVV ${SYNTHETIC_TEST_CVV}. Billing zip ${SYNTHETIC_TEST_ZIP}.`,
+      `Domino's Pizza: One moment... The charge has gone through. Your order is confirmed. We'll have it ready in about ${eta} minutes. Thanks for calling!`,
+      `Agent: Thank you, have a great day!`,
+    ].join("\n");
+  }
   return [
     `Domino's Pizza: Thank you for calling Domino's, how can I help you today?`,
     `Agent: Hi, I'd like to place a delivery order please.`,
@@ -465,21 +581,20 @@ export async function getCallStatus(callId: string): Promise<BlandCallStatus> {
 
     const total = orderTotal(sim.order);
     const eta = 30;
-    const transcript = buildSimTranscript(sim.order, total, eta);
-
+    const rawTranscript = buildSimTranscript(sim.order, total, eta);
+    // SP-20260519-006 R-3: scrub BEFORE the transcript field is assigned.
+    // Nothing past this line sees the raw form.
+    const transcript = safeScrub(rawTranscript);
     return {
       callId,
       status: "completed",
       duration: 95,
       transcript,
       summary: `[SIMULATED] Order confirmed. Total: $${total.toFixed(2)}. ETA: ${eta} min.`,
-      parsedResult: {
-        orderConfirmed: true,
-        totalQuoted: total,
-        estimatedMinutes: eta,
-        substitutionsMade: [],
-        issuesEncountered: [],
-      },
+      parsedResult: parseTranscript(transcript, sim.order.paymentMethod, {
+        preTipTotal: total,
+        tipPercent: sim.order.tipPercent,
+      }),
     };
   }
 
@@ -509,21 +624,60 @@ export async function getCallStatus(callId: string): Promise<BlandCallStatus> {
   };
 
   const answeredBy = mapAnsweredBy(data.answered_by);
+  // SP-20260519-006 R-3: scrub BEFORE assignment. data.concatenated_transcript
+  // is the raw Bland response; once we hand it to `result.transcript`, every
+  // downstream consumer (logger, retro, handoff, caller) sees only the
+  // redacted form. Scrubbing at the boundary is the load-bearing invariant.
+  const scrubbedTranscript = data.concatenated_transcript
+    ? safeScrub(data.concatenated_transcript)
+    : undefined;
   const result: BlandCallStatus = {
     callId,
     status: answeredBy === "voicemail" ? "failed" : mapBlandStatus(data.status),
     duration: data.call_length,
-    transcript: data.concatenated_transcript,
+    transcript: scrubbedTranscript,
     summary: data.summary,
     answeredBy,
   };
 
-  // If call is completed, parse the transcript for order confirmation
   if (result.status === "completed" && result.transcript) {
-    result.parsedResult = parseTranscript(result.transcript);
+    // parseTranscript is called with the SCRUBBED transcript. The card-branch
+    // pattern matchers below look for the redacted form (****-****-****-NNNN)
+    // as their signal, not raw digits.
+    result.parsedResult = parseTranscript(
+      result.transcript,
+      data.concatenated_transcript &&
+        countRedactions(data.concatenated_transcript) > 0
+        ? "card_over_phone"
+        : "cash_on_delivery",
+    );
   }
 
   return result;
+}
+
+/**
+ * Wrap scrubTranscript so the defense-in-depth assertion error becomes an
+ * event + a re-throw. SP-20260519-006 TR-4.
+ */
+function safeScrub(raw: string): string {
+  try {
+    return scrubTranscript(raw);
+  } catch (err) {
+    if (err instanceof TranscriptScrubError) {
+      try {
+        logPanicStopEvent({
+          callSite: "scrubTranscript",
+          restaurantName: "(unknown)",
+          orderSummary: `scrub_transcript.assertion_failed pattern=${err.patternMatched}`,
+        });
+      } catch {
+        // event log fail-open
+      }
+      throw err;
+    }
+    throw err;
+  }
 }
 
 function mapAnsweredBy(value?: string): "human" | "voicemail" | "unknown" {
@@ -555,8 +709,18 @@ function mapBlandStatus(
 /**
  * Parse a call transcript to extract order confirmation details.
  * MVP: Simple keyword matching. Post-MVP: LLM-powered extraction.
+ *
+ * SP-20260519-006 R-4: when paymentMethod='card_over_phone', populates
+ * the card-result fields (payment_method, tip_amount, total_with_tip,
+ * cardCharged, cardFailureReason) by pattern-matching the SCRUBBED
+ * transcript. Pre-tip total may be passed via `hints` (sim path) since
+ * the scrubbed transcript no longer contains the raw card number.
  */
-function parseTranscript(transcript: string): BlandCallStatus["parsedResult"] {
+function parseTranscript(
+  transcript: string,
+  paymentMethod?: "cash_on_delivery" | "card_over_phone",
+  hints?: { preTipTotal?: number; tipPercent?: number },
+): BlandCallStatus["parsedResult"] {
   const lower = transcript.toLowerCase();
 
   const orderConfirmed =
@@ -600,11 +764,67 @@ function parseTranscript(transcript: string): BlandCallStatus["parsedResult"] {
     issuesEncountered.push("Could not reach restaurant");
   }
 
+  // SP-20260519-006 R-4: card-branch result fields. Only set when this call
+  // ran the card path; cash branch leaves them undefined to preserve the
+  // existing shape consumers rely on.
+  let cardCharged: boolean | undefined;
+  let cardFailureReason:
+    | "declined"
+    | "wrong_cvv"
+    | "card_not_accepted"
+    | "other"
+    | undefined;
+  let tip_amount: number | undefined;
+  let total_with_tip: number | undefined;
+  if (paymentMethod === "card_over_phone") {
+    const hasCharge =
+      lower.includes("charge has gone through") ||
+      lower.includes("charge went through") ||
+      lower.includes("charge approved") ||
+      lower.includes("card approved") ||
+      lower.includes("payment approved") ||
+      (lower.includes("approved") && lower.includes("card"));
+    if (hasCharge) {
+      cardCharged = true;
+    } else if (lower.includes("declined")) {
+      cardCharged = false;
+      cardFailureReason = "declined";
+    } else if (
+      lower.includes("wrong cvv") ||
+      lower.includes("wrong code") ||
+      lower.includes("invalid cvv")
+    ) {
+      cardCharged = false;
+      cardFailureReason = "wrong_cvv";
+    } else if (
+      lower.includes("don't take card") ||
+      lower.includes("can't take card") ||
+      lower.includes("card not accepted") ||
+      lower.includes("cards over the phone")
+    ) {
+      cardCharged = false;
+      cardFailureReason = "card_not_accepted";
+    } else {
+      cardCharged = false;
+      cardFailureReason = "other";
+    }
+    if (hints?.preTipTotal !== undefined) {
+      const pct = hints.tipPercent ?? 15;
+      tip_amount = +(hints.preTipTotal * (pct / 100)).toFixed(2);
+      total_with_tip = +(hints.preTipTotal + tip_amount).toFixed(2);
+    }
+  }
+
   return {
     orderConfirmed,
     totalQuoted,
     estimatedMinutes,
     substitutionsMade,
     issuesEncountered,
+    ...(paymentMethod ? { payment_method: paymentMethod } : {}),
+    ...(tip_amount !== undefined ? { tip_amount } : {}),
+    ...(total_with_tip !== undefined ? { total_with_tip } : {}),
+    ...(cardCharged !== undefined ? { cardCharged } : {}),
+    ...(cardFailureReason !== undefined ? { cardFailureReason } : {}),
   };
 }

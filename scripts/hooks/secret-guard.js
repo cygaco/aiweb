@@ -152,9 +152,33 @@ process.stdin.on("end", () => {
         pattern: /LINKEDIN_CLIENT_SECRET\s*=\s*['"]?[^'"]{10,}/,
         name: "LinkedIn OAuth client secret",
       },
+      // ── Card-number leak surface (SP-20260519-006 R-5) ───────────
+      // The pizza concierge has a card-over-phone alpha path that
+      // voices a card to the restaurant. The transcript is regex-
+      // scrubbed before any log/cache hits disk; this hook is the
+      // write-time gate that prevents code/docs/fixtures from
+      // committing card numbers by accident. Allowlist covers the
+      // regression-test fixture path that intentionally contains
+      // a synthetic test card (4111-1111-1111-1111 etc.).
+      {
+        pattern: /\b\d{13,19}\b/,
+        name: "Card-number-like 13-19 digit run",
+        allowedPaths: /tests[\\/]regression[\\/]SP-20260519-006[\\/]/,
+      },
+      {
+        pattern: /\b\d{4}[\s-]\d{4}[\s-]\d{4}[\s-]\d{4}\b/,
+        name: "Card-number-like 4-4-4-4 grouped digits",
+        allowedPaths: /tests[\\/]regression[\\/]SP-20260519-006[\\/]/,
+      },
+      {
+        pattern: /\bCVV\s*[:=]?\s*\d{3,4}\b/i,
+        name: "CVV-adjacent 3-4 digit code",
+        allowedPaths: /tests[\\/]regression[\\/]SP-20260519-006[\\/]/,
+      },
     ];
 
-    for (const { pattern, name } of secretPatterns) {
+    for (const { pattern, name, allowedPaths } of secretPatterns) {
+      if (allowedPaths && allowedPaths.test(filePath)) continue;
       if (pattern.test(content)) {
         process.stderr.write(
           `BLOCKED: File "${filePath}" contains a ${name}. Use environment variables instead.\n`,

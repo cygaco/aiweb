@@ -15,9 +15,13 @@ export default function TermsOfService() {
           This is alpha software. Do not place real orders unattended; expect to
           verify every order.
         </li>
+        <li>Cash on delivery is the default payment method.</li>
         <li>
-          Payment is cash on delivery only. We do not process or store payment
-          information.
+          Card-over-phone is an alpha-stage testing path. Use only prepaid cards
+          with single-use balances. The card number is voiced to the restaurant
+          by an AI agent; we do not store the card on our systems, but we do not
+          control how the restaurant handles it after the call. Use cash on
+          delivery for non-test orders.
         </li>
         <li>
           We do not yet offer per-user authentication. Anyone with the API key
@@ -31,7 +35,7 @@ export default function TermsOfService() {
           <a href="mailto:contact@agentsforall.co">contact@agentsforall.co</a>.
         </li>
       </ul>
-      <p>Last updated: 2026-05-14</p>
+      <p>Last updated: 2026-05-19</p>
     </main>
   );
 }

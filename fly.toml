@@ -11,6 +11,11 @@ primary_region = 'sjc'
 [env]
   ALLOWED_HOSTS = 'aiweb-mcp.fly.dev'
   DATABASE_PATH = '/data/profiles.db'
+  # SP-20260519-006 R-6: card-over-phone alpha path is OFF on prod by
+  # default. Explicit entry ensures prod stays cash-only even if a code
+  # default flips silently. Flipping to 'true' is a deliberate operator
+  # action documented in _docs/operations/card-over-phone-safety.md.
+  ENABLE_CARD_OVER_PHONE = 'false'
   HOST = '0.0.0.0'
   INCLUDE_TEST_RESTAURANTS = 'false'
   NODE_ENV = 'production'

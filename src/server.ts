@@ -49,6 +49,22 @@ import {
   logStartPizzaOrderBranchEvent,
 } from "./lib/event-log.js";
 import { geocodeAddress } from "./lib/geo.js";
+import {
+  cardOverPhoneFieldsSchema,
+  isCardOverPhoneEnabled,
+  DEFAULT_TIP_PERCENT,
+} from "./lib/payment-method.js";
+
+/**
+ * SP-20260519-006 R-9 / C-1: hardcoded disclosure constant. The agent
+ * MUST reproduce this string VERBATIM in the cart-confirmation narration
+ * when payment_method='card_over_phone'. The regression suite asserts
+ * the literal appears unchanged. NEVER paraphrase, NEVER summarize,
+ * NEVER translate — the alpha-stage posture depends on this disclosure
+ * being read literally to the user before they confirm.
+ */
+export const CARD_OVER_PHONE_DISCLOSURE =
+  "Heads up — card-over-phone is an alpha-stage testing path. The AI will voice your card number to the restaurant employee during the call. Use a prepaid single-use card with a bounded balance only. We don't store your card, but we don't control how the restaurant handles it after they hear it. To switch to cash on delivery, say so before confirming.";
 
 const modifierSchema = z
   .object({
@@ -1354,7 +1370,8 @@ Always pass delivery_address explicitly — there is no saved-profile fallback o
 
     `Place a pizza order by having an AI voice agent call the restaurant.
 The AI will call the restaurant, read the order, and confirm it — just
-like a human calling to place a delivery order. Payment is CASH on delivery.
+like a human calling to place a delivery order. Default payment is CASH
+on delivery.
 
 CRITICAL: Only call this AFTER the user has confirmed the full order.
 You MUST have shown them: items, price, restaurant, ETA, address, name,
@@ -1368,6 +1385,14 @@ and Bland is NOT dispatched. Caller may pass \`override_compatibility: true\`
 ONLY when the user has explicitly approved proceeding despite a known
 mismatch (e.g., user accepts pickup from a no-delivery restaurant). Override
 events are logged for audit.
+
+PAYMENT METHODS: \`cash_on_delivery\` (default) or \`card_over_phone\`
+(alpha-stage; requires \`ENABLE_CARD_OVER_PHONE='true'\` on the server).
+When the user selects \`card_over_phone\`, the agent MUST reproduce the
+CARD_OVER_PHONE_DISCLOSURE verbatim in the cart-confirmation narration
+before asking for final confirmation. Card fields are required together;
+they are voiced to the restaurant during the call and NEVER persisted
+on our systems beyond the in-flight call. Tip default 15%.
 
 Prefer cart for new calls; items is the legacy single-line-pizza shape kept for back-compat. When cart is present, the voice connector renders cart lines with modifiers, drinks, sides, and deals.
 
@@ -1447,6 +1472,43 @@ Then call check_order_status with the returned call_id to get the result.`,
           "What the user wanted (used for the second-pass compatibility check and for the ITEM-CONFIRM step in the call when item availability is unknown).",
         ),
       confirm_on_call_items: confirmOnCallItemsSchema,
+      // SP-20260519-006 R-1 / R-6 / IN-1..IN-7: card-over-phone alpha path.
+      payment_method: z
+        .enum(["cash_on_delivery", "card_over_phone"])
+        .optional()
+        .describe(
+          "Payment method. Default 'cash_on_delivery'. 'card_over_phone' (alpha-stage) requires the operator to set ENABLE_CARD_OVER_PHONE='true' on the server AND requires all card_* fields. The agent MUST reproduce the CARD_OVER_PHONE_DISCLOSURE verbatim in cart-confirmation narration before asking for final confirmation.",
+        ),
+      card_number: z
+        .string()
+        .optional()
+        .describe(
+          "13-19 digits, optionally 4-4-4-4 grouped. Required when payment_method='card_over_phone'. Never persisted.",
+        ),
+      card_exp: z
+        .string()
+        .optional()
+        .describe("MM/YY. Required when payment_method='card_over_phone'."),
+      card_cvv: z
+        .string()
+        .optional()
+        .describe(
+          "3-4 digits. Required when payment_method='card_over_phone'.",
+        ),
+      card_zip: z
+        .string()
+        .optional()
+        .describe(
+          "US zip 5 or 5+4. Required when payment_method='card_over_phone'.",
+        ),
+      tip_percent: z
+        .number()
+        .min(0)
+        .max(30)
+        .optional()
+        .describe(
+          "Tip percent (0..30). Default 15 when payment_method='card_over_phone'.",
+        ),
     },
 
     async ({
@@ -1464,6 +1526,12 @@ Then call check_order_status with the returned call_id to get the result.`,
       override_compatibility,
       intent_style,
       confirm_on_call_items,
+      payment_method,
+      card_number,
+      card_exp,
+      card_cvv,
+      card_zip,
+      tip_percent,
     }) => {
       // No saved-profile fallback on this surface — caller must supply
       // delivery_address / customer_name / customer_phone every order.
@@ -1477,6 +1545,56 @@ Then call check_order_status with the returned call_id to get the result.`,
       if (!resolvedAddress) missing.push("delivery_address");
       if (!resolvedName) missing.push("customer_name");
       if (!resolvedPhone) missing.push("customer_phone");
+
+      // SP-20260519-006 R-1 / R-6 / C-4: card-over-phone env-gate +
+      // discriminated-union validation. Refuse before Bland dispatch.
+      if (payment_method === "card_over_phone") {
+        if (!isCardOverPhoneEnabled()) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    status: "error",
+                    error_code: "card_over_phone_disabled",
+                    message:
+                      "Card-over-phone payment is disabled on this server. The operator must set ENABLE_CARD_OVER_PHONE='true' to enable the alpha-stage testing path. Use payment_method='cash_on_delivery' instead.",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+        const cardParse = cardOverPhoneFieldsSchema.safeParse({
+          card_number,
+          card_exp,
+          card_cvv,
+          card_zip,
+          tip_percent,
+        });
+        if (!cardParse.success) {
+          const issue = cardParse.error.issues[0];
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    status: "error",
+                    error_code: issue.message,
+                    message: `Card-over-phone request failed validation: ${issue.path.join(".")} — ${issue.message}.`,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+      }
 
       if (missing.length > 0) {
         return {
@@ -1762,6 +1880,21 @@ Then call check_order_status with the returned call_id to get the result.`,
         itemAvailabilityUnknown,
         intentStyle: intent_style,
         confirmOnCallItems: confirm_on_call_items,
+        // SP-20260519-006 R-1: card-over-phone fields flow into the Bland
+        // prompt body only. They are never logged by dispatchCall (audited)
+        // and the returned transcript is scrubbed at the connector boundary
+        // (R-3). Skip the fields entirely when paymentMethod is cash, so
+        // the existing cash-call path is byte-identical.
+        ...(payment_method === "card_over_phone"
+          ? {
+              paymentMethod: payment_method,
+              cardNumber: card_number,
+              cardExp: card_exp,
+              cardCvv: card_cvv,
+              cardZip: card_zip,
+              tipPercent: tip_percent ?? DEFAULT_TIP_PERCENT,
+            }
+          : {}),
       };
 
       try {

@@ -39,6 +39,11 @@ import {
   logA2ACustomizationSourceEvent,
 } from "../lib/event-log.js";
 import { geocodeAddress } from "../lib/geo.js";
+import {
+  cardOverPhoneFieldsSchema,
+  isCardOverPhoneEnabled,
+  DEFAULT_TIP_PERCENT,
+} from "../lib/payment-method.js";
 
 const POLL_INTERVAL_MS = 15_000;
 const POLL_TIMEOUT_MS = 5 * 60_000;
@@ -105,6 +110,13 @@ interface OrderInput {
   confirmed?: boolean;
   confirmation_token?: string;
   override_compatibility?: boolean;
+  // SP-20260519-006 R-7 (A2A parity): same shape as MCP place_order.
+  payment_method?: "cash_on_delivery" | "card_over_phone";
+  card_number?: string;
+  card_exp?: string;
+  card_cvv?: string;
+  card_zip?: string;
+  tip_percent?: number;
 }
 
 export function extractInput(message: Message): OrderInput {
@@ -393,6 +405,18 @@ export class PizzaAgentExecutor implements AgentExecutor {
         // PROFILE_ENCRYPTION_SECRET missing — token feature unavailable;
         // executor still emits the cart so the caller can decide.
       }
+      // SP-20260519-006 R-7 / AC-9.2: when caller indicated card_over_phone,
+      // proposed_cart carries the chosen method + last-4 redacted form ONLY.
+      // The raw card_number / exp / cvv / zip NEVER appear in the artifact.
+      const paymentBlock =
+        input.payment_method === "card_over_phone" && input.card_number
+          ? {
+              payment_method: "card_over_phone" as const,
+              card_last_four: input.card_number.replace(/[\s-]/g, "").slice(-4),
+              tip_percent: input.tip_percent ?? DEFAULT_TIP_PERCENT,
+              payment: "Card over phone (alpha-stage)",
+            }
+          : { payment: "Cash on delivery" };
       eventBus.publish(
         artifact(taskId, contextId, "proposed_cart", {
           restaurant_id: restaurant.id,
@@ -405,7 +429,7 @@ export class PizzaAgentExecutor implements AgentExecutor {
           customer_name: input.name,
           customer_phone: input.phone,
           delivery_instructions: input.delivery_instructions ?? null,
-          payment: "Cash on delivery",
+          ...paymentBlock,
           confirmation_token: proposedToken,
           confirmation_token_ttl_seconds: proposedToken ? 600 : undefined,
           compatibility,
@@ -620,6 +644,44 @@ export class PizzaAgentExecutor implements AgentExecutor {
       assessment.item.state === "unknown" ||
       assessment.item.state === "likely_available";
 
+    // SP-20260519-006 R-6 / R-7: card-over-phone env-gate + validation,
+    // mirroring the MCP place_order surface line-for-line. Drift between
+    // MCP and A2A on this path is a leak vector (RT-201 echo).
+    if (input.payment_method === "card_over_phone") {
+      if (!isCardOverPhoneEnabled()) {
+        eventBus.publish(
+          status(
+            taskId,
+            contextId,
+            "failed",
+            "Card-over-phone payment is disabled on this server. The operator must set ENABLE_CARD_OVER_PHONE='true' to enable the alpha-stage testing path. Use payment_method='cash_on_delivery' instead.",
+            true,
+          ),
+        );
+        return;
+      }
+      const cardParse = cardOverPhoneFieldsSchema.safeParse({
+        card_number: input.card_number,
+        card_exp: input.card_exp,
+        card_cvv: input.card_cvv,
+        card_zip: input.card_zip,
+        tip_percent: input.tip_percent,
+      });
+      if (!cardParse.success) {
+        const issue = cardParse.error.issues[0];
+        eventBus.publish(
+          status(
+            taskId,
+            contextId,
+            "failed",
+            `Card-over-phone request failed validation: ${issue.path.join(".")} — ${issue.message}.`,
+            true,
+          ),
+        );
+        return;
+      }
+    }
+
     const orderRequest: PlaceOrderRequest = {
       restaurantName: restaurant.name,
       restaurantPhone,
@@ -633,6 +695,16 @@ export class PizzaAgentExecutor implements AgentExecutor {
       dietaryRequirements: input.dietary,
       itemAvailabilityUnknown,
       intentStyle: input.intent_style,
+      ...(input.payment_method === "card_over_phone"
+        ? {
+            paymentMethod: input.payment_method,
+            cardNumber: input.card_number,
+            cardExp: input.card_exp,
+            cardCvv: input.card_cvv,
+            cardZip: input.card_zip,
+            tipPercent: input.tip_percent ?? DEFAULT_TIP_PERCENT,
+          }
+        : {}),
     };
 
     let callId: string;
