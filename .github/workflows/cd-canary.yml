@@ -1,0 +1,46 @@
+name: cd-canary
+
+# Claude Desktop integration reliability canary (SP-20260519-007, R-2).
+# Runs the existing scripts/check-deployed-tools.js against prod every 30 minutes.
+# Failure = tool-list drift or stale deploy. Operator gets a workflow-status
+# email; investigate via `npm run cd:doctor` locally + the ops playbook at
+# `_docs/operations/cd-doctor.md`.
+#
+# Setup before this workflow runs successfully:
+#   1. Repo Settings > Secrets and variables > Actions > New repository secret
+#   2. Name: WARP_MCP_KEY
+#   3. Value: the live Fly secret (matches the deployed app's bearer)
+# Until the secret is added, the cron will fail visibly with a clear error.
+
+on:
+  schedule:
+    # Every 30 minutes. 48 runs/day × ~1 min ≈ 1440 min/mo — well under the
+    # GitHub Actions free-tier minutes cap on private repos (2000/mo).
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  canary:
+    name: aiweb-mcp tools-list parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run deployed-tools canary
+        env:
+          MCP_URL: https://aiweb-mcp.fly.dev/mcp
+          WARP_MCP_KEY: ${{ secrets.WARP_MCP_KEY }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$WARP_MCP_KEY" ]; then
+            echo "::error::WARP_MCP_KEY repo secret is not set. Add it under Repo Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          node scripts/check-deployed-tools.js

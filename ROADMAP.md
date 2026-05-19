@@ -17,6 +17,20 @@ The AI Web — Wave 00 pizza concierge. This file is the single roadmap for the 
 
 ## Recently shipped
 
+### SP-20260519-007 — Claude Desktop integration reliability (2026-05-19)
+
+RT-007 quick-win path: convert the Claude Desktop ↔ aiweb MCP integration from an intermittently-failing 7-component series into a CI-enforced contract. Closes 4 of 6 RT-007 failure modes (F1, F2, F4, F5); F3 already closed (2026-05-18 incident response); F6 + optional vendored bridge explicitly deferred.
+
+- **Cold-start eliminated (F1).** `fly.toml` flips `auto_stop_machines` from `'stop'` to `'suspend'`. Wake from suspend is ~200ms vs ~2-3s cold-start, restoring the first-call latency under mcp-remote's patience window. Free; fallback `min_machines_running=1` (~$3/mo) if Fly rejects suspend for this VM kind.
+- **Canary on schedule (F2).** New `.github/workflows/cd-canary.yml` runs the existing `scripts/check-deployed-tools.js` against prod every 30 minutes. Stale deploy or tool-list drift now surfaces in 60s instead of "next user test." First run fails visibly until the operator adds `WARP_MCP_KEY` to repo secrets — by design.
+- **Silent npm upgrades blocked (F4, F5).** `package.json` `@modelcontextprotocol/sdk` tilde-pinned (`~1.29.0`; was `^1.12.1` and had silently drifted to 1.29.0 — exactly the failure mode the pin names). `.cmd.template` exact-pins `mcp-remote@0.1.38`.
+- **`npm run cd:doctor`.** New `scripts/cd-doctor.js` runs four checks (`/healthz` 5s timeout; `tools/list` vs canonical whitelist; `.cmd` bearer initialize-200; optional local `mcp-remote` version probe) and prints a deterministic green/red verdict in under 30 seconds. Designed for operator-after-update use; cron stays on `check-deployed-tools.js`.
+- **Ops playbook.** New `_docs/operations/cd-doctor.md` documents each check, the GitHub Actions cron setup (one-time secret add), cold-start config, version-pin discipline, and escalation path.
+- **Regression coverage.** New `tests/regression/SP-20260519-007/cd-doctor.test.ts` (5 tests) asserts green on healthy fixture + red on each simulated failure mode + a defense-in-depth assertion that the bearer value never appears in stdout/stderr/`events.jsonl`. Full suite: 299/299 (was 275 pre-sprint).
+- **Mid-execute course corrections:** (1) SDK pin reality vs design — installed was already 1.29.0, pinned to current working version not the design's `~1.12.1` figure; (2) COPY C-1 verdict line split into all-pass and with-skipped variants for honesty when check 4 SKIPs; (3) `cd-doctor.js` exit path swapped from `process.exit()` to `process.exitCode =` to fix a Windows libuv `UV_HANDLE_CLOSING` assertion during async drain (generalizable lesson for operator scripts on Windows).
+
+Plan Contract: `PC-20260519-0016`. Release: `RL-20260519-008`. 8 tickets shipped (T-20260519-102..109). 3 ESDs all in ready/integrated state.
+
 ### SP-20260517-005 — ai-web-debug-01 closure (2026-05-17 → 18)
 
 The user-trace `_docs/00-user-communication/ai-web-debug-01.docx` showed two root-cause bug classes: stale prod deploy exposed removed profile tools, AND the compat verdict shipped a cart on a generic 3-item template when no real menu was knowable. Both proven empirically closed.

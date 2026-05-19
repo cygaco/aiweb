@@ -13,6 +13,11 @@ REM ${VAR} / %VAR% style placeholders before invoking the child process, so
 REM passing the bearer through the `args` array sends a literal "${KEY}" to
 REM mcp-remote and the server 401s. cmd.exe parses this script as one command
 REM line — the value is substituted before npx ever sees it.
+REM
+REM VERSION PIN (SP-20260519-007, T-20260519-105):
+REM   mcp-remote is exact-version pinned to stop silent npm-registry upgrades
+REM   from breaking the wire format (RT-007 F4 mitigation). Update only after
+REM   verifying the new version against the deployed MCP server.
 
 set "WARP_MCP_KEY=REPLACE_WITH_YOUR_KEY"
-npx -y mcp-remote https://aiweb-mcp.fly.dev/mcp --header "Authorization: Bearer %WARP_MCP_KEY%"
+npx -y mcp-remote@0.1.38 https://aiweb-mcp.fly.dev/mcp --header "Authorization: Bearer %WARP_MCP_KEY%"

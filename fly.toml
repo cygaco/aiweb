@@ -19,7 +19,11 @@ primary_region = 'sjc'
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'
+  # SP-20260519-007 T-102 (R-1): eliminate cold-start to stay under
+  # mcp-remote's patience window. 'suspend' wakes in ~200ms (vs 'stop'
+  # which cold-boots in ~2-3s). Free; fallback is min_machines_running=1
+  # (~$3/mo) if suspend is rejected by the VM kind at deploy time.
+  auto_stop_machines = 'suspend'
   auto_start_machines = true
   min_machines_running = 0
 

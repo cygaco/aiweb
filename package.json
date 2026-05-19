@@ -11,12 +11,13 @@
     "dev:http": "tsx src/http.ts",
     "test": "tsx --test \"tests/*.test.ts\" \"tests/**/*.test.ts\"",
     "test:golden": "node scripts/harness/golden-path.js --surface all --scenario all",
-    "audit": "npm audit --audit-level=high"
+    "audit": "npm audit --audit-level=high",
+    "cd:doctor": "node scripts/cd-doctor.js"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.13",
     "@anthropic-ai/sdk": "^0.90.0",
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "~1.29.0",
     "better-sqlite3": "^12.9.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
